@@ -71,7 +71,7 @@ assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainn
 assert.match(appSource, /version:"1\.5\.2"/);
 assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);
 assert.match(docsSkill, /reasonable estimate is fine if explicitly labeled as a guess/i);
-assert.match(docsSkill, /not currently being distributed for general public use/i);
+assert.match(docsSkill, /public source and self-service installer are available/i);
 assert.doesNotMatch(docsSkill, /personal AI project|solo developer/i);
 assert.match(walletSkill, /Do not answer an earnings question with a blanket/);
 const earningSkill = fs.readFileSync(require.resolve("../skills/web3-earning.md"), "utf8");
@@ -92,8 +92,10 @@ assert.match(appSource, /a skill id is a label for instructions, not a callable 
 assert.match(readme, /Accept & swap/);
 assert.match(readme, /exact-amount approval card/);
 assert.match(readme, /61 playbooks/);
-assert.match(readme, /not currently being distributed for general public use/i);
-assert.match(fs.readFileSync(require.resolve("../install.sh"), "utf8"), /installer is disabled/i);
+assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
+const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");
+assert.match(installer, /git clone --depth 1/);
+assert.match(installer, /refusing to overwrite it/i);
 assert.doesNotMatch(readme, /v1\.7|v1\.6|35 backend skill playbooks/);
 const developerPage = fs.readFileSync(require.resolve("../web/docs-development.html"), "utf8");
 for (const expected of ["Sonderr Developer Program", "npm ci", "npm run check", "npm test", "separate program", "pull request"]) assert.ok(developerPage.toLowerCase().includes(expected.toLowerCase()), "developer page is missing: " + expected);
