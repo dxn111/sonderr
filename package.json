@@ -1,0 +1,34 @@
+{
+  "name": "sonderr-v1.5",
+  "version": "1.5.2",
+  "private": true,
+  "description": "Privacy-first local AI workspace with optional Web3 capabilities.",
+  "files": [
+    "bin/",
+    "server/",
+    "web/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "sonderr-1.5": "bin/sonderr-1.5.js"
+  },
+  "scripts": {
+    "start": "node bin/sonderr-1.5.js",
+    "dev": "node bin/sonderr-1.5.js --no-open",
+    "check": "node --check bin/sonderr-1.5.js && node --check server/app.js && node --check server/provider.js && node --check server/compaction.js && node --check server/task-memory.js && node --check server/progress.js && node --check server/wallet-watch.js && node --check server/safety.js && node --check server/store.js && node --check server/skills.js && node --check server/mcp.js && node --check server/connectors.js && node --check server/email.js && node --check server/quality.js && node --check server/secrets.js && node --check server/wallet.js && node --check web/ui.js",
+    "test:safety": "node test/safety.test.js",
+    "test": "node test/safety.test.js && node test/store.test.js && node test/http-security.test.js && node test/capabilities.test.js && node test/quality.test.js && node test/compaction.test.js && node test/task-memory.test.js && node test/progress.test.js && node test/wallet-watch.test.js && node test/wallet-networks.test.js && node test/task-resumption.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@solana-program/system": "^0.15.0",
+    "@solana-program/token": "^0.17.0",
+    "@solana/kit": "^8.3.0",
+    "ethers": "^6.17.0"
+  }
+}

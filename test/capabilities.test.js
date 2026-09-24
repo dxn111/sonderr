@@ -1,0 +1,100 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const provider = require("../server/provider");
+const skills = require("../server/skills");
+const wallet = require("../server/wallet");
+
+const toolNames = new Set(provider.TOOL_DEFINITIONS.map(item => item.function.name));
+assert.equal(toolNames.has("faucet_claim"), false, "faucet-claim playbook must not imply a nonexistent executable tool");
+for (const name of ["analyze_workspace", "read_workspace_range", "patch_workspace_file", "run_project_checks", "get_git_status", "task_checkpoint_read", "task_checkpoint_write"]) {
+  assert.equal(toolNames.has(name), true, "missing capability tool: " + name);
+}
+for (const name of ["create_wallet", "get_wallet_accounts", "get_wallet_status", "get_wallet_price", "get_wallet_market_snapshot", "get_wallet_token_allowance", "get_wallet_portfolio", "get_wallet_token_info", "get_wallet_activity", "get_wallet_watch", "set_wallet_watch", "prepare_wallet_transaction", "prepare_wallet_swap"]) {
+  assert.equal(toolNames.has(name), true, "missing wallet capability tool: " + name);
+}
+const walletConfig = wallet.publicConfig();
+assert.equal(Object.hasOwn(walletConfig, "rpcUrl"), false, "public wallet settings must not expose RPC endpoints");
+assert.ok(walletConfig.accounts.every(account => !Object.hasOwn(account, "rpcUrl")), "wallet account cards must not expose RPC endpoints");
+const evmAccounts = walletConfig.accounts.filter(account => account.chain === "evm");
+assert.ok(evmAccounts.every(account => account.address === evmAccounts[0]?.address), "Base and Ethereum must share the same EVM address");
+const swapTool = provider.TOOL_DEFINITIONS.find(item => item.function.name === "prepare_wallet_swap").function;
+assert.match(swapTool.description, /maximum 1%/i);
+assert.match(swapTool.description, /Accept & swap/);
+assert.match(swapTool.description, /does not trade/i);
+assert.match(swapTool.description, /profit/i);
+assert.match(swapTool.parameters.properties.slippageBps.description, /1-100 maximum/);
+assert.equal(wallet.isSupportedSwapRouter(1, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"), true);
+assert.equal(wallet.isSupportedSwapRouter(8453, "0x2626664c2603336E57B271c5C0b26F421741e481"), true);
+assert.equal(wallet.isSupportedSwapRouter(1, "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE"), false, "no hosted aggregator router is executable");
+assert.equal(wallet.isSupportedSwapRouter(8453, "0x0000000000000000000000000000000000000001"), false);
+assert.equal(wallet.isSupportedSwapRouter(11155111, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"), false);
+
+for (const id of ["integration-testing", "performance-profiling", "observability", "api-contracts", "project-scaffolding", "release-notes", "secure-integrations", "documentation-maintenance", "long-running-work", "task-resumption", "contribution-workflow", "sonderr-docs", "wallet-intelligence", "web3-earning", "faucet-claim"]) {
+  const skill = skills.load(id);
+  assert.ok(skill, "missing skill: " + id);
+  assert.ok(skill.instructions.length > 250, "skill is too thin: " + id);
+}
+
+assert.equal(skills.all().length, 61);
+assert.equal(JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count, skills.all().length);
+assert.equal(skills.MAX_AUTO_ATTACH, 2);
+assert.deepEqual(skills.validateCatalog(), []);
+for (const skill of skills.all()) {
+  assert.ok(skills.forTask(skill.triggers[0]).includes(skill.id), "first trigger does not select its playbook: " + skill.id);
+}
+assert.ok(skills.forTask("Review the Sonderr developer program and open source contributions.").includes("contribution-workflow"));
+assert.ok(skills.forTask("What can you do? Give me a rundown of Sonderr features.").includes("sonderr-docs"));
+assert.ok(skills.forTask("Check the exact token contract and my wallet portfolio.").includes("wallet-intelligence"));
+assert.ok(skills.forTask("Try to make money with Web3.").includes("web3-earning"));
+assert.ok(skills.forTask("Find current crypto grants and a Web3 bounty for me.").includes("web3-earning"));
+assert.ok(skills.forTask("Go search the internet for faucets and get SOL from 100 different ones.").includes("web3-earning"));
+assert.ok(skills.forTask("Go search the internet for faucets and get SOL from 100 different ones.").includes("faucet-claim"));
+assert.ok(skills.forTask("Use the faucetclaim skill to find legitimate SOL faucets.").includes("faucet-claim"));
+assert.ok(skills.forTask("This is a long-running multi-stage task; resume the deep engineering work.").includes("long-running-work"));
+assert.ok(skills.forTask("The provider failure interrupted my task; continue from checkpoint.").includes("task-resumption"));
+assert.match(skills.promptBlock(["contribution-workflow"]), /A skill is guidance, not permission/i);
+const readme = fs.readFileSync(require.resolve("../README.md"), "utf8");
+const appSource = fs.readFileSync(require.resolve("../server/app.js"), "utf8");
+const docsSkill = fs.readFileSync(require.resolve("../skills/sonderr-docs.md"), "utf8");
+const walletSkill = fs.readFileSync(require.resolve("../skills/wallet-intelligence.md"), "utf8");
+assert.match(appSource, /A reasonable estimate is okay when plainly labeled as a guess/);
+assert.doesNotMatch(appSource, /personal AI project|solo developer/i);
+assert.match(appSource, /do not stonewall or claim your programming prevents an answer/i);
+assert.match(appSource, /Do not reflexively tell users Sonderr cannot help them make money/);
+assert.match(appSource, /For faucets, assume one person claiming once at distinct services is not abuse by itself/);
+assert.match(appSource, /bounded read-only web requests through the terminal/);
+assert.match(appSource, /faucet-claim for specific faucet research\/claims/);
+assert.match(appSource, /Sonderr has no built-in faucet_claim function or general browser-driving function/);
+assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainnet support/);
+assert.match(appSource, /version:"1\.5\.2"/);
+assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);
+assert.match(docsSkill, /reasonable estimate is fine if explicitly labeled as a guess/i);
+assert.match(docsSkill, /not currently being distributed for general public use/i);
+assert.doesNotMatch(docsSkill, /personal AI project|solo developer/i);
+assert.match(walletSkill, /Do not answer an earnings question with a blanket/);
+const earningSkill = fs.readFileSync(require.resolve("../skills/web3-earning.md"), "utf8");
+assert.match(earningSkill, /Incoming funds can be received.*without a trade approval/s);
+assert.match(earningSkill, /Pause before value or authority leaves the user's control/);
+assert.match(earningSkill, /Never fabricate odds, APR\/APY, demand, reward amounts, liquidity, or a historical hit-rate/);
+assert.match(earningSkill, /evidence ledger for multi-step work/);
+assert.match(earningSkill, /does not execute limit orders, autonomous\/recurring trading/);
+assert.match(earningSkill, /Do not call an opportunity risk-free, passive, guaranteed, a sure thing/);
+assert.match(earningSkill, /Do not treat one person using many separate public faucet programs as abuse/);
+assert.match(earningSkill, /Never present test SOL as income or interchangeable with real SOL/);
+assert.match(earningSkill, /Never claim “I cannot browse the internet” before checking actual available tools and permission/);
+const faucetSkill = fs.readFileSync(require.resolve("../skills/faucet-claim.md"), "utf8");
+assert.match(faucetSkill, /This playbook is guidance, not an executable tool/);
+assert.match(faucetSkill, /there is no `faucet_claim` tool/);
+assert.match(faucetSkill, /do not invent a “mainnet unsupported” error for a nonexistent tool/i);
+assert.match(appSource, /a skill id is a label for instructions, not a callable tool/i);
+assert.match(readme, /Accept & swap/);
+assert.match(readme, /exact-amount approval card/);
+assert.match(readme, /61 playbooks/);
+assert.match(readme, /not currently being distributed for general public use/i);
+assert.match(fs.readFileSync(require.resolve("../install.sh"), "utf8"), /installer is disabled/i);
+assert.doesNotMatch(readme, /v1\.7|v1\.6|35 backend skill playbooks/);
+const developerPage = fs.readFileSync(require.resolve("../web/docs-development.html"), "utf8");
+for (const expected of ["Sonderr Developer Program", "npm ci", "npm run check", "npm test", "separate program", "pull request"]) assert.ok(developerPage.toLowerCase().includes(expected.toLowerCase()), "developer page is missing: " + expected);
+console.log("capability catalog tests passed");

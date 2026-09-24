@@ -1,0 +1,4 @@
+node_modules/
+.sonderr/
+.DS_Store
+*.log

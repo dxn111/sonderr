@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sonderr</title>
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="stylesheet" href="/ui.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== Sidebar ===================== -->
+  <aside class="sidebar" id="sidebar" aria-label="Workspace sidebar">
+    <div class="brand">
+      <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
+      <span class="brand-copy">
+        <span class="brand-name">Sonderr</span>
+        <span class="brand-version">v1.5.2 · privacy-first AI + Web3</span>
+      </span>
+    </div>
+
+    <button class="new-task" id="newTaskBtn" title="Start a new task">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      New task
+    </button>
+
+    <div class="recents-label">Recents</div>
+    <nav class="session-list" id="sessionList" aria-label="Recent sessions"></nav>
+
+    <div class="sidebar-foot">
+      <button class="side-item" id="settingsBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+      <div class="runtime" id="runtimeStatus" title="Local runtime status"><span class="dot"></span><span class="runtime-label">Starting…</span></div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <!-- ===================== Main ===================== -->
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn mobile-only" id="menuBtn" aria-label="Toggle sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="topbar-title" id="topbarTitle">New task</div>
+      <div class="topbar-right">
+        <span class="workspace-chip" id="workspaceChip" hidden title="Workspace"></span>
+      </div>
+    </header>
+
+    <div class="chat-scroll" id="chatScroll">
+      <section class="welcome" id="welcome">
+        <span class="welcome-mark"><img src="/assets/sonderr-mark-512.png" alt=""></span>
+        <h1 class="greeting" id="greeting">Good evening</h1>
+        <p class="welcome-sub">What are we building today?</p>
+        <div class="suggestions" id="suggestions">
+          <button class="suggestion" data-prompt="Audit this repository and map the architecture: entry points, data flow, risks.">Audit this repository</button>
+          <button class="suggestion" data-prompt="List the files in my workspace and explain how the project is structured.">Explore my workspace</button>
+          <button class="suggestion" data-prompt="Plan a small feature end-to-end: files touched, steps, risks, and verification.">Plan a feature</button>
+          <button class="suggestion" data-vision="1">Analyze an image</button>
+        </div>
+      </section>
+      <div class="messages" id="messages" hidden></div>
+    </div>
+
+    <!-- ===================== Composer ===================== -->
+    <div class="composer-zone">
+      <div class="composer" id="composer">
+        <div class="context-chips" id="contextChips" hidden></div>
+        <textarea id="input" rows="1" placeholder="How can Sonderr help you today? Type / for commands." aria-label="Message Sonderr"></textarea>
+        <div class="mention-menu" id="mentionMenu" role="listbox" aria-label="Mention a workspace file" hidden></div>
+        <div class="command-menu" id="commandMenu" role="listbox" aria-label="Sonderr commands" hidden></div>
+        <div class="composer-bar">
+          <div class="bar-left">
+            <div class="model-picker" id="modelPicker">
+              <button class="model-btn" id="modelBtn" aria-haspopup="listbox" aria-expanded="false" title="Choose model">
+                <svg class="model-spark" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.7a2 2 0 0 0 1.3 1.3L20.9 11l-5.7 1.9a2 2 0 0 0-1.3 1.3L12 19.9l-1.9-5.7a2 2 0 0 0-1.3-1.3L3.1 11l5.7-1.9a2 2 0 0 0 1.3-1.3z"/></svg>
+                <span id="modelBtnLabel">Model</span>
+                <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="model-menu" id="modelMenu" role="listbox" hidden>
+                <div class="model-menu-head">
+                  <span>Models</span>
+                  <button class="mini-btn" id="modelRefreshBtn" title="Refresh models">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+                  </button>
+                </div>
+                <div class="model-menu-list" id="modelMenuList"></div>
+                <div class="model-menu-foot" id="modelMenuFoot">Sorted best &amp; newest first</div>
+              </div>
+            </div>
+            <div class="mode-seg" id="modeSeg" role="tablist" aria-label="Task mode">
+              <button class="mode-btn active" data-mode="ask" title="Quick answers">Ask</button>
+              <button class="mode-btn" data-mode="plan" title="Engineering plan">Plan</button>
+              <button class="mode-btn" data-mode="build" title="Build & verify">Build</button>
+              <button class="mode-btn" data-mode="vision" title="Image understanding & editing — vision models only">Vision</button>
+            </div>
+          </div>
+          <div class="bar-right">
+            <button class="icon-btn" id="attachBtn" title="Add file" aria-label="Add file">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button class="send-btn" id="sendBtn" title="Send" aria-label="Send message">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- file popover (workspace files + device upload) -->
+        <div class="attach-menu" id="attachMenu" hidden>
+          <button class="attach-upload" id="uploadBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            Select files
+            <small>any file type · up to 20 MB each</small>
+          </button>
+          <input type="file" id="fileInput" multiple accept="*/*" hidden>
+          <div class="attach-head">
+            <input id="fileSearch" type="text" placeholder="Search workspace files…" autocomplete="off">
+            <span class="attach-hint">Select any workspace file to attach</span>
+          </div>
+          <div class="attach-tree" id="fileTree"></div>
+        </div>
+      </div>
+      <p class="footnote">Privacy-first local AI · optional Web3 tools · verify important output before shipping it.</p>
+    </div>
+  </main>
+
+  <!-- ===================== Artifact panel (file preview) ===================== -->
+  <section class="artifact-panel" id="artifactPanel" hidden aria-label="File preview">
+    <header class="ap-head">
+      <span class="ap-ico" id="apIco"></span>
+      <div class="ap-title">
+        <strong id="apName">File</strong>
+        <small id="apMeta"></small>
+      </div>
+      <div class="ap-actions">
+        <button class="ap-act" id="apCopy" title="Copy content">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+        <a class="ap-act primary" id="apDownload" href="#" download>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          Download
+        </a>
+        <button class="ap-act icon-only" id="apClose" title="Close preview" aria-label="Close preview">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </header>
+    <div class="ap-body" id="apBody"></div>
+  </section>
+</div>
+
+<!-- ===================== Drag & drop overlay ===================== -->
+<div class="dropzone" id="dropZone" hidden>
+  <div class="dz-card">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+    Drop files to add them
+    <small>images join Vision · other files join the context</small>
+  </div>
+</div>
+
+<!-- ===================== First-launch onboarding ===================== -->
+<div class="modal-scrim onboarding-scrim" id="onboardingModal" hidden>
+  <div class="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle">
+    <div class="onboarding-mark"><img src="/logo.svg" alt=""></div>
+    <div class="onboarding-kicker">FIRST LAUNCH</div>
+    <h1 id="onboardingTitle">Welcome to Sonderr</h1>
+    <p class="onboarding-lead">A couple of choices help me set up your local workspace. You can change them later.</p>
+    <form id="onboardingForm">
+      <label class="onboarding-field"><span>Your name</span><input id="onboardingName" required maxlength="80" autocomplete="name" placeholder="What should I call you?"></label>
+      <label class="onboarding-check"><input id="onboardingWallet" type="checkbox"><span><strong>Create a local Sonderr Wallet</strong><small>Creates a Base wallet now with no external wallet or RPC setup. Keys stay local; back up before funding. Sends require your confirmation.</small></span></label>
+      <label class="onboarding-check"><input id="onboardingEmailOpt" type="checkbox"><span><strong>Prepare a welcome email</strong><small>Use connected Gmail or SMTP. You review the recipient before it leaves Sonderr.</small></span></label>
+      <label class="onboarding-field onboarding-email-field" id="onboardingEmailWrap" hidden><span>Your email address</span><input id="onboardingEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <label class="onboarding-check onboarding-auto-email" id="onboardingAutoEmailWrap" hidden><input id="onboardingAutoEmail" type="checkbox"><span><strong>Send one welcome email automatically</strong><small>One message only, to the address above. No recurring emails or marketing.</small></span></label>
+      <div id="onboardingEmailHint" class="onboarding-note" hidden>Checking Gmail connection…</div>
+      <button id="onboardingGmailBtn" class="btn ghost" type="button" hidden>Connect Gmail in Settings</button>
+      <div class="onboarding-note">Gmail OAuth tokens, wallet keys, seed phrases, and SMTP passwords stay local and are never shown to the AI.</div>
+      <div id="onboardingStatus" class="statusline"></div>
+      <button class="btn primary onboarding-submit" type="submit">Continue to Sonderr</button>
+    </form>
+    <div id="onboardingWelcome"></div>
+  </div>
+</div>
+
+<!-- ===================== Settings modal ===================== -->
+<div class="modal-scrim" id="settingsModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Sonderr settings">
+    <button class="modal-close" id="settingsClose" aria-label="Close settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <aside class="modal-rail">
+      <div class="modal-brand"><img src="/logo.svg" alt=""><span>Settings</span></div>
+      <button class="rail-item active" data-tab="api">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        API &amp; Models
+      </button>
+      <button class="rail-item" data-tab="tools">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        Tools &amp; Access
+      </button>
+      <button class="rail-item" data-tab="connectors">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M9.7 10.7l4.6-2.4M9.7 13.3l4.6 2.4"/></svg>
+        Connectors
+      </button>
+      <button class="rail-item" data-tab="email">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+        Email
+      </button>
+      <button class="rail-item" data-tab="wallet">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 16.5z"/><path d="M4 8h14a3 3 0 0 1 3 3v1h-5a2 2 0 0 0 0 4h5v1"/><circle cx="16" cy="14" r=".5"/></svg>
+        Wallet
+      </button>
+      <button class="rail-item" data-tab="about">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M12 11v5"/></svg>
+        About
+      </button>
+    </aside>
+    <div class="modal-body" id="settingsBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/ui.js"></script>
+</body>
+</html>
