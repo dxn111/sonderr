@@ -5,10 +5,11 @@
 <p align="center">
   <strong>Privacy-first AI workspace with Web3 capabilities.</strong>
   <br />
-  Local-first by design. Availability is currently limited.
+  Install locally in one command. Work from localhost.
 </p>
 
 <p align="center">
+  <a href="#install">Install</a> ·
   <a href="#availability">Availability</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#web-workspace">Web workspace</a> ·
@@ -18,21 +19,39 @@
 
 ---
 
+## Install
+
+Requirements: Node.js 20 or newer, npm, and Git.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dxn111/sonderr/main/install.sh | sh
+```
+
+The installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr-1.5` command under `~/.local/bin`. It never uses `sudo` and refuses to overwrite an existing install directory or command. Review [`install.sh`](install.sh) before running it if you want to inspect the installer first.
+
+Then start Sonderr with:
+
+```bash
+sonderr-1.5
+```
+
+If `~/.local/bin` is not already on your `PATH`, add it as the installer instructs and open a new terminal.
+
 ## Overview
 
 Sonderr v1.5.2 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
-In an existing authorized local installation, the Sonderr experience lives in a browser tab served from your machine:
+The Sonderr experience lives in a browser tab served from your machine:
 
 `sonderr-1.5` → local runtime → `http://127.0.0.1:4173`
 
-There is intentionally no separate "AI CLI" experience in v1.5. The launcher starts the localhost application; the web interface is the product surface. Public installation is currently unavailable.
+There is intentionally no separate "AI CLI" experience in v1.5. The launcher starts the localhost application; the web interface is the product surface.
 
 ## Availability
 
-Sonderr is not currently being distributed for general public use. The public installer is disabled, and `install.sh` exits with an availability notice. This README describes the product and its architecture; it is not an invitation to install or a supported public installation guide. Do not use or share historic install commands as a supported distribution path. Repository and release visibility are controlled separately from product availability; this notice cannot retract existing clones, forks, or downloads.
+Sonderr's source and self-service installer are available from the public repository. The installer tracks the latest `main` branch and installs dependencies from the lockfile; it is not a signed release package. Check the repository and review the installer before running it. Repository and release visibility are controlled separately from product support and availability.
 
 ## How it works
 
@@ -55,7 +74,7 @@ Sonderr is not currently being distributed for general public use. The public in
 └─────────────────────────┘
 ```
 
-In an existing authorized local installation, Sonderr starts on port `4173` and automatically opens the browser. If that port is busy, it moves to the next available local port. The following are runtime options, not public installation instructions.
+Sonderr starts on port `4173` and automatically opens the browser. If that port is busy, it moves to the next available local port.
 
 Manual launch without automatic browser opening:
 
@@ -90,7 +109,7 @@ Sonderr v1.5 separates the launcher from the actual product:
 
 ### Launcher
 
-When present in an existing authorized installation, the `sonderr-1.5` command only starts the local runtime. Public installation is currently unavailable.
+The `sonderr-1.5` command only starts the local runtime; it does not provide a separate AI CLI.
 
 ### Local runtime
 
@@ -161,7 +180,7 @@ Requirements:
 - Node.js 20+
 - Git for source development
 
-For authorized source development, run the local workspace directly:
+For source development, run the local workspace directly:
 
 ```bash
 node bin/sonderr-1.5.js
@@ -183,7 +202,7 @@ npm run check
 
 Sonderr v1.5.2 provides a localhost engineering workspace with these capabilities:
 
-- local runtime and one-command launch in existing authorized installations (public installation is unavailable)
+- local installation and one-command launch
 - localhost serving with automatic browser opening
 - provider-agnostic model discovery and ranking, with vision-capability flags
 - server-side tool execution with approval levels
