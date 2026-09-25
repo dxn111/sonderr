@@ -18,6 +18,12 @@ try {
   assert.equal(rawSettings.includes("test-key-that-must-not-live-in-settings"), false);
   assert.equal(rawCredentials.includes("test-key-that-must-not-live-in-settings"), true);
   assert.equal(store.providerKey("custom"), "test-key-that-must-not-live-in-settings");
+  const tpmProfile = "custom\nhttps://private-provider.example/v1\ncompact-model";
+  assert.equal(store.rememberProviderTpmLimit(tpmProfile, 8_000, Date.now() + 60_000), true);
+  assert.equal(store.providerTpmLimit(tpmProfile), 8_000, "recent provider TPM ceilings persist for future local runs");
+  const afterTpmSave = fs.readFileSync(store.DATA_FILE, "utf8");
+  assert.equal(afterTpmSave.includes("private-provider.example"), false, "TPM profile persistence stores only a one-way profile hash");
+  assert.equal(Object.hasOwn(store.settings(), "providerTpmLimits"), false, "internal provider limits are not exposed as ordinary settings");
 
   store.updateWalletConfig({ chain: "evm", network: "Base Mainnet · low fees", rpcUrl: "https://mainnet.base.org", address: "0x1111111111111111111111111111111111111111" });
   store.updateWalletConfig({ chain: "solana", network: "Solana Mainnet · low fees", rpcUrl: "https://api.mainnet-beta.solana.com", address: "11111111111111111111111111111111" });

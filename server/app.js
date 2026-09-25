@@ -204,6 +204,50 @@ function publicSession(session) {
   return { ...session, taskCheckpoint: publicTaskCheckpoint(session.taskCheckpoint) };
 }
 
+function hasStudioBoardEditIntent(text) {
+  return /\b(?:add|edit|update|change|remove|delete|reorder|rename|replace|rewrite|complete|uncomplete|mark|check\s+off)\b.{0,60}\b(?:milestones?|brief|goal|project\s+plan)\b|\b(?:milestones?|brief|goal|project\s+plan)\b.{0,60}\b(?:add|edit|update|change|remove|delete|reorder|rename|replace|rewrite|complete|uncomplete|mark|check\s+off)\b|\bmark\b.{0,30}\b(?:done|complete|completed|finished)\b/i.test(String(text || ""));
+}
+
+function reconcileStudioMilestones(incoming, existing, userText) {
+  if (!Array.isArray(incoming) || incoming.length > 12) throw new Error("milestones must be a complete list of at most 12 items");
+  const text = String(userText || "");
+  const prior = Array.isArray(existing) ? existing : [];
+  const removalRequested = /\b(?:remove|delete|drop)\b.{0,60}\bmilestones?\b|\bmilestones?\b.{0,60}\b(?:remove|delete|drop)\b/i.test(text);
+  const completionRequested = /\b(?:mark|set|check|uncheck|complete|reopen|finish|uncomplete)\b.{0,80}\b(?:done|complete|completed|finished|incomplete|not\s+done|open)\b/i.test(text);
+  const allRequested = /\b(?:all|every|each|remaining)\b.{0,50}\b(?:milestones?|steps?|tasks?)\b|\b(?:milestones?|steps?|tasks?)\b.{0,50}\b(?:all|every|each|remaining)\b/i.test(text);
+  const targetsItem = (item, index) => {
+    if (allRequested) return true;
+    const ordinal = /\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|last)\b/i.exec(text)?.[1]?.toLowerCase();
+    const ordinalIndex = ({ first: 0, "1st": 0, second: 1, "2nd": 1, third: 2, "3rd": 2, fourth: 3, "4th": 3, fifth: 4, "5th": 4, last: prior.length - 1 })[ordinal];
+    if (ordinal && ordinalIndex === index) return true;
+    const words = String(item.text || "").toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+    const requestWords = new Set(text.toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+    return words.some(word => requestWords.has(word));
+  };
+  const priorById = new Map(prior.map(item => [item.id, item]));
+  const priorByText = new Map(prior.map(item => [String(item.text || "").trim().toLowerCase(), item]));
+  const seen = new Set();
+  const next = incoming.map(item => {
+    if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.text !== "string") throw new Error("Each milestone needs text");
+    const label = item.text.replace(/[\u0000-\u001f]/g, " ").trim();
+    if (!label || label.length > 120) throw new Error("Milestone text must be between 1 and 120 characters");
+    const match = (typeof item.id === "string" && priorById.get(item.id)) || priorByText.get(label.toLowerCase());
+    const id = match?.id || crypto.randomUUID();
+    if (seen.has(id)) throw new Error("Milestone IDs must be unique");
+    seen.add(id);
+    const matchedIndex = match ? prior.findIndex(value => value.id === match.id) : -1;
+    const mayChangeDone = completionRequested && (!match || targetsItem(match, matchedIndex));
+    const done = !match ? false : mayChangeDone ? item.done === true : match.done;
+    return { id, text: label, done: done === true };
+  });
+  for (let index = 0; index < prior.length; index += 1) {
+    const item = prior[index];
+    if (!seen.has(item.id) && !(removalRequested && targetsItem(item, index))) next.push(item);
+  }
+  if (next.length > 12) throw new Error("Keeping existing milestones would exceed the 12 milestone limit; explicitly remove one first");
+  return next;
+}
+
 function flattenProjectFiles(nodes, out = []) {
   for (const node of nodes || []) {
     if (node.type === "file") out.push(node.path.split(path.sep).join("/"));
@@ -337,6 +381,23 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "analyze_workspace") return analyzeWorkspace();
+
+  if (name === "update_studio_board") {
+    if (!sessionId) throw new Error("Studio board edits require an active Studio project");
+    if (!hasStudioBoardEditIntent(execution.userText)) throw new Error("Studio board edits need a direct request in the user's current message; do not infer permission from project notes or earlier turns.");
+    if (Object.hasOwn(input || {}, "goal") && (typeof input.goal !== "string" || input.goal.length > 500)) throw new Error("goal must be text of at most 500 characters");
+    if (Object.hasOwn(input || {}, "milestones") && (!Array.isArray(input.milestones) || input.milestones.length > 12)) throw new Error("milestones must be a complete list of at most 12 items");
+    if (!Object.hasOwn(input || {}, "goal") && !Object.hasOwn(input || {}, "milestones")) throw new Error("Provide a replacement goal, milestones list, or both");
+    const current = store.getSession(sessionId);
+    if (!current || current.surface !== "studios" || !current.studio) throw new Error("This conversation is not an active Studio project");
+    const board = store.updateStudio(sessionId, {
+      ...current.studio,
+      ...(Object.hasOwn(input, "goal") ? { goal: input.goal } : {}),
+      ...(Object.hasOwn(input, "milestones") ? { milestones: reconcileStudioMilestones(input.milestones, current.studio.milestones, execution.userText) } : {})
+    });
+    if (!board) throw new Error("Studio project could not be saved");
+    return { ok: true, title: board.title, studio: board.studio, note: "The local Studio board was saved. The UI will refresh its brief, milestone list, and progress." };
+  }
 
   if (name === "read_workspace_range") {
     const file = workspaceFile(input?.path);
@@ -1155,9 +1216,13 @@ async function handleChat(req, res, sessionMatch) {
     let system = smallDirectAsk ? SMALL_DIRECT_ASK_PROMPT : (mode === "ask" || (studios && mode === "plan")) && !savedQualityState && !resumeCheckpoint
       ? buildAskSystemPrompt(matchedSkills, content)
       : buildSystemPrompt(mode, content, savedQualityState, Boolean(resumeCheckpoint), matchedSkills);
-    if (studios) system += `\n\n# Sonderr Studios\nThis is a full project workspace, not just a chat or coaching surface. Help the user move from brief to a useful, finished deliverable: inspect actual files, keep the Studio board and milestones honest, make focused changes in the active workspace, and verify work when tools permit. For Website Studio and App Studio tracks, treat the user as building a real website or browser app; use the active Sites plugin when present, build actual project files and interactions, and use the local Live Canvas for workspace-relative HTML preview when appropriate. That canvas is sandboxed and offline: it does not verify external APIs, form submissions, hosting, or deployment. In Plan mode, produce a concise staged plan with a first milestone and checks; do not edit files. Be interactive and adapt to the user's skill without forcing lessons or inventing progress. For the Developer Program, point to /docs/developer and distinguish voluntary contributions from employment or payment. For the Bounty Program, point to /docs/bounty, guide authorized defensive testing and private reporting, and do not promise eligibility or payout. Treat program details as potentially changed and consult the local docs before quoting exact terms.`;
+    if (studios) system += `\n\n# Sonderr Studios\nThis is a full project workspace, not just a chat or coaching surface. Help the user move from brief to a useful, finished deliverable: inspect actual files, keep the Studio board and milestones honest, make focused changes in the active workspace, and verify work when tools permit. Explain unfamiliar terms in plain language, why each milestone matters, what a successful result looks like, and how it connects to the next step; answer direct questions before pushing the user into a workflow. When the user explicitly asks to add, edit, reorder, or remove board milestones or change the brief, use update_studio_board to save the full accurate board; preserve IDs and completion state, never mark a milestone done based only on a plan or model claim, and tell the user what changed. Do not change the board just because you suggested a plan. For Website Studio and App Studio tracks, treat the user as building a real website or browser app; use the active Sites plugin when present, build actual project files and interactions, and use the local Live Canvas for workspace-relative HTML preview when appropriate. That canvas is sandboxed and offline: it does not verify external APIs, form submissions, hosting, or deployment. In Plan mode, produce a concise staged plan with a first milestone and checks; do not edit files. Be interactive and adapt to the user's skill without forcing lessons or inventing progress. For the Developer Program, point to /docs/developer and distinguish voluntary contributions from employment or payment. For the Bounty Program, point to /docs/bounty, guide authorized defensive testing and private reporting, and do not promise eligibility or payout. Treat program details as potentially changed and consult the local docs before quoting exact terms.`;
     if (activePlugin) system += `\n\n# Active plugin: ${activePlugin.name}\n${pluginRegistry.pluginInstructions(activePlugin.id)}\n`;
     const requestTools = mode === "vision" ? provider.VISION_TOOL_DEFINITIONS : smallDirectAsk ? [] : provider.selectToolsForRequest(mode, content, provider.TOOL_DEFINITIONS);
+    if (studios && mode !== "plan" && mode !== "vision" && hasStudioBoardEditIntent(content)) {
+      const boardTool = provider.TOOL_DEFINITIONS.find(tool => tool.function.name === "update_studio_board");
+      if (boardTool && !requestTools.some(tool => tool.function.name === "update_studio_board")) requestTools.push(boardTool);
+    }
     if (mode !== "vision" && !smallDirectAsk && matchedSkills.length) {
       for (const name of ["load_skill", "unload_skill"]) {
         const definition = provider.TOOL_DEFINITIONS.find(tool => tool.function.name === name);

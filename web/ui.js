@@ -41,6 +41,9 @@ const STUDIO_PHASES = {
   review: { title: "Polish before shipping", text: "Look for regressions, awkward UX, missing tests, and unfinished details before calling the work done.", mode: "ask", prompt: "Review the current project or diff for concrete defects, accessibility gaps, missing tests, and the most valuable polish before release." }
 };
 let studioTrackDraft = "project";
+let studioSaveChain = Promise.resolve();
+const studioSaveRevision = new Map();
+const studioLastSaved = new Map();
 
 /* ---------- markdown (safe, offline) ---------- */
 function renderMarkdown(src) {
@@ -414,32 +417,51 @@ function renderStudioProject() {
   const project = $("studiosProject");
   const discussion = $("studioDiscussionHead");
   if (state.surface !== "studios" || !state.session) { project.hidden = true; discussion.hidden = true; return; }
+  const sameProject = project.dataset.studioSessionId === state.session.id;
+  const previousScrollTop = sameProject ? project.querySelector(".studio-rail-scroll")?.scrollTop || 0 : 0;
   const studio = state.session.studio || { track: "project", goal: "", milestones: [] };
+  if (!studioLastSaved.has(state.session.id)) studioLastSaved.set(state.session.id, JSON.parse(JSON.stringify(studio)));
   const track = STUDIO_TRACKS[studio.track] || STUDIO_TRACKS.project;
   const milestones = studio.milestones || [];
   const done = milestones.filter(item => item.done).length;
   const percent = milestones.length ? Math.round(done / milestones.length * 100) : 0;
   const previewPath = String(studio.previewPath || "");
   const previewUrl = previewPath ? "/studio-preview/" + previewPath.split("/").map(encodeURIComponent).join("/") : "about:blank";
+  const milestoneRows = milestones.map((item, index) => '<div class="studio-milestone-item' + (item.done ? ' done' : '') + '" data-milestone-row="' + esc(item.id) + '">' +
+    '<label class="studio-milestone-check"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>' +
+    '<div class="studio-milestone-actions"><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="up" aria-label="Move milestone up" title="Move up"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="down" aria-label="Move milestone down" title="Move down"' + (index === milestones.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" data-edit-milestone="' + esc(item.id) + '" aria-label="Edit milestone" title="Edit milestone">Edit</button><button type="button" data-remove-milestone="' + esc(item.id) + '" aria-label="Remove milestone" title="Remove milestone">×</button></div>' +
+    '<form class="studio-milestone-editor" data-editor-for="' + esc(item.id) + '" hidden><input maxlength="120" required aria-label="Milestone text" value="' + esc(item.text) + '"><button type="submit">Save</button><button type="button" data-cancel-milestone="' + esc(item.id) + '">Cancel</button></form>' +
+    '</div>').join("");
   project.hidden = false; discussion.hidden = false;
-  project.innerHTML = '<div class="studio-project-kicker">SONDERR STUDIOS <span>／</span> ' + esc(track.label) + '</div>' +
-    '<h1>' + esc(state.session.title) + '</h1>' +
-    '<div class="studio-project-label">PROJECT BRIEF</div>' +
+  project.innerHTML = '<header class="studio-rail-head"><div class="studio-project-kicker">SONDERR STUDIOS <span>／</span> ' + esc(track.label) + '</div><h1 title="' + esc(state.session.title) + '">' + esc(state.session.title) + '</h1><div class="studio-rail-summary"><span>PROJECT PROGRESS</span><strong>' + percent + '%</strong></div><div class="studio-progress-track"><span style="width:' + percent + '%"></span></div></header>' +
+    '<div class="studio-rail-scroll"><div class="studio-project-label">PROJECT BRIEF</div>' +
     '<textarea id="studioGoalInput" rows="3" maxlength="500" aria-label="Project brief" placeholder="What should this project achieve?">' + esc(studio.goal || "") + '</textarea>' +
     '<button class="studio-save-goal" type="button">Save brief</button>' +
-    '<div class="studio-project-progress"><strong>Milestones</strong><span>' + done + ' of ' + milestones.length + ' complete</span></div>' +
-    '<div class="studio-progress-track"><span style="width:' + percent + '%"></span></div>' +
-    '<div class="studio-milestones">' + milestones.map(item => '<label class="studio-milestone' + (item.done ? ' done' : '') + '"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>').join("") + '</div>' +
-    '<form class="studio-add-milestone" id="studioAddMilestone"><input id="studioMilestoneText" maxlength="120" required aria-label="New milestone" placeholder="Add a milestone…"><button type="submit">Add</button></form>' +
-    '<div class="studio-project-actions"><button type="button" data-studio-action="plan">Plan next step</button><button type="button" data-studio-action="build">Build milestone</button><button type="button" data-studio-action="review">Review progress</button></div>' +
+    '<div class="studio-milestone-heading"><strong>Milestones</strong><span>' + done + ' / ' + milestones.length + ' complete</span></div>' +
+    '<div class="studio-milestones">' + (milestoneRows || '<div class="studio-milestones-empty">No milestones yet. Add one to give the project a clear next step.</div>') + '</div>' +
+    '<form class="studio-add-milestone" id="studioAddMilestone"><input id="studioMilestoneText" maxlength="120" required aria-label="New milestone" placeholder="Add a milestone…"><button type="submit">+ Add</button></form>' +
+    '<div class="studio-project-actions"><button type="button" data-studio-action="explain">Explain this plan</button><button type="button" data-studio-action="plan">Plan next step</button><button type="button" data-studio-action="build">Build milestone</button><button type="button" data-studio-action="review">Review progress</button></div>' +
     (["site", "app"].includes(studio.track) ? '<section class="studio-site-canvas"><div class="studio-site-canvas-head"><span>LIVE CANVAS</span><strong>' + (studio.track === "app" ? "App preview" : "Website preview") + '</strong><a id="studioPreviewOpen" href="' + esc(previewUrl) + '" target="_blank" rel="noopener"' + (previewPath ? '' : ' hidden') + '>Open ↗</a></div><form id="studioPreviewForm"><input id="studioPreviewPath" aria-label="Workspace path to preview page" placeholder="my-site/index.html" value="' + esc(previewPath) + '"><button type="submit">Preview</button></form><div class="studio-preview-tools"><span>LOCAL PREVIEW · NETWORK DISABLED</span><div><button type="button" data-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview-size="mobile" aria-pressed="false">Mobile</button><button type="button" id="studioPreviewReload"' + (previewPath ? '' : ' disabled') + ' aria-label="Reload preview" title="Reload preview">↻</button></div></div><div class="studio-preview-frame-wrap" id="studioPreviewWrap"><iframe id="studioPreviewFrame" title="' + (studio.track === "app" ? "App" : "Website") + ' preview" sandbox="allow-scripts" referrerpolicy="no-referrer" src="' + esc(previewUrl) + '"></iframe>' + (!previewPath ? '<div class="studio-preview-empty"><span>▧</span><strong>Your canvas is ready</strong><small>Build a page with Sites, then enter its workspace path here. Try <code>my-site/index.html</code>.</small></div>' : '') + '</div><button class="studio-sites-plugin" type="button">✦ Build with Sites</button><p class="studio-preview-note">This preview reads workspace files only. External network requests, forms, and publishing stay disabled.</p></section>' : '') +
-    (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '');
-  project.querySelector(".studio-save-goal").onclick = () => updateStudioData({ ...studio, goal: $("studioGoalInput").value });
-  project.querySelectorAll("[data-milestone-id]").forEach(input => { input.onchange = () => updateStudioData({ ...studio, milestones: milestones.map(item => item.id === input.dataset.milestoneId ? { ...item, done: input.checked } : item) }); });
-  $("studioAddMilestone").onsubmit = event => { event.preventDefault(); const text = $("studioMilestoneText").value.trim(); if (milestones.length >= 12) return toast("A Studio can hold up to 12 milestones"); if (text) updateStudioData({ ...studio, milestones: [...milestones, { text, done: false }] }); };
+    (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '') + '</div>';
+  project.dataset.studioSessionId = state.session.id;
+  const railScroll = project.querySelector(".studio-rail-scroll");
+  if (railScroll && previousScrollTop) railScroll.scrollTop = previousScrollTop;
+  const latestStudio = () => state.session?.studio || studio;
+  project.querySelector(".studio-save-goal").onclick = () => updateStudioData({ ...latestStudio(), goal: $("studioGoalInput").value });
+  project.querySelectorAll("[data-milestone-id]").forEach(input => { input.onchange = () => { const current = latestStudio(); updateStudioData({ ...current, milestones: current.milestones.map(item => item.id === input.dataset.milestoneId ? { ...item, done: input.checked } : item) }); }; });
+  project.querySelectorAll("[data-move-milestone]").forEach(button => { button.onclick = () => { const current = latestStudio(), items = [...current.milestones], index = items.findIndex(item => item.id === button.dataset.moveMilestone), next = index + (button.dataset.direction === "up" ? -1 : 1); if (index < 0 || next < 0 || next >= items.length) return; [items[index], items[next]] = [items[next], items[index]]; updateStudioData({ ...current, milestones: items }); }; });
+  project.querySelectorAll("[data-edit-milestone]").forEach(button => { button.onclick = () => { const row = button.closest("[data-milestone-row]"); row.classList.add("editing"); row.querySelector(".studio-milestone-check").hidden = true; row.querySelector(".studio-milestone-actions").hidden = true; row.querySelector(".studio-milestone-editor").hidden = false; row.querySelector(".studio-milestone-editor input").focus(); row.querySelector(".studio-milestone-editor input").select(); }; });
+  project.querySelectorAll("[data-remove-milestone]").forEach(button => { button.onclick = () => { const current = latestStudio(), item = current.milestones.find(value => value.id === button.dataset.removeMilestone); if (!item || !window.confirm('Remove milestone “' + item.text + '”?')) return; updateStudioData({ ...current, milestones: current.milestones.filter(value => value.id !== item.id) }); }; });
+  project.querySelectorAll(".studio-milestone-editor").forEach(form => { form.onsubmit = event => { event.preventDefault(); const current = latestStudio(), id = form.dataset.editorFor, text = form.querySelector("input").value.trim(); if (!text) return; updateStudioData({ ...current, milestones: current.milestones.map(item => item.id === id ? { ...item, text } : item) }); }; });
+  project.querySelectorAll("[data-cancel-milestone]").forEach(button => { button.onclick = () => renderStudioProject(); });
+  $("studioAddMilestone").onsubmit = event => { event.preventDefault(); const current = latestStudio(), text = $("studioMilestoneText").value.trim(); if (current.milestones.length >= 12) return toast("A Studio can hold up to 12 milestones"); if (text) updateStudioData({ ...current, milestones: [...current.milestones, { text, done: false }] }); };
   project.querySelectorAll("[data-studio-action]").forEach(button => { button.onclick = () => {
-    const phase = STUDIO_PHASES[button.dataset.studioAction];
-    setMode(phase.mode); $("input").value = phase.prompt + " Project: " + state.session.title + ". Goal: " + (studio.goal || "not written yet");
+    const action = button.dataset.studioAction;
+    const phase = STUDIO_PHASES[action];
+    const prompt = action === "explain"
+      ? "Explain this Studio project brief and each milestone in plain language. Say why each milestone matters, what a good completed result looks like, and how the milestones connect. Do not change the board."
+      : phase.prompt + " Project: " + state.session.title + ". Goal: " + (latestStudio().goal || "not written yet");
+    setMode(phase?.mode || "ask"); $("input").value = prompt;
     autosize(); $("input").focus();
   }; });
   if (["site", "app"].includes(studio.track)) {
@@ -447,7 +469,7 @@ function renderStudioProject() {
       event.preventDefault();
       const nextPath = $("studioPreviewPath").value.trim().replace(/^\/+/, "");
       if (!nextPath) return;
-      updateStudioData({ ...studio, previewPath: nextPath });
+      updateStudioData({ ...latestStudio(), previewPath: nextPath });
     };
     $("studioPreviewReload").onclick = () => {
       const frame = $("studioPreviewFrame");
@@ -469,12 +491,30 @@ function renderStudioProject() {
 }
 async function updateStudioData(studio) {
   if (!state.session || state.surface !== "studios") return;
-  try {
-    const data = await api("/api/studios/projects/" + encodeURIComponent(state.session.id), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studio }) });
-    state.session = data.session;
-    renderStudioProject();
-    loadSessions();
-  } catch (error) { toast("Could not save project: " + error.message); renderStudioProject(); }
+  const sessionId = state.session.id;
+  const snapshot = JSON.parse(JSON.stringify(studio));
+  const revision = (studioSaveRevision.get(sessionId) || 0) + 1;
+  studioSaveRevision.set(sessionId, revision);
+  state.session = { ...state.session, studio: snapshot };
+  renderStudioProject();
+  studioSaveChain = studioSaveChain.catch(() => {}).then(async () => {
+    try {
+      const data = await api("/api/studios/projects/" + encodeURIComponent(sessionId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studio: snapshot }) });
+      studioLastSaved.set(sessionId, JSON.parse(JSON.stringify(data.session.studio)));
+      if (state.session?.id === sessionId && revision === studioSaveRevision.get(sessionId)) {
+        state.session = data.session;
+        renderStudioProject();
+      }
+      loadSessions();
+    } catch (error) {
+      if (state.session?.id === sessionId && revision === studioSaveRevision.get(sessionId)) {
+        state.session = { ...state.session, studio: JSON.parse(JSON.stringify(studioLastSaved.get(sessionId) || {})) };
+        renderStudioProject();
+        toast("Could not save project: " + error.message);
+      }
+    }
+  });
+  return studioSaveChain;
 }
 function openStudios(navigate = true) {
   state.session = null;
@@ -1263,6 +1303,18 @@ function renderWalletCreated(wallet) {
   return el;
 }
 
+function renderStudioBoardUpdateCard(result) {
+  const studio = result?.studio || {};
+  const milestones = Array.isArray(studio.milestones) ? studio.milestones : [];
+  const completed = milestones.filter(item => item.done).length;
+  const el = document.createElement("div");
+  el.className = "studio-board-update-card";
+  el.innerHTML = '<div class="studio-board-update-icon">✓</div><div class="studio-board-update-copy"><strong>Studio board updated</strong><small>' + esc(result?.title || "Project") + ' · ' + completed + ' of ' + milestones.length + ' milestones complete</small>' +
+    (milestones.length ? '<ul>' + milestones.slice(0, 4).map(item => '<li>' + (item.done ? '<span class="studio-board-done">✓</span> ' : '') + esc(item.text) + '</li>').join("") + (milestones.length > 4 ? '<li class="studio-board-more">+' + (milestones.length - 4) + ' more</li>' : '') + '</ul>' : '') +
+    '<span class="studio-board-local">Saved to this local Studio</span></div>';
+  return el;
+}
+
 /* ---------- live agent row (SSE streaming) ---------- */
 function createAgentRow() {
   const el = document.createElement("div");
@@ -1342,6 +1394,13 @@ function createAgentRow() {
     completeTool(ev) {
       const block = live.get(ev.id);
       if (block && block.querySelector(".tool-state")?.classList.contains("wait")) completeToolBlock(block, ev);
+      if (ev.name === "update_studio_board" && !ev.failed && ev.output?.studio && state.surface === "studios") {
+        state.session = { ...state.session, title: ev.output.title || state.session?.title, studio: ev.output.studio };
+        studioLastSaved.set(state.session.id, JSON.parse(JSON.stringify(ev.output.studio)));
+        renderStudioProject();
+        el.querySelector(".tools").appendChild(renderStudioBoardUpdateCard(ev.output));
+        loadSessions();
+      }
       if (ev.name === "list_sol_faucets" && !ev.failed && Array.isArray(ev.output?.sources)) el.querySelector(".tools").appendChild(renderSolFaucetCard(ev.output));
       this.setStatus("Thinking…");
     },

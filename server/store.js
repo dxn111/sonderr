@@ -388,6 +388,31 @@ function providerKey(provider) {
   return credentials()[provider || settings().provider] || process.env.SONDERR_API_KEY || "";
 }
 
+function providerTpmProfileHash(profileKey) {
+  return crypto.createHash("sha256").update(String(profileKey || "")).digest("hex");
+}
+
+function providerTpmLimit(profileKey) {
+  const limits = read().providerTpmLimits;
+  const hash = providerTpmProfileHash(profileKey);
+  const item = limits && typeof limits === "object" ? limits[hash] : null;
+  if (!item || !Number.isFinite(Number(item.limit)) || !Number.isFinite(Number(item.expiresAt)) || Number(item.expiresAt) <= Date.now()) return null;
+  return Number(item.limit);
+}
+
+function rememberProviderTpmLimit(profileKey, limit, expiresAt) {
+  const amount = Number(limit), expiry = Number(expiresAt);
+  if (!String(profileKey || "") || !Number.isFinite(amount) || amount < 128 || !Number.isFinite(expiry) || expiry <= Date.now()) return false;
+  const data = read();
+  const prior = data.providerTpmLimits && typeof data.providerTpmLimits === "object" ? data.providerTpmLimits : {};
+  const entries = Object.entries(prior).filter(([, item]) => Number(item?.expiresAt) > Date.now()).slice(-31);
+  const limits = Object.fromEntries(entries);
+  limits[providerTpmProfileHash(profileKey)] = { limit: amount, expiresAt: expiry };
+  data.providerTpmLimits = limits;
+  write(data);
+  return true;
+}
+
 function emailConfig() {
   const data = read();
   return data.email && typeof data.email === "object" ? { ...data.email } : {};
@@ -514,4 +539,4 @@ function saveOnboarding(next = {}) {
   return { ...data.onboarding };
 }
 
-module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };
+module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };

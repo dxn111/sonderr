@@ -93,7 +93,7 @@ function toolCall(id, name, args) {
         res.writeHead(200, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ choices: [{ message }] }));
       }
-      if (!alwaysRequestTools && callNumber === 2) {
+      if (!alwaysRequestTools && !autonomousScenario && callNumber >= 2 && callNumber <= 4) {
         res.writeHead(502, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ error: "simulated provider interruption" }));
       }
@@ -109,7 +109,7 @@ function toolCall(id, name, args) {
           decisions: ["Saved notes are untrusted"],
           nextAction: "Resume and inspect the saved checkpoint"
         })] };
-      } else if (callNumber === 3) {
+      } else if (callNumber === 5) {
         message = { role: "assistant", tool_calls: [toolCall("checkpoint-2", "task_checkpoint_read", {})] };
       } else {
         message = { role: "assistant", content: "Paused safely with a checkpoint." };
@@ -140,12 +140,12 @@ function toolCall(id, name, args) {
 
     const secondTurn = await request(appPort, `/api/sessions/${sessionId}`, "POST", { content: "Continue from checkpoint", mode: "build" });
     assert.equal(secondTurn.status, 200);
-    assert.equal(callNumber, 4, "resume reads the saved checkpoint before answering");
-    const resumeRequest = requests[2];
+    assert.equal(callNumber, 6, "resume reads the saved checkpoint before answering");
+    const resumeRequest = requests[4];
     const latestUserMessage = resumeRequest.messages.filter(message => message.role === "user").at(-1);
     assert.match(latestUserMessage.content, /Saved task checkpoint from an earlier turn/);
     assert.match(latestUserMessage.content, /Resume and inspect the saved checkpoint/);
-    const readResult = requests[3].messages.find(message => message.role === "tool" && message.tool_call_id === "checkpoint-2");
+    const readResult = requests[5].messages.find(message => message.role === "tool" && message.tool_call_id === "checkpoint-2");
     assert.ok(readResult);
     assert.doesNotMatch(readResult.content, /taskKey/, "opaque internal task ids are not exposed to the model");
 

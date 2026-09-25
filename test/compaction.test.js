@@ -7,7 +7,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const { compactConversation, sizeOf } = require("../server/compaction");
-const { parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, requestMaxTokens, isSmallDirectRequest, selectToolsForRequest } = require("../server/provider");
+const { parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, readCompletionResponse, maxTokensWithinTpm, requestMaxTokens, isSmallDirectRequest, selectToolsForRequest } = require("../server/provider");
 
 const longTranscript = [
   { role: "user", content: "Old unrelated request" },
@@ -64,6 +64,8 @@ assert.deepEqual(tpm, { limit: 8000, requested: 15794 });
 assert.equal(parseTpmLimitError("context length exceeded"), null);
 assert.equal(parseTpmRetryAfter("Rate limit reached on tokens per minute (TPM): try again in 23.55s"), 23.55);
 assert.equal(parseTpmRetryAfter("generic rate limit; retry in 23s"), null, "non-TPM 429 errors are not treated as a minute-window cooldown");
+assert.equal(parseProviderRetryAfter("Too many requests; retry in 4 seconds"), 4, "generic provider rate limits parse a retry window");
+assert.equal(parseProviderRetryAfter("", "3"), 3, "Retry-After delta seconds are honored");
 assert.equal(maxTokensWithinTpm({ limit: 8000, inputTokens: 7602, currentMaxTokens: 8192 }), 270);
 assert.equal(maxTokensWithinTpm({ limit: 8000, inputTokens: 7900, currentMaxTokens: 8192 }), null);
 assert.equal(requestMaxTokens({ mode: "ask", userText: "hello", configuredMaxTokens: 8192 }), 192, "greetings avoid spending a large output allowance");
@@ -147,6 +149,8 @@ assert.ok(!faucetTools.includes("get_wallet_price") && !faucetTools.includes("pr
 assert.equal(selectToolsForRequest("ask", "Hello there").length, 0, "unrelated greetings do not receive web or shell tools");
 
 (async () => {
+  await assert.rejects(readCompletionResponse(new Response("<html>gateway error</html>", { status: 502 })), /unreadable response \(HTTP 502\)/);
+  await assert.rejects(readCompletionResponse(new Response(JSON.stringify({ choices: [] }), { status: 200 })), /no completion choices/);
   const requestBudgets = [];
   const requestBodies = [];
   const mockProvider = http.createServer((req, res) => {
@@ -202,6 +206,38 @@ assert.equal(selectToolsForRequest("ask", "Hello there").length, 0, "unrelated g
   } finally {
     await new Promise(resolve => mockProvider.close(resolve));
     fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+
+  let genericRateLimitCalls = 0;
+  const genericRateLimitProvider = http.createServer((_req, res) => {
+    genericRateLimitCalls++;
+    if (genericRateLimitCalls === 1) {
+      res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "0.01" });
+      res.end(JSON.stringify({ error: { message: "Too many requests" } }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "Recovered after generic rate limit." }, finish_reason: "stop" }] }));
+  });
+  const genericRateLimitHome = fs.mkdtempSync(path.join(os.tmpdir(), "sonderr-provider-ratelimit-"));
+  try {
+    await new Promise(resolve => genericRateLimitProvider.listen(0, "127.0.0.1", resolve));
+    const port = genericRateLimitProvider.address().port;
+    const childCode = `require("./server/provider").generate({messages:[{role:"user",content:"hello"}],system:"",tools:[]}).then(r=>{if(!r.ok||r.content!=="Recovered after generic rate limit.")throw Error("generic 429 retry failed")}).catch(e=>{console.error(e);process.exitCode=1})`;
+    const child = spawn(process.execPath, ["-e", childCode], {
+      cwd: path.resolve(__dirname, ".."),
+      env: { ...process.env, HOME: genericRateLimitHome, SONDERR_PROVIDER: "custom", SONDERR_MODEL: "test-model", SONDERR_API_BASE_URL: `http://127.0.0.1:${port}/v1`, SONDERR_API_KEY: "test-only" },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "", stderr = "";
+    child.stdout.setEncoding("utf8").on("data", chunk => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", chunk => { stderr += chunk; });
+    const exitCode = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });
+    assert.equal(exitCode, 0, stderr || stdout);
+    assert.equal(genericRateLimitCalls, 2, "generic HTTP 429 honors Retry-After and safely retries once");
+  } finally {
+    await new Promise(resolve => genericRateLimitProvider.close(resolve));
+    fs.rmSync(genericRateLimitHome, { recursive: true, force: true });
   }
 
   const skillRequests = [];
