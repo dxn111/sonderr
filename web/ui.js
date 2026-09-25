@@ -1767,7 +1767,7 @@ function renderSettings() {
         <h2>About</h2>
         <p class="panel-sub">Sonderr is a privacy-first local AI workspace with optional Web3 capabilities. The terminal only launches it — the browser is the product.</p>
         <div class="about-rows">
-          <div class="about-row"><span>Version</span><b>1.5.2</b></div>
+          <div class="about-row"><span>Version</span><b>1.5.4</b></div>
           <div class="about-row"><span>Workspace</span><b title="${esc(state.workspace)}">${esc(state.workspace || "—")}</b></div>
           <div class="about-row"><span>Runtime</span><b>Node ${esc(state.nodeVersion || "")} · localhost</b></div>
           <div class="about-row"><span>API status</span><b>${state.apiConfigured ? "Connected" : "Not configured"}</b></div>

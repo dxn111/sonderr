@@ -1,4 +1,4 @@
-# SONDERR v1.5.2
+# SONDERR v1.5.4
 
 ![Sonderr 1.5 banner](https://github.com/user-attachments/assets/ef409eb2-a776-4a4b-a9bc-4413ab47a0e0)
 
@@ -39,7 +39,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.2 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.4 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -200,7 +200,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.2 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.4 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening
@@ -210,11 +210,13 @@ Sonderr v1.5.2 provides a localhost engineering workspace with these capabilitie
 - present_file artifact cards with the Claude-style side preview panel (markdown / code / JSON / CSV / images)
 - device uploads (20 MB, sandboxed) plus clipboard paste and drag & drop
 - Vision mode: image Q&A over vision-capable models + edit_image generation/editing
-- 61 handwritten backend skill playbooks with up to two relevant skills auto-attached per task
+- 61 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
 - persistent task lists and resumable active-work quality budgets for multi-stage tasks
 - workspace analysis, bounded source reading, exact file patching, and controlled project checks
 - a long-running task workflow that checkpoints progress and resumes from verified workspace state
 - system prompt with explicit tool contracts, untrusted-content handling, privacy boundaries, and honest verification rules
+- token-aware Ask mode: short standalone questions use a compact prompt, no tool catalog, and no unrelated chat history; workspace, wallet, MCP, and other tool-backed requests receive only relevant Ask tools
+- provider TPM recovery: compact long context when needed, reduce output budgets, and honor a provider's timed token-rate cooldowns before retrying
 - Sonderr branding, clean AI-harness-style UI
 
 ## License

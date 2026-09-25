@@ -4,9 +4,8 @@
 //   id, name, category, icon, triggers (comma separated), summary
 //   ---
 //   body = the full instructions injected into the prompt when the skill is active.
-// Skills are NOT a user-facing toggle: the harness auto-attaches relevant ones
-// from the user's message, and the model can pull any of them on demand via
-// the load_skill tool. Drop a new .md file in the folder and it just works.
+// Skills are NOT a user-facing toggle: the harness selects tiny metadata-only
+// candidates, then the model loads full instructions on demand via tools.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -71,7 +70,14 @@ function directory() {
   }).join("\n");
 }
 
-/** Instructions block for skills auto-attached to a task. */
+/** Small metadata-only recommendations; full instructions require load(). */
+function recommendations(ids) {
+  return (ids || []).map(get).filter(Boolean)
+    .map(s => `- ${s.id} — ${s.name} (${s.category}): ${s.summary}`)
+    .join("\n");
+}
+
+/** Instructions block for callers that explicitly request eager attachment. */
 function promptBlock(ids) {
   const picked = (ids || []).map(get).filter(Boolean);
   if (!picked.length) return "";
@@ -130,4 +136,4 @@ function validateCatalog(items = SKILLS) {
   return errors;
 }
 
-module.exports = { all, get, has, load, directory, promptBlock, forTask, availableIds, validateCatalog, MAX_AUTO_ATTACH };
+module.exports = { all, get, has, load, directory, recommendations, promptBlock, forTask, availableIds, validateCatalog, MAX_AUTO_ATTACH };
