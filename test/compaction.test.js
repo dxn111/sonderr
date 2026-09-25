@@ -147,6 +147,7 @@ const faucetTools = selectToolsForRequest("ask", "claim solana main net faucets"
 assert.ok(faucetTools.includes("get_wallet_status"), "a mainnet claim can check the exact Solana receive address when needed");
 assert.ok(!faucetTools.includes("get_wallet_price") && !faucetTools.includes("prepare_wallet_transaction"), "faucet research does not receive unrelated wallet-price or spending tools");
 assert.equal(selectToolsForRequest("ask", "Hello there").length, 0, "unrelated greetings do not receive web or shell tools");
+assert.ok(selectToolsForRequest("ask", "Check my Solana main net balance").some(tool => tool.function.name === "get_wallet_status"), "spaced Mainnet phrasing exposes the network-specific live balance tool");
 
 (async () => {
   await assert.rejects(readCompletionResponse(new Response("<html>gateway error</html>", { status: 502 })), /unreadable response \(HTTP 502\)/);

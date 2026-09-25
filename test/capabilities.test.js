@@ -88,6 +88,7 @@ assert.match(appSource, /faucet-claim for specific faucet research\/claims/);
 assert.match(appSource, /no general browser-driving or faucet_claim tool/);
 assert.match(appSource, /including obvious misspellings such as "websearcj"/);
 assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainnet support/);
+assert.match(appSource, /A successful get_wallet_status\/get_wallet_accounts tool result or visible balance card is a real read-only RPC response/);
 const packageVersion = JSON.parse(fs.readFileSync(require.resolve("../package.json"), "utf8")).version;
 assert.match(appSource, new RegExp(`version:"${packageVersion.replace(/\./g, "\\.")}"`));
 assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);

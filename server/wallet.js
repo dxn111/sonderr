@@ -66,12 +66,12 @@ function networkCatalog(chain) { return Object.values(BUILT_IN_NETWORKS[chainOf(
 function inferNetworkFromText(text, chainHint, requestedNetwork) {
   const source = String(text || "").toLowerCase(), candidates = new Set();
   if (/\bbase\s*(?:sepolia|testnet)\b/.test(source)) candidates.add("base-sepolia");
-  else if (/\b(?:base\s+(?:mainnet|chain|network|balance|wallet)|on\s+base)\b/.test(source)) candidates.add("base-mainnet");
+  else if (/\b(?:base\s+(?:main[\s-]?net|chain|network|balance|wallet)|on\s+base)\b/.test(source)) candidates.add("base-mainnet");
   if (/\b(?:ethereum|eth)\s*(?:sepolia|testnet)\b/.test(source)) candidates.add("sepolia");
-  else if (/\b(?:ethereum|eth)\s+mainnet\b/.test(source)) candidates.add("ethereum-mainnet");
+  else if (/\b(?:ethereum|eth)\s+main[\s-]?net\b/.test(source)) candidates.add("ethereum-mainnet");
   if (/\bsolana\s+devnet\b|\bdevnet\s+solana\b/.test(source)) candidates.add("solana-devnet");
   else if (/\bsolana\s+testnet\b|\btestnet\s+solana\b/.test(source)) candidates.add("solana-testnet");
-  else if (/\bsolana\s+mainnet(?:-beta)?\b/.test(source)) candidates.add("solana-mainnet");
+  else if (/\bsolana\s+main[\s-]?net(?:[\s-]?beta)?\b/.test(source)) candidates.add("solana-mainnet");
   if (/\bsepolia\b/.test(source) && !/\bbase\s*(?:sepolia|testnet)\b/.test(source)) candidates.add("sepolia");
   if (/\bdevnet\b/.test(source)) candidates.add("solana-devnet");
   if (/\btestnet\b/.test(source) && !/\b(?:solana|ethereum|eth|base)\s*(?:testnet|sepolia)\b/.test(source) && !/\b(?:testnet)\s+(?:solana|ethereum|eth)\b/.test(source)) {
@@ -79,7 +79,7 @@ function inferNetworkFromText(text, chainHint, requestedNetwork) {
     if (family === "solana") candidates.add("solana-testnet");
     else throw new Error("Which testnet do you mean: Solana Testnet, Base Sepolia, or Ethereum Sepolia?");
   }
-  if (/\bmainnet\b/.test(source) && ![...candidates].some(id => id.endsWith("mainnet"))) {
+  if (/\bmain[\s-]?net\b/.test(source) && ![...candidates].some(id => id.endsWith("mainnet"))) {
     const family = chainHint ? chainOf(chainHint) : null;
     if (family === "solana") candidates.add("solana-mainnet");
     else throw new Error("Which mainnet do you mean: Solana, Base, or Ethereum?");

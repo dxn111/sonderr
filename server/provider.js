@@ -262,11 +262,11 @@ function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
     if (/\b(?:run|execute|terminal|command|test|tests|check|build)\b/.test(text)) add(["run_project_checks"]);
     if (mode !== "plan" && /\b(?:edit|change|fix|write|create|update|patch|replace)\b/.test(text)) add(["write_workspace_file", "patch_workspace_file"]);
   }
-  const walletIntent = !faucetIntent && /\b(?:wallet|receive address|wallet address|crypto balance|token balance|portfolio|holdings|wallet value|wallet activity|wallet history|wallet watch|incoming funds|token contract|token mint|token price|coin price|gas fee|transaction|swap|trade|allowance)\b|\b(?:my|our)\s+(?:sol|solana|eth|ethereum|base|usdt|usdc)\s+(?:balance|address|wallet)\b|\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b.{0,28}\bprice\b|\bprice\b.{0,28}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b|\b(?:send|transfer|swap|trade|buy|sell|exchange)\b.{0,50}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|token|coin|crypto|wallet)\b/i.test(text);
+  const walletIntent = !faucetIntent && (/\b(?:wallet|receive address|wallet address|crypto balance|token balance|portfolio|holdings|wallet value|wallet activity|wallet history|wallet watch|incoming funds|token contract|token mint|token price|coin price|gas fee|transaction|swap|trade|allowance)\b|\b(?:my|our)\s+(?:sol|solana|eth|ethereum|base|usdt|usdc)\s+(?:balance|address|wallet)\b|\b(?:solana|ethereum|eth|base)\b.{0,40}\b(?:main[\s-]?net|devnet|testnet|sepolia)\b.{0,30}\b(?:balance|wallet|funds|address)\b|\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b.{0,28}\bprice\b|\bprice\b.{0,28}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b|\b(?:send|transfer|swap|trade|buy|sell|exchange)\b.{0,50}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|token|coin|crypto|wallet)\b/i.test(text));
   if (walletIntent) {
     // Keep schemas task-shaped. Sending eight wallet tools on every crypto
     // question wastes TPM and makes unrelated tool calls more likely.
-    const namedNetwork = /\b(?:mainnet|devnet|testnet|sepolia|base|ethereum|solana)\b/i.test(text);
+    const namedNetwork = /\b(?:main[\s-]?net|devnet|testnet|sepolia|base|ethereum|solana)\b/i.test(text);
     const asksAddresses = /\b(?:address|addresses|receive|account|accounts|all networks)\b/i.test(text);
     const asksHoldings = /\b(?:portfolio|holdings|total value|wallet value|worth|value of|how much.*(?:wallet|portfolio)|performance|gone up|change since)\b/i.test(text);
     const asksBalance = /\b(?:balance|balances|funds)\b/i.test(text);
@@ -471,7 +471,7 @@ const TOOL_DEFINITIONS = [
   } },
   { type:"function", function:{
     name:"get_wallet_status",
-    description:"Read the public wallet address, chain, block/slot, and native balance for one network. Infer and pass its exact network ID from the user's current message (for example Solana Devnet or Ethereum Sepolia); the user does not need to change Settings. If no specific network was named and they asked for their overall wallet/balance, call get_wallet_accounts instead of guessing. This is read-only and never exposes or requests a private key or seed phrase.",
+    description:"Read the public wallet address, chain, block/slot, and native balance for one network. Infer and pass its exact network ID from the user's current message (treat ‘main net’ and ‘mainnet’ as the same phrase; likewise devnet/testnet); the user does not need to change Settings. If no specific network was named and they asked for their overall wallet/balance, call get_wallet_accounts instead of guessing. A returned status/card is a live RPC result for that exact network, not a sample. Never contradict a successful wallet result by claiming no live wallet tools are available. This is read-only and never exposes or requests a private key or seed phrase.",
     parameters:{ type:"object", properties:{ chain:{ type:"string", enum:["evm","solana"], description:"Optional EVM or Solana wallet family" }, network:{ type:"string", enum:WALLET_NETWORK_IDS, description:"Optional exact network ID; EVM address is shared across EVM networks and Solana address across clusters" } } }
   } },
   { type:"function", function:{
