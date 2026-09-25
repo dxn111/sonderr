@@ -1106,6 +1106,7 @@ async function handleChat(req, res, sessionMatch) {
       }
     }
     const compaction = {
+      maxTokens: provider.requestMaxTokens({ mode, userText: content, configuredMaxTokens: provider.config().maxTokens, toolCount: requestTools.length }),
       anchorMessages: [
         ...session.messages.slice(0, -1).slice(-6).map(message => ({ role: message.role, content: message.content })),
         { role: "user", content: [content, context, checkpointContext, imagePaths.length ? `Attached image paths: ${imagePaths.map(file => path.relative(process.cwd(), file).split(path.sep).join("/")).join(", ")}` : ""].filter(Boolean).join("\n\n") }
@@ -1178,7 +1179,7 @@ async function handleChat(req, res, sessionMatch) {
       result = await provider.generate({
         system,
         messages: [...conversation, { role: "user", content: continuation }],
-        tools: provider.TOOL_DEFINITIONS,
+        tools: requestTools,
         compaction,
         executeTool: (name, input, emit) => executeWorkspaceTool(name, input, emit, { sessionId: session.id, qualityTaskKey, userText: content, taskMode: mode }),
         shouldStop: () => pauseRequestedSessions.has(activeSessionId),

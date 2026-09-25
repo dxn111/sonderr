@@ -7,7 +7,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const { compactConversation, sizeOf } = require("../server/compaction");
-const { parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, isSmallDirectRequest, selectToolsForRequest, TOOL_DEFINITIONS } = require("../server/provider");
+const { parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, requestMaxTokens, isSmallDirectRequest, selectToolsForRequest } = require("../server/provider");
 
 const longTranscript = [
   { role: "user", content: "Old unrelated request" },
@@ -66,6 +66,11 @@ assert.equal(parseTpmRetryAfter("Rate limit reached on tokens per minute (TPM): 
 assert.equal(parseTpmRetryAfter("generic rate limit; retry in 23s"), null, "non-TPM 429 errors are not treated as a minute-window cooldown");
 assert.equal(maxTokensWithinTpm({ limit: 8000, inputTokens: 7602, currentMaxTokens: 8192 }), 270);
 assert.equal(maxTokensWithinTpm({ limit: 8000, inputTokens: 7900, currentMaxTokens: 8192 }), null);
+assert.equal(requestMaxTokens({ mode: "ask", userText: "hello", configuredMaxTokens: 8192 }), 192, "greetings avoid spending a large output allowance");
+assert.equal(requestMaxTokens({ mode: "ask", userText: "What is a mutex?", configuredMaxTokens: 8192 }), 512, "small direct answers use a small reply allowance");
+assert.equal(requestMaxTokens({ mode: "ask", userText: "Explain this repo", configuredMaxTokens: 8192, toolCount: 8 }), 1536, "tool-backed Ask requests get enough room without an oversized default");
+assert.equal(requestMaxTokens({ mode: "ask", userText: "Write a comprehensive full report", configuredMaxTokens: 8192 }), 8192, "explicitly long answers keep the configured output room");
+assert.equal(requestMaxTokens({ mode: "build", userText: "Implement this feature", configuredMaxTokens: 8192 }), 4096);
 assert.equal(isSmallDirectRequest("ask", "hello"), true, "greetings use the low-context path");
 assert.equal(isSmallDirectRequest("ask", "What is a mutex?"), true, "small general questions use the low-context path");
 assert.equal(isSmallDirectRequest("ask", "What is the current price of SOL?"), false, "current facts keep provider tools and normal context");
@@ -82,7 +87,14 @@ assert.ok(!walletAskTools.some(name => name.startsWith("prepare_wallet")), "read
 const walletSendTools = selectToolsForRequest("ask", "Send 0.1 ETH to this address").map(tool => tool.function.name);
 assert.ok(walletSendTools.includes("prepare_wallet_transaction"));
 assert.equal(selectToolsForRequest("ask", "How does email work?").length, 0, "general questions do not receive action tools");
-assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.length, "Build mode retains the complete tool set");
+const buildTools = selectToolsForRequest("build", "Implement and test this feature").map(tool => tool.function.name);
+assert.ok(buildTools.includes("write_workspace_file"), "Build keeps core workspace editing tools available");
+assert.ok(buildTools.includes("task_checkpoint_write"), "Build keeps long-running task checkpointing available");
+assert.ok(buildTools.includes("run_project_checks"), "verification requests receive verification tools");
+assert.ok(!buildTools.includes("send_email") && !buildTools.includes("call_mcp_tool"), "unrelated integrations are excluded from ordinary Build requests");
+assert.ok(buildTools.length < 24, "ordinary Build prompts send a focused schema set, not the full tool catalog");
+const planTools = selectToolsForRequest("plan", "Plan a wallet transfer and email notification").map(tool => tool.function.name);
+assert.ok(!planTools.some(name => /prepare_wallet|send_email|write_workspace|run_terminal|call_mcp|connect_mcp|add_mcp|task_checkpoint_write/.test(name)), "Plan mode never receives write, send, connect, or transaction-preparation tools");
 
 (async () => {
   const requestBudgets = [];
@@ -114,7 +126,7 @@ assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.le
   try {
     await new Promise(resolve => mockProvider.listen(0, "127.0.0.1", resolve));
     const port = mockProvider.address().port;
-    const childCode = `require("./server/provider").generate({messages:[{role:"user",content:"hello"}],system:"long system context ".repeat(2000),tools:[{type:"function",function:{name:"test_tool",description:"A detailed tool description. ".repeat(100),parameters:{type:"object",properties:{path:{type:"string",description:"A detailed path description. ".repeat(100)}}}}}],compaction:{anchorMessages:[{role:"user",content:"Keep the original task intact."}]}}).then(r=>{if(!r.ok||r.content!=="Recovered after TPM adjustment.")process.exitCode=1;else console.log("provider retry passed")}).catch(e=>{console.error(e);process.exitCode=1})`;
+    const childCode = `const p=require("./server/provider");const base={messages:[{role:"user",content:"hello"}],system:"long system context ".repeat(2000),tools:[{type:"function",function:{name:"test_tool",description:"A detailed tool description. ".repeat(100),parameters:{type:"object",properties:{path:{type:"string",description:"A detailed path description. ".repeat(100)}}}}}]};p.generate({...base,compaction:{anchorMessages:[{role:"user",content:"Keep the original task intact."}]}}).then(async r=>{if(!r.ok||r.content!=="Recovered after TPM adjustment.")throw Error("first recovery failed");const next=await p.generate({...base,compaction:{anchorMessages:[{role:"user",content:"Keep the original task intact."}]}});if(!next.ok||next.content!=="Recovered after TPM adjustment.")throw Error("learned-limit request failed");console.log("provider retry and learned TPM preflight passed")}).catch(e=>{console.error(e);process.exitCode=1})`;
     const child = spawn(process.execPath, ["-e", childCode], {
       cwd: path.resolve(__dirname, ".."),
       env: { ...process.env, HOME: tempHome, SONDERR_PROVIDER: "custom", SONDERR_MODEL: "test-model", SONDERR_API_BASE_URL: `http://127.0.0.1:${port}/v1`, SONDERR_API_KEY: "test-only" },
@@ -128,7 +140,7 @@ assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.le
       child.once("close", resolve);
     });
     assert.equal(exitCode, 0, stderr || stdout);
-    assert.equal(requestBudgets.length, 5, "timed TPM cooldown and bounded compaction stages run before recovery");
+    assert.equal(requestBudgets.length, 6, "timed TPM cooldown, bounded compaction, and proactive follow-up run as expected");
     assert.equal(requestBudgets[0], 8192);
     assert.equal(requestBudgets[1], 8192, "timed cooldown retries without changing the request");
     assert.equal(requestBudgets[2], 270, "413 retry reduces output to fit the reported estimate");
@@ -136,6 +148,7 @@ assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.le
     assert.equal(requestBudgets[4], 128);
     assert.ok(requestBodies[4].messages[0].content.length < requestBodies[0].messages[0].content.length, "emergency retry reduces the full system prompt");
     assert.ok(requestBodies[4].tools[0].function.description.length < requestBodies[0].tools[0].function.description.length, "emergency retry compacts tool descriptions but preserves schemas");
+    assert.ok(requestBudgets[5] < 8192, "the next request applies the provider limit learned from the earlier rejection");
   } finally {
     await new Promise(resolve => mockProvider.close(resolve));
     fs.rmSync(tempHome, { recursive: true, force: true });

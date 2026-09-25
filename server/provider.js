@@ -4,6 +4,11 @@ const path = require("node:path");
 const safety = require("./safety");
 const { compactConversation, DEFAULT_MAX_CHARS: DEFAULT_CONTEXT_CHARS } = require("./compaction");
 
+// Remember provider-reported TPM ceilings for this running local process so
+// later turns can right-size themselves before burning a request on a 413.
+const learnedTpmLimits = new Map();
+const TPM_LIMIT_TTL_MS = 15 * 60 * 1000;
+
 const PROVIDERS = {
   local: { label: "Not configured", baseURL: "", model: "" },
   openai: { label: "OpenAI / ChatGPT", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini" },
@@ -120,6 +125,40 @@ function maxTokensWithinTpm({ limit, inputTokens, currentMaxTokens, safetyMargin
   return Number.isFinite(next) && next >= 128 ? next : null;
 }
 
+function requestMaxTokens({ mode, userText, configuredMaxTokens = 8192, toolCount = 0 } = {}) {
+  const configured = Math.max(128, Number(configuredMaxTokens) || 8192);
+  const text = String(userText || "");
+  const longOutput = /\b(?:comprehensive|very detailed|in depth|in-depth|long form|long-form|full report|full essay|complete source|paste the full|full code in chat|write a book)\b/i.test(text);
+  if (longOutput) return configured;
+  if (mode === "ask") {
+    if (isSmallDirectRequest("ask", text)) return /^(?:hi|hey|hello|yo|thanks|thank you|thx|good morning|good afternoon|good evening|what's up|sup|lol|haha)\b/i.test(text.trim()) ? Math.min(configured, 192) : Math.min(configured, 512);
+    if (toolCount > 0) return Math.min(configured, 1_536);
+    return Math.min(configured, 1_024);
+  }
+  if (mode === "plan") return Math.min(configured, 2_048);
+  if (mode === "build") return Math.min(configured, 4_096);
+  if (mode === "vision") return Math.min(configured, 2_048);
+  return configured;
+}
+
+function tpmProfileKey(current) {
+  return [current?.provider || "", current?.baseURL || "", current?.model || ""].join("\n");
+}
+
+function rememberTpmLimit(current, limit) {
+  const value = Number(limit);
+  if (!Number.isFinite(value) || value < 128) return;
+  learnedTpmLimits.set(tpmProfileKey(current), { limit: value, expiresAt: Date.now() + TPM_LIMIT_TTL_MS });
+}
+
+function knownTpmLimit(current) {
+  const key = tpmProfileKey(current);
+  const remembered = learnedTpmLimits.get(key);
+  if (!remembered) return null;
+  if (remembered.expiresAt <= Date.now()) { learnedTpmLimits.delete(key); return null; }
+  return remembered.limit;
+}
+
 function estimateTokenCount(text) {
   // A conservative fallback for providers that return a TPM limit but not
   // their actual prompt-token count. Exact counts, when present in the error,
@@ -140,33 +179,57 @@ function isSmallDirectRequest(mode, userText) {
 
 function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
   const catalog = Array.isArray(tools) ? tools : [];
-  if (mode !== "ask") return catalog;
   const text = String(userText || "").toLowerCase();
   const selected = new Set();
   const add = names => names.forEach(name => selected.add(name));
 
+  if (mode === "build") {
+    add(["list_workspace_files", "read_workspace_file", "write_workspace_file", "search_workspace", "get_workspace_file_info", "analyze_workspace", "read_workspace_range", "patch_workspace_file", "git_diff", "get_git_status", "todo_write", "todo_read", "task_checkpoint_read", "task_checkpoint_write", "quality_checkpoint"]);
+  } else if (mode === "plan") {
+    add(["list_workspace_files", "read_workspace_file", "search_workspace", "get_workspace_file_info", "analyze_workspace", "read_workspace_range", "git_diff", "get_git_status", "todo_write"]);
+  } else if (mode !== "ask") return catalog;
+
   if (/\b(?:file|code|repo|repository|project|workspace|folder|directory|source|script|git|test|tests|debug|error|crash|stack trace|\.js|\.py|\.ts|\.html|\.css)\b|@\([^)]*\)|(?:^|\s)[\w./-]+\.(?:js|py|ts|html|css|json|md)\b/i.test(text)) {
     add(["list_workspace_files", "read_workspace_file", "search_workspace", "get_workspace_file_info", "analyze_workspace", "read_workspace_range", "get_git_status", "git_diff"]);
     if (/\b(?:run|execute|terminal|command|test|tests|check|build)\b/.test(text)) add(["run_project_checks"]);
-    if (/\b(?:edit|change|fix|write|create|update|patch|replace)\b/.test(text)) add(["write_workspace_file", "patch_workspace_file", "present_file"]);
+    if (mode !== "plan" && /\b(?:edit|change|fix|write|create|update|patch|replace)\b/.test(text)) add(["write_workspace_file", "patch_workspace_file"]);
   }
   if (/\b(?:wallet|crypto|cryptocurrency|token|coin|sol|solana|eth|ethereum|base|usdt|usdc|memecoin|memecoins|web3|blockchain|gas fee|transaction|balance|portfolio|swap|trade|price)\b/i.test(text)) {
     add(["get_wallet_accounts", "get_wallet_status", "get_wallet_price", "get_wallet_market_snapshot", "get_wallet_portfolio", "get_wallet_token_info", "get_wallet_activity", "get_wallet_watch"]);
     if (/\b(?:allowance|approval|approve)\b/.test(text)) add(["get_wallet_token_allowance"]);
-    if (/\b(?:watch|monitor|alert|notify)\b/.test(text)) add(["set_wallet_watch"]);
-    if (/\b(?:send|transfer|swap|trade|buy|sell|exchange)\b/.test(text)) add(["prepare_wallet_transaction", "prepare_wallet_swap"]);
-    if (/\b(?:create|new|make)\b.{0,24}\bwallet\b/.test(text)) add(["create_wallet"]);
+    if (mode !== "plan" && /\b(?:watch|monitor|alert|notify)\b/.test(text)) add(["set_wallet_watch"]);
+    if (mode !== "plan" && /\b(?:send|transfer|swap|trade|buy|sell|exchange)\b/.test(text)) add(["prepare_wallet_transaction", "prepare_wallet_swap"]);
+    if (mode !== "plan" && /\b(?:create|new|make)\b.{0,24}\bwallet\b/.test(text)) add(["create_wallet"]);
   }
   if (/\b(?:mcp|notion|gmail|google drive|slack|linear|server connection|connect.{0,16}(?:service|account|server))\b/i.test(text)) {
-    add(["list_mcp_servers", "add_mcp_server", "connect_mcp_server"]);
-    if (/\b(?:tool|tools|resource|resources|prompt|prompts|call|run)\b/.test(text)) add(["list_mcp_tools", "list_mcp_resources", "list_mcp_prompts", "read_mcp_resource", "get_mcp_prompt", "call_mcp_tool"]);
+    add(["list_mcp_servers"]);
+    if (mode !== "plan") add(["add_mcp_server", "connect_mcp_server"]);
+    if (/\b(?:tool|tools|resource|resources|prompt|prompts|call|run)\b/.test(text)) add(["list_mcp_tools", "list_mcp_resources", "list_mcp_prompts", "read_mcp_resource", "get_mcp_prompt"]);
+    if (mode !== "plan" && /\b(?:call|run)\b/.test(text)) add(["call_mcp_tool"]);
   }
-  if (/\b(?:send|draft|compose)\b.{0,40}\b(?:email|e-mail|message)\b|\b(?:email|e-mail)\b.{0,40}\b(?:send|draft|compose)\b/i.test(text)) add(["send_email"]);
+  if (mode !== "plan" && /\b(?:send|draft|compose)\b.{0,40}\b(?:email|e-mail|message)\b|\b(?:email|e-mail)\b.{0,40}\b(?:send|draft|compose)\b/i.test(text)) add(["send_email"]);
   if (/\b(?:resume|continue|checkpoint|todo|to-do|long.running task|task memory)\b/i.test(text)) {
     add(["todo_write", "todo_read", "task_checkpoint_read", "task_checkpoint_write", "task_memory_list", "task_memory_read", "task_memory_write", "quality_checkpoint"]);
   }
+  if (mode === "build" && /\b(?:long.running|multi.stage|multi.day|hours|substantial|complex|resume|checkpoint|task memory|u10|h4)\b/i.test(text)) {
+    add(["task_memory_list", "task_memory_read", "task_memory_write"]);
+  }
+  if (mode !== "plan" && /\b(?:file|download|export|artifact|save as|deliverable)\b/i.test(text)) add(["present_file"]);
+  if (mode !== "plan" && /\b(?:test|tests|verify|verification|lint|typecheck|npm run|build checks)\b/i.test(text)) add(["run_project_checks"]);
+  if (mode !== "plan" && /\b(?:terminal|shell|command line|run command|npm install|install dependencies)\b/i.test(text)) add(["run_terminal_command"]);
   if (/\b(?:skill|playbook)\b/i.test(text)) add(["load_skill"]);
-  return catalog.filter(tool => selected.has(tool.function?.name));
+  // Build gets a capable, task-oriented baseline, not every unrelated
+  // integration, wallet, email, and administration schema on every turn.
+  if (mode === "build" && /\b(?:skill|playbook)\b/i.test(text)) add(["load_skill", "unload_skill"]);
+  const planningReadOnly = new Set([
+    "list_workspace_files", "read_workspace_file", "search_workspace", "get_workspace_file_info",
+    "analyze_workspace", "read_workspace_range", "git_diff", "get_git_status", "todo_write",
+    "list_mcp_servers", "list_mcp_tools", "list_mcp_resources", "list_mcp_prompts",
+    "read_mcp_resource", "get_mcp_prompt", "get_wallet_accounts", "get_wallet_status",
+    "get_wallet_price", "get_wallet_market_snapshot", "get_wallet_portfolio", "get_wallet_token_info",
+    "get_wallet_activity", "get_wallet_token_allowance"
+  ]);
+  return catalog.filter(tool => selected.has(tool.function?.name) && (mode !== "plan" || planningReadOnly.has(tool.function?.name)));
 }
 
 function compactSystemForTpm() {
@@ -770,11 +833,38 @@ async function request({messages, system, probe=false}) {
     let compactLimit = 0;
     let attempt = 0;
     let tpmCooldownRetries = 0;
+    const learnedLimit = knownTpmLimit(current);
+    if (learnedLimit) {
+      emit("status", { text: `Using this provider’s recently observed ${learnedLimit.toLocaleString()} TPM ceiling to right-size the request before sending it.` });
+      let payload = payloadFor(chat, tokenBudget, compactLimit);
+      const margin = Math.max(128, Math.ceil(learnedLimit * 0.05));
+      const available = () => Math.floor(learnedLimit - Math.max(0, estimateTokenCount(payload) - tokenBudget) - margin);
+      if (available() < 128 && compaction) {
+        for (const target of [32_000, 16_000, 8_000, 4_000, 2_000]) {
+          compactLimit = target;
+          payload = payloadFor(chat, tokenBudget, compactLimit);
+          if (available() >= 128) break;
+        }
+      }
+      if (available() < 128) {
+        activeSystem = compactSystemForTpm();
+        activeTools = compactToolsForTpm(tools);
+        payload = payloadFor(chat, tokenBudget, compactLimit);
+      }
+      const safeBudget = available();
+      if (safeBudget < 128) {
+        throw new Error(`The provider’s remembered ${learnedLimit.toLocaleString()} TPM ceiling cannot fit the essential prompt and tool schemas. Reduce attached/context files or choose a provider/model with a higher limit.`);
+      }
+      tokenBudget = Math.min(tokenBudget, safeBudget);
+      if (compaction && tokenBudget < (Number(compaction.maxTokens) || current.maxTokens)) compaction.maxTokens = tokenBudget;
+    }
     while (true) {
       const payload = payloadFor(chat, tokenBudget, compactLimit);
       const response = await fetchProvider(url, { method: "POST", headers, body: payload });
       if (response.ok) return { response, tokenBudget, budgetReduced: tokenBudget < current.maxTokens };
       const detail = await response.text().catch(() => "");
+      const observedTpm = parseTpmLimitError(detail);
+      if (observedTpm) rememberTpmLimit(current, observedTpm.limit);
       if (response.status === 429) {
         const cooldown = parseTpmRetryAfter(detail, response.headers.get("retry-after"));
         if (cooldown != null) {
@@ -790,7 +880,7 @@ async function request({messages, system, probe=false}) {
           continue;
         }
       }
-      const tpm = response.status === 413 ? parseTpmLimitError(detail) : null;
+      const tpm = response.status === 413 ? observedTpm : null;
       if (response.status !== 413 || attempt >= 4) {
         if (tpm) throw new Error(`Provider TPM limit (${tpm.limit.toLocaleString()} tokens/minute) still rejects the compacted request. Try again after the current minute window, reduce attached/context files, or use a provider/model with a higher TPM allowance.`);
         throw new Error("Provider returned HTTP " + response.status + (detail ? ": " + detail.slice(0, 300) : ""));
@@ -1035,4 +1125,4 @@ async function editImage({ prompt, sourcePath }) {
   throw new Error("Image endpoint returned no image data");
 }
 
-module.exports = { generate, testConnection, config, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, isSmallDirectRequest, selectToolsForRequest };
+module.exports = { generate, testConnection, config, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, selectToolsForRequest };
