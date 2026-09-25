@@ -95,6 +95,13 @@ assert.ok(!buildTools.includes("send_email") && !buildTools.includes("call_mcp_t
 assert.ok(buildTools.length < 24, "ordinary Build prompts send a focused schema set, not the full tool catalog");
 const planTools = selectToolsForRequest("plan", "Plan a wallet transfer and email notification").map(tool => tool.function.name);
 assert.ok(!planTools.some(name => /prepare_wallet|send_email|write_workspace|run_terminal|call_mcp|connect_mcp|add_mcp|task_checkpoint_write/.test(name)), "Plan mode never receives write, send, connect, or transaction-preparation tools");
+for (const query of ["claim solana main net faucets", "web search for current Solana faucet terms", "websearcj"]){
+  const researchTools = selectToolsForRequest("ask", query).map(tool => tool.function.name);
+  assert.ok(researchTools.includes("list_mcp_servers"), `search/faucet request exposes MCP discovery: ${query}`);
+  assert.ok(researchTools.includes("list_mcp_tools") && researchTools.includes("call_mcp_tool"), `search/faucet request can inspect and use a connected search tool: ${query}`);
+  assert.ok(researchTools.includes("run_terminal_command"), `search/faucet request exposes the Full-PC read-only research fallback: ${query}`);
+}
+assert.equal(selectToolsForRequest("ask", "Hello there").length, 0, "unrelated greetings do not receive web or shell tools");
 
 (async () => {
   const requestBudgets = [];

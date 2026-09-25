@@ -218,6 +218,15 @@ function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
   if (mode !== "plan" && /\b(?:test|tests|verify|verification|lint|typecheck|npm run|build checks)\b/i.test(text)) add(["run_project_checks"]);
   if (mode !== "plan" && /\b(?:terminal|shell|command line|run command|npm install|install dependencies)\b/i.test(text)) add(["run_terminal_command"]);
   if (/\b(?:skill|playbook)\b/i.test(text)) add(["load_skill"]);
+  const webResearchIntent = /\b(?:web\s*searc[hcj]|search\s+(?:the\s+)?(?:web|internet|online)|browse\s+(?:the\s+)?(?:web|internet|online)|look\s+up\s+online|google\s+it|find\s+(?:current|recent|online|web)\s+(?:sources|information|results))\b/i.test(text);
+  const faucetIntent = /\b(?:faucet|faucets|faucetclaim|free mainnet crypto)\b/i.test(text);
+  if (faucetIntent || webResearchIntent) {
+    // Faucet playbooks need a real route to discover configured search tools or,
+    // with Full PC access, perform bounded read-only HTTP research. The executor
+    // still enforces the user's access level; this only makes the capability
+    // available to the model when the request is relevant.
+    add(["list_mcp_servers", "list_mcp_tools", "call_mcp_tool", "run_terminal_command"]);
+  }
   // Build gets a capable, task-oriented baseline, not every unrelated
   // integration, wallet, email, and administration schema on every turn.
   if (mode === "build" && /\b(?:skill|playbook)\b/i.test(text)) add(["load_skill", "unload_skill"]);
