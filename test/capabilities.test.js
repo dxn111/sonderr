@@ -126,7 +126,9 @@ assert.match(readme, /verified-domain search filters and focus-ranked page excer
 assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
 const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");
 assert.match(installer, /git clone --depth 1/);
-assert.match(installer, /refusing to overwrite it/i);
+assert.match(installer, /COMMAND_PATH="\$BIN_DIR\/sonderr"/);
+assert.match(installer, /\.backup\.\$\(date \+%Y%m%d%H%M%S\)/);
+assert.match(installer, /Previous install preserved at/);
 assert.doesNotMatch(readme, /v1\.7|v1\.6|35 backend skill playbooks/);
 const developerPage = fs.readFileSync(require.resolve("../web/docs-development.html"), "utf8");
 for (const expected of ["Sonderr Developer Program", "npm ci", "npm run check", "npm test", "separate program", "pull request"]) assert.ok(developerPage.toLowerCase().includes(expected.toLowerCase()), "developer page is missing: " + expected);

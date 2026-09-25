@@ -33,7 +33,7 @@ Requirements: Node.js 20 or newer, npm, and Git.
 curl -fsSL https://raw.githubusercontent.com/dxn111/sonderr/main/install.sh | sh
 ```
 
-The installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr` command under `~/.local/bin`. It never uses `sudo` and refuses to overwrite an existing install directory or command. Review [`install.sh`](install.sh) before running it if you want to inspect the installer first.
+The installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr` command under `~/.local/bin`. It never uses `sudo`; when reinstalling over a recognized Sonderr install, it preserves the previous folder as a timestamped backup. Review [`install.sh`](install.sh) before running it if you want to inspect the installer first.
 
 Then start Sonderr with:
 

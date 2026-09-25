@@ -21,10 +21,16 @@ if [ "$node_major" -lt 20 ]; then
   exit 1
 fi
 
-if [ -e "$INSTALL_DIR" ]; then
-  printf 'Install directory already exists; refusing to overwrite it: %s\n' "$INSTALL_DIR" >&2
-  printf 'To keep this installation, choose a different SONDERR_INSTALL_DIR or update it manually.\n' >&2
-  exit 1
+if [ -e "$INSTALL_DIR" ] || [ -L "$INSTALL_DIR" ]; then
+  if [ ! -d "$INSTALL_DIR" ] || [ ! -f "$INSTALL_DIR/package.json" ] || [ ! -f "$INSTALL_DIR/bin/sonderr-1.5.js" ]; then
+    printf 'Install path exists but does not look like a Sonderr installation; refusing to replace it: %s\n' "$INSTALL_DIR" >&2
+    exit 1
+  fi
+  installed_name="$(node -p 'require(process.argv[1]).name' "$INSTALL_DIR/package.json")"
+  if [ "$installed_name" != "sonderr-v1.5" ]; then
+    printf 'Install path belongs to a different package; refusing to replace it: %s\n' "$INSTALL_DIR" >&2
+    exit 1
+  fi
 fi
 
 if [ -e "$COMMAND_PATH" ] || [ -L "$COMMAND_PATH" ]; then
@@ -45,10 +51,33 @@ git clone --depth 1 --branch "$BRANCH" "$REPOSITORY" "$temporary_dir/source"
 printf 'Installing Node dependencies…\n'
 npm --prefix "$temporary_dir/source" ci --omit=dev
 
-mv "$temporary_dir/source" "$INSTALL_DIR"
-ln -s "$INSTALL_DIR/bin/sonderr-1.5.js" "$COMMAND_PATH"
+backup_dir=""
+if [ -e "$INSTALL_DIR" ] || [ -L "$INSTALL_DIR" ]; then
+  backup_dir="$INSTALL_DIR.backup.$(date +%Y%m%d%H%M%S)"
+  if [ -e "$backup_dir" ] || [ -L "$backup_dir" ]; then
+    printf 'Backup path already exists; refusing to replace it: %s\n' "$backup_dir" >&2
+    exit 1
+  fi
+  mv "$INSTALL_DIR" "$backup_dir"
+fi
+
+if ! mv "$temporary_dir/source" "$INSTALL_DIR"; then
+  if [ -n "$backup_dir" ]; then mv "$backup_dir" "$INSTALL_DIR"; fi
+  printf 'Could not move the downloaded install into place.\n' >&2
+  exit 1
+fi
+
+if ! ln -s "$INSTALL_DIR/bin/sonderr-1.5.js" "$COMMAND_PATH"; then
+  mv "$INSTALL_DIR" "$temporary_dir/failed-install"
+  if [ -n "$backup_dir" ]; then mv "$backup_dir" "$INSTALL_DIR"; fi
+  printf 'Could not create the global command; the previous install has been restored.\n' >&2
+  exit 1
+fi
 
 printf '\nSonderr installed. Start it with: sonderr\n'
+if [ -n "$backup_dir" ]; then
+  printf 'Previous install preserved at: %s\n' "$backup_dir"
+fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) printf 'Add %s to your PATH to use the command from any terminal.\n' "$BIN_DIR" ;;
