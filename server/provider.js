@@ -195,19 +195,44 @@ function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
     if (/\b(?:run|execute|terminal|command|test|tests|check|build)\b/.test(text)) add(["run_project_checks"]);
     if (mode !== "plan" && /\b(?:edit|change|fix|write|create|update|patch|replace)\b/.test(text)) add(["write_workspace_file", "patch_workspace_file"]);
   }
-  if (!faucetIntent && /\b(?:wallet|crypto|cryptocurrency|token|coin|sol|solana|eth|ethereum|base|usdt|usdc|memecoin|memecoins|web3|blockchain|gas fee|transaction|balance|portfolio|swap|trade|price)\b/i.test(text)) {
-    add(["get_wallet_accounts", "get_wallet_status", "get_wallet_price", "get_wallet_market_snapshot", "get_wallet_portfolio", "get_wallet_token_info", "get_wallet_activity", "get_wallet_watch"]);
+  const walletIntent = !faucetIntent && /\b(?:wallet|receive address|wallet address|crypto balance|token balance|portfolio|holdings|wallet value|wallet activity|wallet history|wallet watch|incoming funds|token contract|token mint|token price|coin price|gas fee|transaction|swap|trade|allowance)\b|\b(?:my|our)\s+(?:sol|solana|eth|ethereum|base|usdt|usdc)\s+(?:balance|address|wallet)\b|\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b.{0,28}\bprice\b|\bprice\b.{0,28}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b|\b(?:send|transfer|swap|trade|buy|sell|exchange)\b.{0,50}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|token|coin|crypto|wallet)\b/i.test(text);
+  if (walletIntent) {
+    // Keep schemas task-shaped. Sending eight wallet tools on every crypto
+    // question wastes TPM and makes unrelated tool calls more likely.
+    const namedNetwork = /\b(?:mainnet|devnet|testnet|sepolia|base|ethereum|solana)\b/i.test(text);
+    const asksAddresses = /\b(?:address|addresses|receive|account|accounts|all networks)\b/i.test(text);
+    const asksHoldings = /\b(?:portfolio|holdings|total value|wallet value|worth|value of|how much.*(?:wallet|portfolio)|performance|gone up|change since)\b/i.test(text);
+    const asksBalance = /\b(?:balance|balances|funds)\b/i.test(text);
+    if (asksAddresses || (!asksHoldings && !asksBalance && /\bwallet\b/i.test(text))) add(["get_wallet_accounts"]);
+    if (asksBalance) add(namedNetwork ? ["get_wallet_status"] : ["get_wallet_accounts"]);
+    if (asksHoldings) add(["get_wallet_portfolio"]);
+    if (/\b(?:price|pricing|worth|value today|current value)\b/i.test(text)) add(["get_wallet_price"]);
+    if (/\b(?:market snapshot|liquidity|dex pools|pool volume|market cap|fdv)\b/i.test(text)) add(["get_wallet_market_snapshot"]);
+    if (/\b(?:token info|token details|contract details|mint authorities|token supply|decimals)\b/i.test(text)) add(["get_wallet_token_info"]);
+    if (/\b(?:activity|history|transactions|recent transfers)\b/i.test(text)) add(["get_wallet_activity"]);
+    if (/\b(?:watch status|is .*watching|incoming funds|deposit alert|wallet watch)\b/i.test(text)) add(["get_wallet_watch"]);
     if (/\b(?:allowance|approval|approve)\b/.test(text)) add(["get_wallet_token_allowance"]);
-    if (mode !== "plan" && /\b(?:watch|monitor|alert|notify)\b/.test(text)) add(["set_wallet_watch"]);
-    if (mode !== "plan" && /\b(?:send|transfer|swap|trade|buy|sell|exchange)\b/.test(text)) add(["prepare_wallet_transaction", "prepare_wallet_swap"]);
+    if (mode !== "plan" && /\b(?:start|enable|turn on|stop|disable|turn off)\b.{0,24}\b(?:watch|monitor|alert|notify)\b|\b(?:watch|monitoring)\b.{0,24}\b(?:on|off|start|stop|enable|disable)\b/i.test(text)) add(["set_wallet_watch"]);
+    if (mode !== "plan" && /\b(?:send|transfer)\b/.test(text)) add(["prepare_wallet_transaction"]);
+    if (mode !== "plan" && /\b(?:swap|trade|buy|sell|exchange)\b/.test(text)) add(["prepare_wallet_swap"]);
     if (mode !== "plan" && /\b(?:create|new|make)\b.{0,24}\bwallet\b/.test(text)) add(["create_wallet"]);
   }
   if (faucetIntent && /\b(?:claim|receive|wallet address|receive address)\b/i.test(text) && /\bsol(?:ana)?\b/i.test(text)) add(["get_wallet_status"]);
-  if (/\b(?:mcp|notion|gmail|google drive|slack|linear|server connection|connect.{0,16}(?:service|account|server))\b/i.test(text)) {
+  const mcpMention = /\b(?:mcp|notion|gmail|google drive|slack|linear)\b/i.test(text);
+  const mcpSetupIntent = /\b(?:add|install|configure|set up|setup|connect|disconnect|remove)\b.{0,48}\b(?:mcp|notion|gmail|google drive|slack|linear|server|connector|integration)\b|\b(?:mcp|notion|gmail|google drive|slack|linear|server|connector|integration)\b.{0,48}\b(?:add|install|configure|set up|setup|connect|disconnect|remove)\b/i.test(text);
+  const mcpInventoryIntent = mcpMention && /\b(?:my|configured|connected|available|list|show|which|what tools|tools does|resources|prompts|server status)\b/i.test(text);
+  const mcpUseIntent = mcpMention && /\b(?:call|run|use|invoke|read|fetch|search|query)\b/i.test(text);
+  if (mcpMention && (mcpSetupIntent || mcpInventoryIntent || mcpUseIntent)) {
     add(["list_mcp_servers"]);
-    if (mode !== "plan") add(["add_mcp_server", "connect_mcp_server"]);
-    if (/\b(?:tool|tools|resource|resources|prompt|prompts|call|run)\b/.test(text)) add(["list_mcp_tools", "list_mcp_resources", "list_mcp_prompts", "read_mcp_resource", "get_mcp_prompt"]);
-    if (mode !== "plan" && /\b(?:call|run)\b/.test(text)) add(["call_mcp_tool"]);
+    if (mode !== "plan" && (mcpSetupIntent || (mcpUseIntent && /\b(?:my|configured|connected)\b/i.test(text)))) add(["connect_mcp_server"]);
+    if (mode !== "plan" && mcpSetupIntent) add(["add_mcp_server"]);
+    if (mcpUseIntent) add(["list_mcp_tools"]);
+    if (/\b(?:tool|tools|resource|resources|prompt|prompts)\b/.test(text)) {
+      if (/\b(?:tool|tools)\b/.test(text)) add(["list_mcp_tools"]);
+      if (/\b(?:resource|resources)\b/.test(text)) add(["list_mcp_resources", "read_mcp_resource"]);
+      if (/\b(?:prompt|prompts)\b/.test(text)) add(["list_mcp_prompts", "get_mcp_prompt"]);
+    }
+    if (mode !== "plan" && mcpUseIntent) add(["call_mcp_tool"]);
   }
   if (mode !== "plan" && /\b(?:send|draft|compose)\b.{0,40}\b(?:email|e-mail|message)\b|\b(?:email|e-mail)\b.{0,40}\b(?:send|draft|compose)\b/i.test(text)) add(["send_email"]);
   if (/\b(?:resume|continue|checkpoint|todo|to-do|long.running task|task memory)\b/i.test(text)) {

@@ -79,7 +79,7 @@ function matchingEvidence(skill, text) {
     evidence.push({ trigger: skill.id, score: 100, explicit: true });
   }
   const normalizedName = skill.name.toLowerCase().replace(/[^a-z0-9\s'-]+/g, " ").replace(/\s+/g, " ").trim();
-  if (normalizedName && value.includes(normalizedName)) evidence.push({ trigger: normalizedName, score: 100, explicit: true });
+  if (normalizedName && triggerPattern(normalizedName)?.test(value)) evidence.push({ trigger: normalizedName, score: 100, explicit: true });
   for (const trigger of skill.triggers) {
     if (!trigger) continue;
     const matcher = triggerPattern(trigger);
@@ -125,7 +125,10 @@ function triggerPattern(trigger) {
 function forTask(text) {
   return SKILLS.map(skill => {
     const evidence = matchingEvidence(skill, text);
-    return { id: skill.id, score: evidence.reduce((total, item) => total + item.score, 0), evidence };
+    // Several overlapping triggers for the same topic are not independent
+    // evidence. Use the strongest match so verbose prompts do not crowd out a
+    // second, genuinely complementary playbook.
+    return { id: skill.id, score: evidence.reduce((best, item) => Math.max(best, item.score), 0), evidence };
   }).filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
     .slice(0, MAX_AUTO_ATTACH)

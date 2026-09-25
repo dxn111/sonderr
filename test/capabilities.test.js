@@ -32,13 +32,13 @@ assert.equal(wallet.isSupportedSwapRouter(1, "0x1231DEB6f5749EF6cE6943a275A1D3E7
 assert.equal(wallet.isSupportedSwapRouter(8453, "0x0000000000000000000000000000000000000001"), false);
 assert.equal(wallet.isSupportedSwapRouter(11155111, "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"), false);
 
-for (const id of ["integration-testing", "performance-profiling", "observability", "api-contracts", "project-scaffolding", "release-notes", "secure-integrations", "documentation-maintenance", "long-running-work", "task-resumption", "contribution-workflow", "sonderr-docs", "wallet-intelligence", "web3-earning", "faucet-claim"]) {
+for (const id of ["integration-testing", "performance-profiling", "observability", "api-contracts", "project-scaffolding", "release-notes", "secure-integrations", "documentation-maintenance", "long-running-work", "task-resumption", "contribution-workflow", "sonderr-docs", "wallet-intelligence", "web3-earning", "faucet-claim", "mcp-workflows"]) {
   const skill = skills.load(id);
   assert.ok(skill, "missing skill: " + id);
   assert.ok(skill.instructions.length > 250, "skill is too thin: " + id);
 }
 
-assert.equal(skills.all().length, 62);
+assert.equal(skills.all().length, 63);
 assert.equal(JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count, skills.all().length);
 assert.equal(skills.MAX_AUTO_ATTACH, 2);
 assert.deepEqual(skills.validateCatalog(), []);
@@ -54,9 +54,11 @@ assert.ok(skills.forTask("Try to make money with Web3.").includes("web3-earning"
 assert.ok(skills.forTask("Find current crypto grants and a Web3 bounty for me.").includes("web3-earning"));
 assert.ok(skills.forTask("Go search the internet for faucets and get SOL from 100 different ones.").includes("web3-earning"));
 assert.ok(skills.forTask("Go search the internet for faucets and get SOL from 100 different ones.").includes("faucet-claim"));
+assert.deepEqual(skills.forTask("faucets faucets faucets faucets claim sol claim sol free sol"), skills.forTask("faucets claim sol"), "repeating synonymous triggers cannot inflate a skill above complementary matches");
 assert.ok(skills.forTask("Use the faucetclaim skill to find legitimate SOL faucets.").includes("faucet-claim"));
 assert.ok(skills.forTask("This is a long-running multi-stage task; resume the deep engineering work.").includes("long-running-work"));
 assert.ok(skills.forTask("The provider failure interrupted my task; continue from checkpoint.").includes("task-resumption"));
+assert.ok(skills.forTask("Use the configured Notion MCP server to search my workspace.").includes("mcp-workflows"), "explicit external-tool tasks load the MCP workflow playbook");
 assert.match(skills.promptBlock(["contribution-workflow"]), /A skill is guidance, not permission/i);
 const recommendations = skills.recommendations(["contribution-workflow"]);
 assert.match(recommendations, /contribution-workflow/);
@@ -78,7 +80,7 @@ assert.match(appSource, /faucet-claim for specific faucet research\/claims/);
 assert.match(appSource, /no general browser-driving or faucet_claim tool/);
 assert.match(appSource, /including obvious misspellings such as "websearcj"/);
 assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainnet support/);
-assert.match(appSource, /version:"1\.5\.5"/);
+assert.match(appSource, /version:"1\.5\.6"/);
 assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);
 assert.match(docsSkill, /reasonable estimate is fine if explicitly labeled as a guess/i);
 assert.match(docsSkill, /public source and self-service installer are available/i);
@@ -104,7 +106,7 @@ assert.match(appSource, /load_skill/);
 assert.match(appSource, /unload_skill/);
 assert.match(readme, /Accept & swap/);
 assert.match(readme, /exact-amount approval card/);
-assert.match(readme, /62 playbooks/);
+assert.match(readme, /63 playbooks/);
 assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
 const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");
 assert.match(installer, /git clone --depth 1/);

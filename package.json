@@ -1,6 +1,6 @@
 {
   "name": "sonderr-v1.5",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "private": true,
   "description": "Privacy-first local AI workspace with optional Web3 capabilities.",
   "files": [
