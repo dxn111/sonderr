@@ -1,4 +1,4 @@
-# SONDERR v1.5.4
+# SONDERR v1.5.5
 
 ![Sonderr 1.5 banner](https://github.com/user-attachments/assets/ef409eb2-a776-4a4b-a9bc-4413ab47a0e0)
 
@@ -39,7 +39,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.4 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.5 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -125,7 +125,7 @@ The agent layer connects configured model providers to workspace and integration
 
 ### Skills and tools (backend)
 
-Skills are expert playbooks stored as markdown files in `skills/` — one file per skill, no UI required. The harness reads them at startup, auto-attaches at most two relevant playbooks for the current task, and exposes the directory so Sonderr can load another relevant playbook on demand. The 61 playbooks cover engineering, data, product, security, quality, Web3, and operations, including a dedicated faucet-claim workflow, a complete Sonderr product guide, wallet research, and Web3 earning.
+Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 61 playbooks cover engineering, data, product, security, quality, Web3, and operations, including a dedicated faucet-claim workflow, a complete Sonderr product guide, wallet research, and Web3 earning.
 
 ### Workspace intelligence and controlled actions
 
@@ -200,7 +200,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.4 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.5 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening

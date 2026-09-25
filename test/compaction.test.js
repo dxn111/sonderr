@@ -142,13 +142,15 @@ assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.le
   }
 
   const skillRequests = [];
+  let skillRunStart = 0;
+  let autoCleanupOnly = false;
   const lifecycleProvider = http.createServer((req, res) => {
     let body = "";
     req.setEncoding("utf8");
     req.on("data", chunk => { body += chunk; });
     req.on("end", () => {
       skillRequests.push(JSON.parse(body));
-      const n = skillRequests.length;
+      const n = skillRequests.length - skillRunStart;
       const toolCall = (id, name, skillId) => ({
         id,
         type: "function",
@@ -156,11 +158,11 @@ assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.le
       });
       const message = n === 1
         ? { role: "assistant", content: null, tool_calls: [toolCall("load-1", "load_skill", "debugging")] }
-        : n === 2
+        : n === 2 && !autoCleanupOnly
           ? { role: "assistant", content: null, tool_calls: [toolCall("unload-1", "unload_skill", "debugging")] }
           : { role: "assistant", content: "Finished the skill lifecycle test." };
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ choices: [{ message, finish_reason: n < 3 ? "tool_calls" : "stop" }] }));
+      res.end(JSON.stringify({ choices: [{ message, finish_reason: n < (autoCleanupOnly ? 2 : 3) ? "tool_calls" : "stop" }] }));
     });
   });
   const skillHome = fs.mkdtempSync(path.join(os.tmpdir(), "sonderr-skill-lifecycle-"));
@@ -186,6 +188,29 @@ assert.equal(selectToolsForRequest("build", "hello").length, TOOL_DEFINITIONS.le
     assert.doesNotMatch(JSON.stringify(run.events), /PRIVATE_PLAYBOOK_TEXT/, "skill instructions are never copied into visible tool cards");
     assert.match(skillRequests[1].messages.find(m => m.role === "tool" && m.name === "load_skill").content, /PRIVATE_PLAYBOOK_TEXT/, "loaded instructions enter provider context on demand");
     assert.doesNotMatch(JSON.stringify(skillRequests[2].messages), /PRIVATE_PLAYBOOK_TEXT/, "unload removes the detailed playbook from subsequent context");
+
+    skillRunStart = skillRequests.length;
+    autoCleanupOnly = true;
+    const automaticCode = `const p=require("./server/provider");const events=[];p.generate({messages:[{role:"user",content:"debug this"}],system:"test",tools:[{type:"function",function:{name:"load_skill"}},{type:"function",function:{name:"unload_skill"}}],executeTool:async(name,input)=>name==="load_skill"?{id:input.id,name:"Debugging",category:"Code",instructions:"PRIVATE_PLAYBOOK_TEXT ".repeat(20)}:{id:input.id,name:"Debugging",unloaded:true},onEvent:e=>events.push(e)}).then(r=>console.log(JSON.stringify({events,conversation:r.conversation}))).catch(e=>{console.error(e);process.exitCode=1})`;
+    const automaticChild = spawn(process.execPath, ["-e", automaticCode], {
+      cwd: path.resolve(__dirname, ".."),
+      env: { ...process.env, HOME: skillHome, SONDERR_PROVIDER: "custom", SONDERR_MODEL: "test-model", SONDERR_API_BASE_URL: `http://127.0.0.1:${port}/v1`, SONDERR_API_KEY: "test-only" },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let automaticStdout = "", automaticStderr = "";
+    automaticChild.stdout.setEncoding("utf8").on("data", chunk => { automaticStdout += chunk; });
+    automaticChild.stderr.setEncoding("utf8").on("data", chunk => { automaticStderr += chunk; });
+    const automaticExit = await new Promise((resolve, reject) => {
+      automaticChild.once("error", reject);
+      automaticChild.once("close", resolve);
+    });
+    assert.equal(automaticExit, 0, automaticStderr || automaticStdout);
+    const automaticRun = JSON.parse(automaticStdout.trim());
+    const automaticUnload = automaticRun.events.find(event => event.type === "tool_end" && event.name === "unload_skill");
+    assert.ok(automaticUnload, "successful task cleanup emits an actual visible unload tool event");
+    assert.equal(automaticUnload.output.automatic, true);
+    assert.doesNotMatch(JSON.stringify(automaticRun.conversation), /PRIVATE_PLAYBOOK_TEXT/, "automatic unload removes the playbook from the retained provider conversation");
+    assert.doesNotMatch(JSON.stringify(automaticRun.events), /PRIVATE_PLAYBOOK_TEXT/);
   } finally {
     await new Promise(resolve => lifecycleProvider.close(resolve));
     fs.rmSync(skillHome, { recursive: true, force: true });

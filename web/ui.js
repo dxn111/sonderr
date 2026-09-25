@@ -376,6 +376,7 @@ const TOOL_ICONS = {
   search_workspace: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
   run_terminal_command: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg>',
   load_skill: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 6.2 6.5.1-5.2 3.9 1.9 6.2L12 15.6 6.8 19.4l1.9-6.2L3.5 9.3 10 9.2z"/></svg>',
+  unload_skill: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 17v3h14v-3"/></svg>',
   todo_write: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5l1.6 1.6L8.2 4"/><path d="M3.5 12.5l1.6 1.6L8.2 11"/><path d="M3.5 19.5l1.6 1.6L8.2 18"/><path d="M12 5.5h9"/><path d="M12 12.5h9"/><path d="M12 19.5h9"/></svg>',
   todo_read: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5l1.6 1.6L8.2 4"/><path d="M3.5 12.5l1.6 1.6L8.2 11"/><path d="M12 5.5h9"/><path d="M12 12.5h9"/><circle cx="13" cy="19" r="3.5"/></svg>',
   task_checkpoint_read: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>',
@@ -409,6 +410,7 @@ const TOOL_TITLES = {
   search_workspace: "Search code",
   run_terminal_command: "Terminal",
   load_skill: "Load skill",
+  unload_skill: "Unload skill",
   todo_write: "Update tasks",
   todo_read: "Read tasks",
   task_checkpoint_read: "Read resume point",
@@ -445,6 +447,7 @@ function toolResultSummary(name, output = {}) {
     case "search_workspace": return (output.matches ?? "…") + " matches";
     case "run_terminal_command": return "Exit " + (output.exitCode ?? "?");
     case "load_skill": return output.name ? output.name + " loaded" : "Loaded";
+    case "unload_skill": return output.name ? output.name + (input.automatic ? " · automatically unloaded" : " unloaded") : "Unloaded";
     case "todo_write": return output.total != null ? output.completed + "/" + output.total + " done" + (output.current ? " · now: " + output.current : "") : "Task list updated";
     case "todo_read": return output.total != null ? output.total + " tasks · " + output.completed + " done" : "Read";
     case "task_checkpoint_read": return output.checkpoint ? output.checkpoint.status + " resume point" : "No saved resume point";
@@ -1568,7 +1571,7 @@ function renderSettings() {
         <h2>Tools &amp; Access</h2>
         <p class="panel-sub">Control how much of your machine Sonderr may use when the model calls tools.</p>
         <div class="seg-grid">${modes.map(([id, t, d]) => '<button class="seg-card' + (s.approvalMode === id ? " active" : "") + '" data-mode="' + id + '"><strong>' + t + "</strong><small>" + d + "</small></button>").join("")}</div>
-        <div class="hint" style="margin-top:14px">Skills are part of the backend, not a setting: relevant playbooks attach to each task automatically, and the model can pull any of them with its <span style="font-family:var(--mono)">load_skill</span> tool.</div>
+        <div class="hint" style="margin-top:14px">Skills are part of the backend, not a setting. Sonderr selects a few likely matches, then loads a playbook only when its method helps; Load skill and Unload skill appear in chat activity.</div>
         <div class="field" style="margin-top:16px">
           <label>Environment path</label>
           <input type="text" id="setEnvPath" value="${esc(s.environmentPath || ".sonderr/environment")}" spellcheck="false">
@@ -1767,12 +1770,12 @@ function renderSettings() {
         <h2>About</h2>
         <p class="panel-sub">Sonderr is a privacy-first local AI workspace with optional Web3 capabilities. The terminal only launches it — the browser is the product.</p>
         <div class="about-rows">
-          <div class="about-row"><span>Version</span><b>1.5.4</b></div>
+          <div class="about-row"><span>Version</span><b>1.5.5</b></div>
           <div class="about-row"><span>Workspace</span><b title="${esc(state.workspace)}">${esc(state.workspace || "—")}</b></div>
           <div class="about-row"><span>Runtime</span><b>Node ${esc(state.nodeVersion || "")} · localhost</b></div>
           <div class="about-row"><span>API status</span><b>${state.apiConfigured ? "Connected" : "Not configured"}</b></div>
           <div class="about-row"><span>Models discovered</span><b>${state.models.length || "—"}</b></div>
-          <div class="about-row"><span>Skills</span><b>${state.skillsCount != null ? state.skillsCount + " playbooks · auto-loaded per task" : "—"}</b></div>
+          <div class="about-row"><span>Skills</span><b>${state.skillsCount != null ? state.skillsCount + " playbooks · loaded on demand" : "—"}</b></div>
           <div class="about-row"><span>Data folder</span><b style="font-family:var(--mono)">~/.sonderr</b></div>
         </div>
         <div class="links" style="margin-top:16px"><a class="btn ghost" href="/docs" target="_blank" rel="noopener">Open docs &amp; safety handbook</a><a class="btn ghost" href="/docs/bounty" target="_blank" rel="noopener">Bounty program</a><a class="btn ghost" href="/docs/developer" target="_blank" rel="noopener">Developer program</a></div>

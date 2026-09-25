@@ -41,6 +41,7 @@ assert.equal(skills.all().length, 61);
 assert.equal(JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count, skills.all().length);
 assert.equal(skills.MAX_AUTO_ATTACH, 2);
 assert.deepEqual(skills.validateCatalog(), []);
+assert.deepEqual(skills.forTask("hello"), [], "a greeting does not select a playbook");
 for (const skill of skills.all()) {
   assert.ok(skills.forTask(skill.triggers[0]).includes(skill.id), "first trigger does not select its playbook: " + skill.id);
 }
@@ -58,6 +59,9 @@ assert.match(skills.promptBlock(["contribution-workflow"]), /A skill is guidance
 const recommendations = skills.recommendations(["contribution-workflow"]);
 assert.match(recommendations, /contribution-workflow/);
 assert.doesNotMatch(recommendations, /Follow the playbook|Finish check|Verification checklist/i, "candidate hints contain metadata only, not skill bodies");
+const explainedRecommendations = skills.recommendations(skills.forTask("Review the Sonderr developer program and open source contributions."), "Review the Sonderr developer program and open source contributions.");
+assert.match(explainedRecommendations, /Match:.*developer program/i, "skill candidates explain the request terms that matched");
+assert.ok(skills.forTask("Please use the api-contracts skill for this change.").includes("api-contracts"), "an explicit skill id selects its playbook");
 const readme = fs.readFileSync(require.resolve("../README.md"), "utf8");
 const appSource = fs.readFileSync(require.resolve("../server/app.js"), "utf8");
 const docsSkill = fs.readFileSync(require.resolve("../skills/sonderr-docs.md"), "utf8");
@@ -71,7 +75,7 @@ assert.match(appSource, /bounded read-only web requests through the terminal/);
 assert.match(appSource, /faucet-claim for specific faucet research\/claims/);
 assert.match(appSource, /Sonderr has no built-in faucet_claim function or general browser-driving function/);
 assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainnet support/);
-assert.match(appSource, /version:"1\.5\.4"/);
+assert.match(appSource, /version:"1\.5\.5"/);
 assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);
 assert.match(docsSkill, /reasonable estimate is fine if explicitly labeled as a guess/i);
 assert.match(docsSkill, /public source and self-service installer are available/i);

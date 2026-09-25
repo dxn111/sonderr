@@ -386,14 +386,14 @@ const TOOL_DEFINITIONS = [
   } },
   { type:"function", function:{
     name:"load_skill",
-    description:"Load one relevant playbook by exact id from the task's Skill candidates. This is a real on-demand load: full instructions are returned only in this tool result and the load is visible in chat. Call before matching work; never load for greetings. Keep at most two skills active.",
+    description:"Load one relevant playbook by exact id from the task's Skill candidates. This is a real on-demand load: its full instructions enter model context only after this call. The Load skill activity is visible in chat, while instruction text is withheld from the UI card. Load only when the playbook materially helps; never for greetings. Keep at most two active.",
     parameters:{ type:"object", properties:{
       id:{ type:"string", description:"Skill id from the system-prompt directory, e.g. 'debugging'" }
     }, required:["id"] }
   } },
   { type:"function", function:{
     name:"unload_skill",
-    description:"Unload a playbook that was previously loaded in this task and is no longer needed. This removes its full instructions from the active model context while retaining a short audit marker. Call when the playbook is no longer useful or before switching to unrelated work.",
+    description:"Unload a playbook that was previously loaded in this task and is no longer needed. This removes its full instructions from active model context while retaining a short audit marker. Call when its workflow ends or before switching to unrelated work; successful turn completion also automatically unloads any remaining playbooks with a visible Unload skill activity.",
     parameters:{ type:"object", properties:{
       id:{ type:"string", description:"Exact id of a currently loaded skill" }
     }, required:["id"] }
@@ -920,9 +920,29 @@ async function request({messages, system, probe=false}) {
 
   const incomplete = hitRoundLimit || hitToolLimit || userPaused || outputTruncated;
   if (!incomplete && loadedSkills.size) {
-    for (const loaded of loadedSkills.values()) unloadSkillMessage(messages, loaded);
-    emit("status", { text: `Unloaded ${loadedSkills.size} skill playbook${loadedSkills.size === 1 ? "" : "s"} at the end of this task.` });
-    loadedSkills.clear();
+    let index = 0;
+    for (const loaded of [...loadedSkills.values()]) {
+      const id = `auto-unload-${Date.now()}-${++index}`;
+      const input = { id: loaded.id, automatic: true };
+      emit("tool_start", { id, name: "unload_skill", input });
+      let output = { id: loaded.id, name: loaded.name, unloaded: true, automatic: true };
+      let failed = false;
+      try {
+        if (typeof executeTool === "function") {
+          const handled = await executeTool("unload_skill", { id: loaded.id }, (type, payload) => emit(type, payload));
+          if (handled && typeof handled === "object") output = { ...output, ...handled };
+          if (output.error) failed = true;
+        }
+      } catch {
+        // The local request is ending regardless; scrub the prompt even if an
+        // optional unload handler fails, and make that failure visible.
+        failed = true;
+        output = { id: loaded.id, name: loaded.name, error: "Unload handler failed; playbook removed from this request context." };
+      }
+      unloadSkillMessage(messages, loaded);
+      loadedSkills.delete(loaded.id);
+      emit("tool_end", { id, name: "unload_skill", input, output, failed, durationMs: 0 });
+    }
   }
 
   return {

@@ -71,9 +71,31 @@ function directory() {
 }
 
 /** Small metadata-only recommendations; full instructions require load(). */
-function recommendations(ids) {
-  return (ids || []).map(get).filter(Boolean)
-    .map(s => `- ${s.id} — ${s.name} (${s.category}): ${s.summary}`)
+function matchingEvidence(skill, text) {
+  const value = String(text || "").toLowerCase().replace(/[^a-z0-9\s'-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!value) return [];
+  const evidence = [];
+  if (new RegExp("(^|[^a-z0-9])" + skill.id.replace(/-/g, "[\\s-]+") + "(?=$|[^a-z0-9])", "i").test(value)) {
+    evidence.push({ trigger: skill.id, score: 100, explicit: true });
+  }
+  const normalizedName = skill.name.toLowerCase().replace(/[^a-z0-9\s'-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (normalizedName && value.includes(normalizedName)) evidence.push({ trigger: normalizedName, score: 100, explicit: true });
+  for (const trigger of skill.triggers) {
+    if (!trigger) continue;
+    const matcher = triggerPattern(trigger);
+    if (!matcher?.test(value)) continue;
+    evidence.push({ trigger, score: trigger.includes(" ") ? 4 : (trigger.length >= 7 ? 2 : 1), explicit: false });
+  }
+  return evidence.sort((a, b) => b.score - a.score || b.trigger.length - a.trigger.length);
+}
+
+function recommendations(ids, taskText = "") {
+  return (ids || []).map(item => typeof item === "string" ? get(item) : get(item?.id)).filter(Boolean)
+    .map(s => {
+      const evidence = matchingEvidence(s, taskText).slice(0, 2);
+      const reason = evidence.length ? ` Match: ${evidence.map(item => `“${item.trigger}”`).join(", ")}.` : "";
+      return `- ${s.id} — ${s.name} (${s.category}): ${s.summary}${reason}`;
+    })
     .join("\n");
 }
 
@@ -101,21 +123,13 @@ function triggerPattern(trigger) {
 
 /** Auto-detect relevant skill ids from free text. No user configuration involved. */
 function forTask(text) {
-  const value = String(text || "").toLowerCase().replace(/[^a-z0-9\s'-]+/g, " ").replace(/\s+/g, " ").trim();
-  const scored = [];
-  for (const skill of SKILLS) {
-    let score = 0;
-    for (const trigger of skill.triggers) {
-      if (!trigger) continue;
-      const matcher = triggerPattern(trigger);
-      if (matcher?.test(value)) score += trigger.includes(" ") ? 4 : (trigger.length >= 7 ? 2 : 1);
-    }
-    if (score > 0) scored.push([skill.id, score]);
-  }
-  return scored
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  return SKILLS.map(skill => {
+    const evidence = matchingEvidence(skill, text);
+    return { id: skill.id, score: evidence.reduce((total, item) => total + item.score, 0), evidence };
+  }).filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
     .slice(0, MAX_AUTO_ATTACH)
-    .map(([id]) => id);
+    .map(item => item.id);
 }
 
 /** Combined response for a failed load_skill call: what IS available. */
@@ -136,4 +150,4 @@ function validateCatalog(items = SKILLS) {
   return errors;
 }
 
-module.exports = { all, get, has, load, directory, recommendations, promptBlock, forTask, availableIds, validateCatalog, MAX_AUTO_ATTACH };
+module.exports = { all, get, has, load, directory, recommendations, promptBlock, forTask, matchingEvidence, availableIds, validateCatalog, MAX_AUTO_ATTACH };
