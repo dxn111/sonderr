@@ -17,6 +17,12 @@
   <a href="#development">Development</a>
 </p>
 
+<p align="center">
+  <strong>Try free AI models with no API key.</strong><br />
+  Sonderr can use currently free-tagged models through Kilo Gateway. Anonymous use is rate-limited and model availability can change.
+  <a href="#kilo-gateway-and-free-ai-models">How free access works</a>
+</p>
+
 ---
 
 ## Install
@@ -133,7 +139,9 @@ Skills are expert playbooks stored as Markdown files in `skills/` — one file p
 
 Sonderr Studios opens from the sidebar at `/studios` as a full-page workspace, not just a separate chat. Start a website, browser app, general project, Developer Program contribution, or responsible Bounty Program research space. Each project keeps a brief, milestones, progress, and an adjacent build discussion; website and app projects also include a workspace-file preview with desktop/mobile viewport controls. The preview is isolated and blocks network requests; it is for local front-end review, not external service or deployment verification. Studio projects persist as distinct sessions and can be reopened from Studios or Recents. The Plugin Hub also offers Sites and Code Review workflows, each with focused instructions that are included only when enabled for a chat.
 
-**Kilo Gateway** is available in Settings → API & Models as a hosted OpenAI-compatible provider. Free-tagged models are discoverable without a key (anonymous requests are rate-limited); adding a Kilo API key unlocks the account's broader catalog. Sonderr still owns the system prompt, skills, tool selection, permission checks, and local tool execution—the gateway supplies model responses. Prompts and context are sent to Kilo over HTTPS; it is not a local background daemon. See [Kilo Gateway authentication and free access](https://kilo.ai/docs/gateway/authentication) and [model catalog](https://kilo.ai/docs/gateway/models-and-providers).
+### Kilo Gateway and free AI models
+
+Choose **Kilo Gateway** in Settings → API & Models, discover the current free-tagged models, and select one to start without entering an API key. Anonymous requests are rate-limited, and Kilo's free-model lineup can change. Adding a Kilo API key unlocks the account's broader catalog. Sonderr still owns the system prompt, skills, tool selection, permission checks, and local tool execution—the gateway supplies model responses. Prompts and context are sent to Kilo over HTTPS; this is hosted AI, not local inference. See Kilo's current [authentication and free-access rules](https://kilo.ai/docs/gateway/authentication) and [model catalog](https://kilo.ai/docs/gateway/models-and-providers).
 
 ### Workspace intelligence and controlled actions
 
