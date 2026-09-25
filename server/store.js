@@ -77,9 +77,92 @@ function getSession(id) {
   return read().sessions.find(s => s.id === id) || null;
 }
 
+function setSessionPlugin(id, pluginId = "") {
+  const data = read();
+  const session = data.sessions.find(item => item.id === id);
+  if (!session) return null;
+  session.activePluginId = String(pluginId || "").trim().slice(0, 64);
+  session.updatedAt = new Date().toISOString();
+  write(data);
+  return session.activePluginId;
+}
+
 // --- Todo lists (per session, persisted so the card replays) ---
 const TODO_STATUSES = new Set(["pending", "in_progress", "completed"]);
 const TODO_PRIORITIES = new Set(["high", "medium", "low"]);
+const EARNING_CATEGORIES = new Set(["faucet", "bounty", "grant", "job", "airdrop", "other"]);
+const EARNING_STATUSES = new Set(["candidate", "researching", "eligible", "ineligible", "claim_ready", "submitted", "pending", "paid", "rejected", "closed"]);
+const EARNING_NETWORKS = new Set(["solana-mainnet", "solana-devnet", "solana-testnet", "ethereum-mainnet", "base-mainnet", "testnet", "other", "unknown"]);
+const MAX_EARNING_ENTRIES = 100;
+
+function cleanLedgerText(value, limit = 500) {
+  return safety.redactText(String(value || "").replace(/[\u0000-\u001F\u007F]/g, " ").trim()).slice(0, limit);
+}
+
+function safeLedgerUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.length > 2048) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || !url.hostname || url.port) return "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (/token|secret|key|auth|session|sig|password|email/i.test(key)) return "";
+    }
+    url.hash = "";
+    return url.toString();
+  } catch { return ""; }
+}
+
+function sanitizeEarningEntry(raw = {}, existing = null) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("An opportunity object is required");
+  const title = cleanLedgerText(raw.title ?? existing?.title, 120);
+  if (!title) throw new Error("A short opportunity title is required");
+  const category = EARNING_CATEGORIES.has(raw.category) ? raw.category : (existing?.category || "other");
+  const status = EARNING_STATUSES.has(raw.status) ? raw.status : (existing?.status || "candidate");
+  const network = EARNING_NETWORKS.has(raw.network) ? raw.network : (existing?.network || "unknown");
+  const sourceInput = raw.sources ?? existing?.sources ?? (raw.url ? [raw.url] : []);
+  const sources = [...new Set((Array.isArray(sourceInput) ? sourceInput : []).slice(0, 4).map(safeLedgerUrl).filter(Boolean))];
+  const amount = cleanLedgerText(raw.amount ?? existing?.amount, 48);
+  const currency = cleanLedgerText(raw.currency ?? existing?.currency, 24);
+  const eligibility = cleanLedgerText(raw.eligibility ?? existing?.eligibility, 320);
+  const evidence = cleanLedgerText(raw.evidence ?? existing?.evidence, 600);
+  const nextCheckAt = cleanLedgerText(raw.nextCheckAt ?? existing?.nextCheckAt, 40);
+  if (nextCheckAt && !Number.isFinite(Date.parse(nextCheckAt))) throw new Error("nextCheckAt must be an ISO date/time");
+  return {
+    id: existing?.id || crypto.randomUUID(), title, category, network, status,
+    sources, amount, currency, eligibility, evidence, nextCheckAt,
+    savedAt: existing?.savedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function listEarningOpportunities() {
+  const entries = read().earningOpportunities;
+  if (!Array.isArray(entries)) return [];
+  return entries.slice(-MAX_EARNING_ENTRIES).flatMap(item => {
+    try {
+      const clean = sanitizeEarningEntry(item);
+      clean.id = cleanLedgerText(item.id, 64) || clean.id;
+      clean.savedAt = cleanLedgerText(item.savedAt, 40) || clean.savedAt;
+      clean.updatedAt = cleanLedgerText(item.updatedAt, 40) || clean.updatedAt;
+      return [clean];
+    } catch { return []; }
+  });
+}
+
+function saveEarningOpportunity(raw = {}) {
+  const data = read();
+  const entries = Array.isArray(data.earningOpportunities) ? data.earningOpportunities.slice(-MAX_EARNING_ENTRIES) : [];
+  const id = cleanLedgerText(raw.id, 64);
+  const existingIndex = id ? entries.findIndex(item => item.id === id) : -1;
+  const current = existingIndex >= 0 ? entries[existingIndex] : null;
+  const next = sanitizeEarningEntry(raw, current);
+  if (existingIndex >= 0) entries[existingIndex] = next;
+  else entries.push(next);
+  data.earningOpportunities = entries.slice(-MAX_EARNING_ENTRIES);
+  write(data);
+  return { ...next, sources: [...next.sources] };
+}
 
 function sanitizeTodos(raw) {
   if (!Array.isArray(raw)) return [];
@@ -407,4 +490,4 @@ function saveOnboarding(next = {}) {
   return { ...data.onboarding };
 }
 
-module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, getSession, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, settings, updateSettings, providerKey, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };
+module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, getSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };

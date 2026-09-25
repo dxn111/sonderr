@@ -69,11 +69,13 @@ assert.equal(maxTokensWithinTpm({ limit: 8000, inputTokens: 7900, currentMaxToke
 assert.equal(requestMaxTokens({ mode: "ask", userText: "hello", configuredMaxTokens: 8192 }), 192, "greetings avoid spending a large output allowance");
 assert.equal(requestMaxTokens({ mode: "ask", userText: "What is a mutex?", configuredMaxTokens: 8192 }), 512, "small direct answers use a small reply allowance");
 assert.equal(requestMaxTokens({ mode: "ask", userText: "Explain this repo", configuredMaxTokens: 8192, toolCount: 8 }), 1536, "tool-backed Ask requests get enough room without an oversized default");
+assert.equal(requestMaxTokens({ mode: "ask", userText: "Search current docs", configuredMaxTokens: 8192, toolCount: 2, toolNames: ["web_search", "open_web_page"] }), 1024, "bounded web research reserves fewer output tokens to reduce TPM pressure");
 assert.equal(requestMaxTokens({ mode: "ask", userText: "Write a comprehensive full report", configuredMaxTokens: 8192 }), 8192, "explicitly long answers keep the configured output room");
 assert.equal(requestMaxTokens({ mode: "build", userText: "Implement this feature", configuredMaxTokens: 8192 }), 4096);
 assert.equal(isSmallDirectRequest("ask", "hello"), true, "greetings use the low-context path");
 assert.equal(isSmallDirectRequest("ask", "What is a mutex?"), true, "small general questions use the low-context path");
 assert.equal(isSmallDirectRequest("ask", "What is the current price of SOL?"), false, "current facts keep provider tools and normal context");
+assert.equal(isSmallDirectRequest("ask", "Free money?"), false, "open-ended earning questions cannot be misclassified as tool-free small talk");
 assert.equal(isSmallDirectRequest("ask", "Can you review this code?"), false, "workspace-dependent requests retain tools");
 assert.equal(isSmallDirectRequest("build", "hello"), false, "implementation mode never loses its tools");
 assert.equal(isSmallDirectRequest("ask", "Why?"), false, "follow-ups keep recent conversation context");
@@ -109,6 +111,21 @@ assert.ok(!mcpToolList.includes("add_mcp_server") && !mcpToolList.includes("conn
 const mcpUseTools = selectToolsForRequest("ask", "Use my configured Notion MCP to search my workspace").map(tool => tool.function.name);
 assert.ok(mcpUseTools.includes("list_mcp_tools") && mcpUseTools.includes("connect_mcp_server") && mcpUseTools.includes("call_mcp_tool"), "an explicit MCP task can connect, discover, then call the configured service");
 assert.ok(selectToolsForRequest("ask", "Run curl to inspect this endpoint").some(tool => tool.function.name === "run_terminal_command"), "explicit shell requests receive the terminal tool");
+for (const query of ["Free money?", "How can I earn money?", "Find crypto rewards and paid bounties"]) {
+  const earningTools = selectToolsForRequest("ask", query).map(tool => tool.function.name);
+  assert.ok(earningTools.includes("web_research"), `current earning opportunities route to the combined read-only research tool: ${query}`);
+  assert.ok(!earningTools.includes("run_terminal_command"), `earning research does not receive unrelated shell access: ${query}`);
+}
+const faucetResearchOnlyTools = selectToolsForRequest("ask", "Research Solana Mainnet faucets").map(tool => tool.function.name);
+assert.ok(faucetResearchOnlyTools.includes("web_research"));
+assert.ok(faucetResearchOnlyTools.includes("list_sol_faucets"), "faucet requests also show the dated in-chat candidate/exclusion card");
+assert.ok(!faucetResearchOnlyTools.includes("save_earning_opportunity"), "research alone does not silently persist earning history");
+const explicitLedgerSaveTools = selectToolsForRequest("ask", "Track this Solana faucet opportunity in my ledger").map(tool => tool.function.name);
+assert.ok(explicitLedgerSaveTools.includes("save_earning_opportunity"), "explicit tracking requests expose only the local save action in addition to relevant research");
+const explicitLedgerReadTools = selectToolsForRequest("ask", "List my earning opportunity log").map(tool => tool.function.name);
+assert.deepEqual(explicitLedgerReadTools, ["list_earning_opportunities"], "ledger review remains focused and read-only");
+assert.ok(selectToolsForRequest("plan", "List my earning opportunity log").some(tool => tool.function.name === "list_earning_opportunities"), "ledger listing is available in plan mode");
+assert.ok(!selectToolsForRequest("plan", "Track this faucet opportunity").some(tool => tool.function.name === "save_earning_opportunity"), "plan mode never includes ledger writes");
 const buildTools = selectToolsForRequest("build", "Implement and test this feature").map(tool => tool.function.name);
 assert.ok(buildTools.includes("write_workspace_file"), "Build keeps core workspace editing tools available");
 assert.ok(buildTools.includes("task_checkpoint_write"), "Build keeps long-running task checkpointing available");
@@ -120,8 +137,8 @@ const planTools = selectToolsForRequest("plan", "Plan a wallet transfer and emai
 assert.ok(!planTools.some(name => /prepare_wallet|send_email|write_workspace|run_terminal|call_mcp|connect_mcp|add_mcp|task_checkpoint_write/.test(name)), "Plan mode never receives write, send, connect, or transaction-preparation tools");
 for (const query of ["claim solana main net faucets", "web search for current Solana faucet terms", "websearcj"]){
   const researchTools = selectToolsForRequest("ask", query).map(tool => tool.function.name);
-  assert.ok(researchTools.includes("web_search"), `search/faucet request exposes built-in web search without setup: ${query}`);
-  assert.ok(researchTools.includes("open_web_page"), `search/faucet request can verify source pages: ${query}`);
+  const expectedResearchTools = query === "websearcj" ? ["web_search", "open_web_page"] : ["web_research"];
+  for (const name of expectedResearchTools) assert.ok(researchTools.includes(name), `search/faucet request exposes ${name} without setup: ${query}`);
   assert.ok(!researchTools.includes("run_terminal_command"), `ordinary web research does not need broad shell access: ${query}`);
 }
 const faucetTools = selectToolsForRequest("ask", "claim solana main net faucets").map(tool => tool.function.name);

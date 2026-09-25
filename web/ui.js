@@ -31,7 +31,8 @@ function toast(msg) {
 const state = {
   settings: null, providers: {}, models: [], modelsLoading: false, modelsError: "",
   sessions: [], session: null, mode: "ask", contextFiles: [], files: [], images: [], lastGeneralModel: "",
-  sending: false, apiConfigured: false, workspace: "", nodeVersion: "", onboarding: null
+  sending: false, apiConfigured: false, workspace: "", nodeVersion: "", onboarding: null,
+  plugins: [], activePluginId: ""
 };
 
 /* ---------- markdown (safe, offline) ---------- */
@@ -91,6 +92,7 @@ async function boot() {
     state.onboarding = onboarding.onboarding || { completed: false };
     renderGreeting(state.onboarding.name || "");
     fetch("/api/skills").then(r => r.json()).then(d => { state.skillsCount = (d.skills || []).length; }).catch(() => {});
+    loadPlugins();
     const rs = $("runtimeStatus");
     rs.className = "runtime ok"; rs.querySelector(".runtime-label").textContent = "Local runtime · online";
     if (workspace) {
@@ -279,6 +281,11 @@ async function openSession(id) {
   try {
     const data = await api("/api/sessions/" + id);
     state.session = data.session;
+    state.activePluginId = state.session.activePluginId || "";
+    state.contextFiles = []; state.images = []; renderContext();
+    if (state.activePluginId) setMode("build");
+    else updateComposerForMode();
+    renderPluginCatalog();
     $("welcome").hidden = true;
     const box = $("messages");
     box.hidden = false; box.innerHTML = "";
@@ -312,6 +319,10 @@ function markActiveSession() {
 }
 function newTask() {
   state.session = null;
+  state.activePluginId = "";
+  state.contextFiles = []; state.images = []; renderContext();
+  renderPluginCatalog();
+  updateComposerForMode();
   $("messages").hidden = true; $("messages").innerHTML = "";
   $("welcome").hidden = false;
   $("topbarTitle").textContent = "New task";
@@ -416,7 +427,7 @@ const TOOL_TITLES = {
   task_checkpoint_read: "Read resume point",
   task_checkpoint_write: "Save resume point", task_memory_list: "List task notes", task_memory_read: "Read task note", task_memory_write: "Save task note",
   present_file: "Present file",
-  edit_image: "Edit image", add_mcp_server: "Add MCP server", list_mcp_servers: "List MCP servers", list_mcp_tools: "List MCP tools", list_mcp_resources: "List MCP resources", list_mcp_prompts: "List MCP prompts", read_mcp_resource: "Read MCP resource", get_mcp_prompt: "Get MCP prompt", call_mcp_tool: "Call MCP tool", get_workspace_file_info: "Inspect file", git_diff: "Review diff", quality_checkpoint: "Quality checkpoint", create_wallet: "Create local wallet", get_wallet_accounts: "Wallet addresses", get_wallet_status: "Wallet status", get_wallet_price: "Wallet price", get_wallet_market_snapshot: "Token market snapshot", get_wallet_token_allowance: "Inspect token allowance", get_wallet_portfolio: "Wallet portfolio", get_wallet_token_info: "Inspect token", get_wallet_activity: "Wallet activity", get_wallet_watch: "Wallet watch status", set_wallet_watch: "Update wallet watch", prepare_wallet_transaction: "Prepare wallet transaction", prepare_wallet_swap: "Get swap quote", send_email: "Prepare email"
+  edit_image: "Edit image", add_mcp_server: "Add MCP server", list_mcp_servers: "List MCP servers", list_mcp_tools: "List MCP tools", list_mcp_resources: "List MCP resources", list_mcp_prompts: "List MCP prompts", read_mcp_resource: "Read MCP resource", get_mcp_prompt: "Get MCP prompt", call_mcp_tool: "Call MCP tool", get_workspace_file_info: "Inspect file", git_diff: "Review diff", quality_checkpoint: "Quality checkpoint", create_wallet: "Create local wallet", get_wallet_accounts: "Wallet addresses", get_wallet_status: "Wallet status", get_wallet_price: "Wallet price", get_wallet_market_snapshot: "Token market snapshot", get_wallet_token_allowance: "Inspect token allowance", get_wallet_portfolio: "Wallet portfolio", get_wallet_token_info: "Inspect token", get_wallet_activity: "Wallet activity", get_wallet_watch: "Wallet watch status", set_wallet_watch: "Update wallet watch", prepare_wallet_transaction: "Prepare wallet transaction", prepare_wallet_swap: "Get swap quote", send_email: "Prepare email", list_sol_faucets: "Find SOL faucets", list_earning_opportunities: "Saved earning leads", save_earning_opportunity: "Save earning lead", web_research: "Research the web"
 };
 function toolTitle(name) { return TOOL_TITLES[name] || name; }
 function toolIcon(name) { return TOOL_ICONS[name] || (String(name).startsWith("task_memory_") ? TOOL_ICONS.task_memory_list : TOOL_ICONS.load_skill); }
@@ -461,6 +472,9 @@ function toolResultSummary(name, output = {}) {
     case "git_diff": return output.changed ? "Changes found" : "Clean";
     case "quality_checkpoint": return output.tier ? (output.tier + (output.ready ? " · ready" : " · " + (output.remainingMinutes ?? "?") + "m left")) : "Checked";
     case "get_wallet_status": return output.balanceNative != null ? output.balanceNative + " native" : "Read-only status";
+    case "list_sol_faucets": return (output.sources || []).length + " sources · checked " + (output.checkedAt || "");
+    case "list_earning_opportunities": return (output.entries || []).length + " saved lead(s)";
+    case "web_research": return (output.sources || []).length + " source page(s) read" + ((output.unreadableSources || []).length ? " · " + output.unreadableSources.length + " unreadable" : "");
     case "get_wallet_price": return output.priceUsd != null ? "$" + output.priceUsd : "Price unavailable";
     case "get_wallet_market_snapshot": return (output.pairCount ?? output.pairs?.length ?? 0) + " pool(s) · " + (output.network || "market data");
     case "get_wallet_token_allowance": return output.allowance != null ? output.allowance + (output.symbol ? " " + output.symbol : "") + (output.unlimited ? " · unlimited" : "") : "Allowance read";
@@ -563,6 +577,7 @@ function buildToolBlocks(events) {
     } else if (ev.type === "tool_end") {
       const el = byId.get(ev.id);
       if (el) completeToolBlock(el, ev);
+      if (ev.name === "list_sol_faucets" && !ev.failed && Array.isArray(ev.output?.sources)) wrap.appendChild(renderSolFaucetCard(ev.output));
     }
   }
   // any tool left "running" (no end event) → mark interrupted
@@ -891,6 +906,25 @@ function renderEmailConfirmation(draft) {
   el.querySelector(".email-cancel-confirm").onclick = () => { el.classList.add("cancelled"); sendButton.disabled = true; status.textContent = "Cancelled"; status.className = "email-confirm-status"; };
   return el;
 }
+function renderSolFaucetCard(result) {
+  const el = document.createElement("div");
+  el.className = "email-confirmation wallet-status-card faucet-source-card";
+  const entries = (Array.isArray(result.sources) ? result.sources : []).slice(0, 12).map(source => {
+    let claimUrl = "";
+    try {
+      const parsed = new URL(String(source.claimUrl || ""));
+      if (parsed.protocol === "https:" && ["solfaucet.togatech.org", "solfaucet.fun", "stakely.io", "faucet.solana.com"].includes(parsed.hostname)) claimUrl = parsed.href;
+    } catch {}
+    const links = (source.sources || []).slice(0, 3).map(raw => {
+      try { const u = new URL(String(raw)); return u.protocol === "https:" ? '<a href="' + esc(u.href) + '" target="_blank" rel="noopener noreferrer">Source</a>' : ""; } catch { return ""; }
+    }).join(" ");
+    const action = source.canOpenClaim && claimUrl ? '<a class="btn primary faucet-claim-button" href="' + esc(claimUrl) + '" target="_blank" rel="noopener noreferrer">Claim SOL</a>' : '<span class="faucet-excluded">' + esc(source.status || "Not claim-ready") + '</span>';
+    return '<article class="faucet-source-row"><div class="faucet-source-top"><div><strong>' + esc(source.name || "SOL faucet") + '</strong><small>' + esc(source.network || "Network unverified") + ' · ' + esc(source.status || "Needs review") + '</small></div>' + action + '</div><div class="faucet-source-details"><span><b>Reward</b> ' + esc(source.reward || "Not verified") + '</span><span><b>Limit</b> ' + esc(source.cadence || "Not verified") + '</span><span><b>Access</b> ' + esc(source.access || "Not verified") + '</span><span><b>Requirements</b> ' + esc(source.requirements || "Recheck the page") + '</span><span><b>Policy</b> ' + esc(source.policy || "Not verified") + '</span></div><p>' + esc(source.evidence || "Recheck this source before use.") + '</p><div class="faucet-source-links">' + links + '</div></article>';
+  }).join("");
+  el.innerHTML = '<div class="email-confirm-head"><span class="email-icon">◈</span><div><strong>Solana faucet research</strong><small>Checked ' + esc(result.checkedAt || "unknown") + ' · Mainnet only for earning</small></div></div><div class="faucet-source-list">' + (entries || '<p>No reviewed sources available.</p>') + '</div><div class="email-confirm-warning">' + esc(result.note || "Research only. Recheck live rules before claiming.") + ' Sonderr never submits claims, enters wallet credentials, or solves CAPTCHA. The Claim SOL button opens the page; complete any permitted steps yourself and verify any receipt on-chain.</div>';
+  return el;
+}
+
 function renderWalletConfirmation(draft) {
   const el = document.createElement("div");
   el.className = "email-confirmation wallet-confirmation";
@@ -1130,6 +1164,7 @@ function createAgentRow() {
     completeTool(ev) {
       const block = live.get(ev.id);
       if (block && block.querySelector(".tool-state")?.classList.contains("wait")) completeToolBlock(block, ev);
+      if (ev.name === "list_sol_faucets" && !ev.failed && Array.isArray(ev.output?.sources)) el.querySelector(".tools").appendChild(renderSolFaucetCard(ev.output));
       this.setStatus("Thinking…");
     },
     finish(message, connector) {
@@ -1183,7 +1218,7 @@ async function send() {
     row = createAgentRow();
     const res = await fetch("/api/sessions/" + state.session.id, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: value, mode: state.mode, context, images: sentImages.map(i => i.path) })
+      body: JSON.stringify({ content: value, mode: state.mode, context, images: sentImages.map(i => i.path), activePluginId: state.activePluginId })
     });
     const isStream = res.body && (res.headers.get("content-type") || "").includes("text/event-stream");
     if (!res.ok || !isStream) {
@@ -1394,9 +1429,10 @@ function renderFileTree() {
 }
 function renderContext() {
   const box = $("contextChips");
-  const has = state.contextFiles.length || state.images.length;
+  const has = state.contextFiles.length || state.images.length || state.activePluginId;
   box.hidden = !has;
   box.innerHTML =
+    (state.activePluginId ? '<span class="chip plugin-active-chip"><span class="plugin-active-spark">✦</span><span>' + esc(state.plugins.find(plugin => plugin.id === state.activePluginId)?.name || "Plugin") + ' active</span><button data-plugin-remove="1" aria-label="Remove active plugin" title="Remove plugin from this chat"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>' : "") +
     state.images.map((im, i) =>
       '<span class="chip img-chip"><img src="/api/download?path=' + encodeURIComponent(im.path) + '&inline=1" alt=""><span>' + esc(im.name) + '</span><button data-img="' + i + '" aria-label="Remove ' + esc(im.name) + '"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>'
     ).join("") +
@@ -1408,6 +1444,9 @@ function renderContext() {
   });
   box.querySelectorAll("button[data-img]").forEach(b => {
     b.onclick = () => { state.images.splice(Number(b.dataset.img), 1); renderContext(); };
+  });
+  box.querySelectorAll("button[data-plugin-remove]").forEach(b => {
+    b.onclick = () => { state.activePluginId = ""; renderContext(); updateComposerForMode(); renderPluginCatalog(); toast("Plugin removed from this chat"); };
   });
 }
 
@@ -1455,6 +1494,7 @@ async function handleIncomingFiles(files) {
 function updateComposerForMode() {
   const input = $("input");
   input.placeholder = state.mode === "vision" ? "Ask about the image — or describe an edit…"
+    : state.activePluginId === "sites" ? "Describe the site you want to make…"
     : state.mode === "build" ? "Describe what to build…"
     : state.mode === "plan" ? "What should we plan?"
     : "How can Sonderr help you today?";
@@ -1770,7 +1810,7 @@ function renderSettings() {
         <h2>About</h2>
         <p class="panel-sub">Sonderr is a privacy-first local AI workspace with optional Web3 capabilities. The terminal only launches it — the browser is the product.</p>
         <div class="about-rows">
-          <div class="about-row"><span>Version</span><b>1.5.6</b></div>
+          <div class="about-row"><span>Version</span><b>1.5.7</b></div>
           <div class="about-row"><span>Workspace</span><b title="${esc(state.workspace)}">${esc(state.workspace || "—")}</b></div>
           <div class="about-row"><span>Runtime</span><b>Node ${esc(state.nodeVersion || "")} · localhost</b></div>
           <div class="about-row"><span>API status</span><b>${state.apiConfigured ? "Connected" : "Not configured"}</b></div>
@@ -1850,6 +1890,63 @@ function closePopovers() {
   closeCommandMenu();
 }
 function closeMobileNav() { $("sidebar").classList.remove("open"); $("scrim").hidden = true; }
+function openPluginHub() {
+  closeMobileNav();
+  $("pluginHubModal").hidden = false;
+  if (!state.plugins.length) loadPlugins();
+  setTimeout(() => $("pluginGrid").querySelector(".plugin-use")?.focus(), 0);
+}
+function closePluginHub() {
+  const modal = $("pluginHubModal");
+  if (!modal.hidden) { modal.hidden = true; $("pluginHubBtn").focus(); }
+}
+function usePlugin(pluginId) {
+  const plugin = state.plugins.find(item => item.id === pluginId);
+  if (!plugin) return;
+  if (state.activePluginId === plugin.id) {
+    state.activePluginId = "";
+    renderContext(); updateComposerForMode(); renderPluginCatalog();
+    toast(plugin.name + " was removed from this chat");
+    return;
+  }
+  state.activePluginId = plugin.id;
+  setMode("build");
+  renderContext();
+  renderPluginCatalog();
+  closePluginHub();
+  toast(plugin.name + " is enabled for this chat");
+  $("input").focus();
+}
+function renderPluginCatalog() {
+  const grid = $("pluginGrid");
+  if (!grid) return;
+  if (!state.plugins.length) {
+    grid.innerHTML = '<div class="plugin-loading">No plugins are available right now.</div><div class="plugin-hub-note"><span>✦</span><p><strong>More plugins are on the way.</strong><br>Plugins add focused workflows; Sonderr stays in control of the work.</p></div>';
+    return;
+  }
+  const cards = state.plugins.map(plugin => {
+    const date = plugin.releaseDate && !Number.isNaN(Date.parse(plugin.releaseDate + "T00:00:00"))
+      ? new Date(plugin.releaseDate + "T00:00:00").toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+      : "Date not listed";
+    const active = state.activePluginId === plugin.id;
+    const tags = (plugin.features || []).slice(0, 4).map(item => '<span>' + esc(item) + '</span>').join("");
+    const examples = (plugin.examples || []).slice(0, 4).map(item => '<li>' + esc(item) + '</li>').join("");
+    return '<article class="plugin-card' + (active ? ' is-active' : '') + '"><div class="plugin-card-top"><span class="plugin-icon">▧</span><span class="plugin-status">' + esc(active ? "In this chat" : plugin.status || "Available") + '</span></div><div class="plugin-name-row"><h3>' + esc(plugin.name) + '</h3><span class="plugin-version">v' + esc(plugin.version || "1.0") + '</span></div><p>' + esc(plugin.summary || "A Sonderr workflow plugin.") + '</p><div class="plugin-tags">' + tags + '</div><details class="plugin-details"><summary>Read more</summary><p>' + esc(plugin.details || plugin.summary || "") + '</p>' + (examples ? '<strong class="plugin-detail-label">Try asking Sonderr</strong><ul>' + examples + '</ul>' : '') + '<div class="plugin-release"><span>Release date</span><strong>' + esc(date) + '</strong><span>Category</span><strong>' + esc(plugin.category || "Plugin") + '</strong></div></details><button class="btn ' + (active ? 'ghost' : 'primary') + ' plugin-use" data-plugin-id="' + esc(plugin.id) + '" aria-pressed="' + String(active) + '">' + (active ? 'Remove from chat' : 'Use this plugin') + '</button><small class="plugin-footnote">' + (plugin.id === "sites" ? "Creates and refines site files in your workspace. Hosting or publishing is separate." : "Enabled for this chat until you remove its chip in the composer.") + '</small></article>';
+  }).join("");
+  grid.innerHTML = cards + '<div class="plugin-hub-note"><span>✦</span><p><strong>More plugins are on the way.</strong><br>Plugins add focused workflows; Sonderr stays in control of the work.</p></div>';
+  grid.querySelectorAll(".plugin-use").forEach(button => { button.onclick = () => usePlugin(button.dataset.pluginId); });
+}
+async function loadPlugins() {
+  try {
+    const data = await api("/api/plugins");
+    state.plugins = Array.isArray(data.plugins) ? data.plugins : [];
+    renderPluginCatalog();
+    renderContext();
+  } catch {
+    state.plugins = [];
+    renderPluginCatalog();
+  }
+}
 function autosize() {
   const t = $("input");
   t.style.height = "auto";
@@ -1857,6 +1954,9 @@ function autosize() {
 }
 function wire() {
   $("newTaskBtn").onclick = newTask;
+  $("pluginHubBtn").onclick = openPluginHub;
+  $("pluginHubClose").onclick = closePluginHub;
+  $("pluginHubModal").addEventListener("click", e => { if (e.target === $("pluginHubModal")) closePluginHub(); });
   $("settingsBtn").onclick = () => { openSettings("api"); closeMobileNav(); };
   $("settingsClose").onclick = closeSettings;
   $("settingsModal").addEventListener("click", e => { if (e.target === $("settingsModal")) closeSettings(); });
@@ -1893,7 +1993,7 @@ function wire() {
     if (!e.target.closest(".model-picker") && !e.target.closest(".attach-menu")) closePopovers();
   });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closePopovers(); closeSettings(); closeMobileNav(); closeArtifact(); }
+    if (e.key === "Escape") { closePopovers(); closeSettings(); closePluginHub(); closeMobileNav(); closeArtifact(); }
   });
 
   $("modeSeg").querySelectorAll(".mode-btn").forEach(btn => {

@@ -17,7 +17,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.5.6 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.5.7 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -30,6 +30,10 @@
     <nav class="session-list" id="sessionList" aria-label="Recent sessions"></nav>
 
     <div class="sidebar-foot">
+      <button class="side-item" id="pluginHubBtn" aria-haspopup="dialog" aria-controls="pluginHubModal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3h4a2 2 0 1 1 0 4H3v4a2 2 0 0 0 2 2h4v-3a2 2 0 1 1 4 0v3h4a2 2 0 0 0 2-2v-4h-3a2 2 0 1 1 0-4h3V5a2 2 0 0 0-2-2h-4v3a2 2 0 1 1-4 0z"/></svg>
+        Sonderr Plugin Hub
+      </button>
       <button class="side-item" id="settingsBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
@@ -221,6 +225,23 @@
     </aside>
     <div class="modal-body" id="settingsBody"></div>
   </div>
+</div>
+
+<!-- ===================== Plugin hub ===================== -->
+<div class="modal-scrim plugin-hub-scrim" id="pluginHubModal" hidden>
+  <section class="plugin-hub-panel" role="dialog" aria-modal="true" aria-labelledby="pluginHubTitle">
+    <button class="modal-close" id="pluginHubClose" aria-label="Close plugin hub">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="plugin-hub-header">
+      <span class="plugin-hub-mark">✦</span>
+      <div><p class="plugin-hub-eyebrow">SONDERR PLUGIN HUB</p><h2 id="pluginHubTitle">Extend what Sonderr can do</h2><p>Focused tools that work alongside Sonderr AI.</p></div>
+    </div>
+    <div class="plugin-grid" id="pluginGrid" aria-live="polite">
+      <div class="plugin-loading">Loading plugins…</div>
+      <div class="plugin-hub-note"><span>✦</span><p><strong>More plugins are on the way.</strong><br>Plugins add focused workflows; Sonderr stays in control of the work.</p></div>
+    </div>
+  </section>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

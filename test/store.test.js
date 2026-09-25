@@ -30,8 +30,32 @@ try {
   assert.equal(store.walletPortfolioSnapshot("evm:Base").totalUsd, 10);
   assert.equal(store.walletPortfolioSnapshot("evm:Ethereum").totalUsd, 20);
 
+  const opportunity = store.saveEarningOpportunity({
+    title: "Solana example faucet",
+    category: "faucet",
+    network: "solana-mainnet",
+    status: "candidate",
+    sources: ["https://faucet.example/rules", "http://unsafe.example/", "https://evil.example/?api_key=do-not-save"],
+    amount: "0.001",
+    currency: "SOL",
+    eligibility: "One claim per day; verify current terms",
+    evidence: "Official page states a cooldown; payout not verified",
+    nextCheckAt: "2026-09-26T12:00:00Z"
+  });
+  assert.equal(opportunity.sources.length, 1, "ledger accepts only safe HTTPS source URLs without credential-like parameters");
+  assert.equal(opportunity.status, "candidate", "a research lead is not mislabeled as submitted or paid");
+  assert.equal(store.listEarningOpportunities().length, 1, "earning ledger persists locally");
+  const updatedOpportunity = store.saveEarningOpportunity({ id: opportunity.id, status: "eligible", evidence: "Terms checked; identity requirements still unknown" });
+  assert.equal(updatedOpportunity.id, opportunity.id, "updating an entry preserves its stable ID");
+  assert.equal(store.listEarningOpportunities().length, 1, "updates do not create duplicate entries");
+  assert.equal(store.saveEarningOpportunity({ title: "Secret API_KEY=do-not-persist", category: "other" }).title, "Secret API_KEY=[redacted by Sonderr safety]", "ledger notes redact secret-like text");
+  assert.throws(() => store.saveEarningOpportunity({ title: "bad date", nextCheckAt: "not a date" }), /ISO date\/time/);
+
   const session = store.createSession("A safe title\nwithout a second line");
   assert.equal(session.title.includes("\n"), false);
+  assert.equal(store.setSessionPlugin(session.id, "sites"), "sites");
+  assert.equal(store.getSession(session.id).activePluginId, "sites", "active plugin persists per chat");
+  assert.equal(store.setSessionPlugin(session.id, ""), "", "plugin can be removed from a chat");
   for (let index = 0; index < 242; index++) store.addMessage(session.id, "user", "message-" + index);
   const saved = store.getSession(session.id);
   assert.equal(saved.messages.length, 240);

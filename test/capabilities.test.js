@@ -8,10 +8,16 @@ const wallet = require("../server/wallet");
 
 const toolNames = new Set(provider.TOOL_DEFINITIONS.map(item => item.function.name));
 assert.equal(toolNames.has("faucet_claim"), false, "faucet-claim playbook must not imply a nonexistent executable tool");
-for (const name of ["analyze_workspace", "read_workspace_range", "patch_workspace_file", "run_project_checks", "get_git_status", "task_checkpoint_read", "task_checkpoint_write"]) {
+for (const name of ["analyze_workspace", "read_workspace_range", "patch_workspace_file", "run_project_checks", "get_git_status", "task_checkpoint_read", "task_checkpoint_write", "list_earning_opportunities", "save_earning_opportunity", "list_sol_faucets"]) {
   assert.equal(toolNames.has(name), true, "missing capability tool: " + name);
 }
-for (const name of ["web_search", "open_web_page"]) assert.equal(toolNames.has(name), true, "missing built-in web research tool: " + name);
+for (const name of ["web_search", "open_web_page", "web_research"]) assert.equal(toolNames.has(name), true, "missing built-in web research tool: " + name);
+const deepResearchTools = new Set(provider.selectToolsForRequest("ask", "Research current Solana faucet providers.").map(tool => tool.function.name));
+assert.ok(deepResearchTools.has("web_research"), "research requests get the bounded search-and-read workflow");
+assert.equal(deepResearchTools.has("web_search"), false, "deep research avoids loading duplicate search tools");
+const simpleSearchTools = new Set(provider.selectToolsForRequest("ask", "websearcj Solana docs").map(tool => tool.function.name));
+assert.ok(simpleSearchTools.has("web_search"), "simple searches keep the lightweight search tool");
+assert.equal(simpleSearchTools.has("web_research"), false, "simple searches do not load the heavier research tool");
 for (const name of ["create_wallet", "get_wallet_accounts", "get_wallet_status", "get_wallet_price", "get_wallet_market_snapshot", "get_wallet_token_allowance", "get_wallet_portfolio", "get_wallet_token_info", "get_wallet_activity", "get_wallet_watch", "set_wallet_watch", "prepare_wallet_transaction", "prepare_wallet_swap"]) {
   assert.equal(toolNames.has(name), true, "missing wallet capability tool: " + name);
 }
@@ -51,8 +57,10 @@ assert.ok(skills.forTask("Review the Sonderr developer program and open source c
 assert.ok(skills.forTask("What can you do? Give me a rundown of Sonderr features.").includes("sonderr-docs"));
 assert.ok(skills.forTask("Check the exact token contract and my wallet portfolio.").includes("wallet-intelligence"));
 assert.ok(skills.forTask("Try to make money with Web3.").includes("web3-earning"));
+assert.ok(skills.forTask("Free money?").includes("web3-earning"), "short free-money asks load earning guidance instead of being treated as small talk");
 assert.ok(skills.forTask("Find current crypto grants and a Web3 bounty for me.").includes("web3-earning"));
 assert.ok(skills.forTask("Go search the internet for faucets and get SOL from 100 different ones.").includes("web3-earning"));
+assert.match(fs.readFileSync(require.resolve("../skills/faucet-claim.md"), "utf8"), /persistent opportunity ledger is only available when the user explicitly asks/i);
 assert.ok(skills.forTask("Go search the internet for faucets and get SOL from 100 different ones.").includes("faucet-claim"));
 assert.deepEqual(skills.forTask("faucets faucets faucets faucets claim sol claim sol free sol"), skills.forTask("faucets claim sol"), "repeating synonymous triggers cannot inflate a skill above complementary matches");
 assert.ok(skills.forTask("Use the faucetclaim skill to find legitimate SOL faucets.").includes("faucet-claim"));
@@ -80,7 +88,7 @@ assert.match(appSource, /faucet-claim for specific faucet research\/claims/);
 assert.match(appSource, /no general browser-driving or faucet_claim tool/);
 assert.match(appSource, /including obvious misspellings such as "websearcj"/);
 assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainnet support/);
-assert.match(appSource, /version:"1\.5\.6"/);
+assert.match(appSource, /version:"1\.5\.7"/);
 assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);
 assert.match(docsSkill, /reasonable estimate is fine if explicitly labeled as a guess/i);
 assert.match(docsSkill, /public source and self-service installer are available/i);
@@ -97,6 +105,11 @@ assert.match(earningSkill, /Do not treat one person using many separate public f
 assert.match(earningSkill, /Never present test SOL as income or interchangeable with real SOL/);
 assert.match(earningSkill, /Never claim “I cannot browse the internet” when the built-in tools are available/);
 const faucetSkill = fs.readFileSync(require.resolve("../skills/faucet-claim.md"), "utf8");
+assert.match(faucetSkill, /Mainnet-first discovery and useful alternatives/);
+assert.match(faucetSkill, /solana\.com\/docs\/references\/clusters/);
+assert.match(faucetSkill, /tells AI agents not to use that page/);
+assert.match(faucetSkill, /none verified in this search/);
+assert.match(faucetSkill, /one service at a time/);
 assert.match(faucetSkill, /This playbook is guidance, not an executable tool/);
 assert.match(faucetSkill, /there is no `faucet_claim` tool/);
 assert.match(faucetSkill, /do not invent a “mainnet unsupported” error for a nonexistent tool/i);
@@ -107,6 +120,7 @@ assert.match(appSource, /unload_skill/);
 assert.match(readme, /Accept & swap/);
 assert.match(readme, /exact-amount approval card/);
 assert.match(readme, /63 playbooks/);
+assert.match(readme, /verified-domain search filters and focus-ranked page excerpts/);
 assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
 const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");
 assert.match(installer, /git clone --depth 1/);

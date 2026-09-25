@@ -1,4 +1,4 @@
-# SONDERR v1.5.6
+# SONDERR v1.5.7
 
 ![Sonderr 1.5 banner](https://github.com/user-attachments/assets/ef409eb2-a776-4a4b-a9bc-4413ab47a0e0)
 
@@ -39,7 +39,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.6 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.7 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -95,11 +95,14 @@ The v1.5 web surface is intentionally closer to a modern AI harness than a tradi
 - clean white workspace
 - Sonderr blue interaction accents
 - persistent workspace sidebar
+- Sonderr Plugin Hub with a Sites website-building workflow
 - recent sessions area
 - local runtime status
 - central task surface
 - composer for engineering tasks
 - Sonderr otter branding throughout
+
+The **Sonderr Plugin Hub** is available from the sidebar. Browse plugin summaries, expand **Read more** for details and release metadata, then choose **Use this plugin** to enable it for the current chat. Its first plugin, **Sites**, adds a focused website-building workflow to Build mode so Sonderr can make and refine site files in the active workspace. Hosting and publishing remain separate steps.
 
 The UI is designed so the runtime can grow into tool execution, repository context, provider routing, verification, and longer-running agent workflows without changing the core product shape.
 
@@ -131,7 +134,11 @@ Skills are expert playbooks stored as Markdown files in `skills/` — one file p
 
 Sonderr can build an evidence-based workspace map, read bounded line ranges, make an exact in-place patch, and run only existing project checks. Every filesystem action remains workspace-scoped; changes require the active execution mode, and project checks require both `full_pc` mode and an explicit verification request. The composer also offers `/audit`, `/health`, `/plan`, `/verify`, `/security`, and `/docs` shortcuts for the most useful workflows.
 
-Tools including `analyze_workspace`, `read_workspace_range`, `patch_workspace_file`, `run_project_checks`, `list_workspace_files`, `read_workspace_file`, `write_workspace_file`, `search_workspace`, `web_search`, `open_web_page`, `run_terminal_command`, `load_skill`, `todo_write`, `todo_read`, and `present_file` run server-side with access levels controlled in Settings → Tools & Access. Built-in web research needs no MCP setup or shell permission; it uses bounded read-only public HTTPS requests and blocks local/private hosts, non-text downloads, and oversized pages. Tool calls stream to the chat as collapsed activity blocks in real time and are persisted with the session, so reopening a task replays them.
+Tools including `analyze_workspace`, `read_workspace_range`, `patch_workspace_file`, `run_project_checks`, `list_workspace_files`, `read_workspace_file`, `write_workspace_file`, `search_workspace`, `web_search`, `open_web_page`, `web_research`, `run_terminal_command`, `load_skill`, `todo_write`, `todo_read`, and `present_file` run server-side with access levels controlled in Settings → Tools & Access. Built-in web research needs no MCP setup or shell permission; it uses bounded read-only public HTTPS requests, supports verified-domain search filters and focus-ranked page excerpts, and blocks local/private hosts, non-text downloads, and oversized pages. `web_research` combines a concise search with up to three source-page reads in one bounded action. Tool calls stream to the chat as collapsed activity blocks in real time and are persisted with the session, so reopening a task replays them.
+
+For earning research, Sonderr can optionally keep a small local opportunity ledger when asked: source links, network, eligibility/evidence notes, status, and a re-check time. It is not a claim executor, does not keep wallet credentials or addresses, and never marks rewards as paid without verified receipt. Mainnet SOL faucets are treated as unverified until their own current terms and payout evidence are checked; Devnet/Testnet tokens are not earnings.
+
+Solana faucet searches can also show a dated, evidence-labeled source card. Its **Claim SOL** action opens one manual-review candidate in a new tab; it does not submit claims, fill forms, solve CAPTCHAs, or bypass site rules. Excluded testnet, inactive, CAPTCHA/purpose-mismatch, and third-party directory sources remain visible with the reason they are not claim-ready.
 
 ### File delivery and uploads (v1.5.1)
 
@@ -200,7 +207,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.6 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.7 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening
