@@ -11,6 +11,7 @@ assert.equal(toolNames.has("faucet_claim"), false, "faucet-claim playbook must n
 for (const name of ["analyze_workspace", "read_workspace_range", "patch_workspace_file", "run_project_checks", "get_git_status", "task_checkpoint_read", "task_checkpoint_write"]) {
   assert.equal(toolNames.has(name), true, "missing capability tool: " + name);
 }
+for (const name of ["web_search", "open_web_page"]) assert.equal(toolNames.has(name), true, "missing built-in web research tool: " + name);
 for (const name of ["create_wallet", "get_wallet_accounts", "get_wallet_status", "get_wallet_price", "get_wallet_market_snapshot", "get_wallet_token_allowance", "get_wallet_portfolio", "get_wallet_token_info", "get_wallet_activity", "get_wallet_watch", "set_wallet_watch", "prepare_wallet_transaction", "prepare_wallet_swap"]) {
   assert.equal(toolNames.has(name), true, "missing wallet capability tool: " + name);
 }
@@ -37,7 +38,7 @@ for (const id of ["integration-testing", "performance-profiling", "observability
   assert.ok(skill.instructions.length > 250, "skill is too thin: " + id);
 }
 
-assert.equal(skills.all().length, 61);
+assert.equal(skills.all().length, 62);
 assert.equal(JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count, skills.all().length);
 assert.equal(skills.MAX_AUTO_ATTACH, 2);
 assert.deepEqual(skills.validateCatalog(), []);
@@ -45,6 +46,7 @@ assert.deepEqual(skills.forTask("hello"), [], "a greeting does not select a play
 for (const skill of skills.all()) {
   assert.ok(skills.forTask(skill.triggers[0]).includes(skill.id), "first trigger does not select its playbook: " + skill.id);
 }
+assert.ok(skills.forTask("websearcj").includes("web-research"), "obvious web-search misspellings still load the research playbook");
 assert.ok(skills.forTask("Review the Sonderr developer program and open source contributions.").includes("contribution-workflow"));
 assert.ok(skills.forTask("What can you do? Give me a rundown of Sonderr features.").includes("sonderr-docs"));
 assert.ok(skills.forTask("Check the exact token contract and my wallet portfolio.").includes("wallet-intelligence"));
@@ -71,9 +73,10 @@ assert.doesNotMatch(appSource, /personal AI project|solo developer/i);
 assert.match(appSource, /do not stonewall or claim your programming prevents an answer/i);
 assert.match(appSource, /Do not reflexively tell users Sonderr cannot help them make money/);
 assert.match(appSource, /For faucets, assume one person claiming once at distinct services is not abuse by itself/);
-assert.match(appSource, /bounded read-only web requests through the terminal/);
+assert.match(appSource, /built-in read-only web_search\/open_web_page tools/);
 assert.match(appSource, /faucet-claim for specific faucet research\/claims/);
-assert.match(appSource, /Sonderr has no built-in faucet_claim function or general browser-driving function/);
+assert.match(appSource, /no general browser-driving or faucet_claim tool/);
+assert.match(appSource, /including obvious misspellings such as "websearcj"/);
 assert.match(appSource, /Never report that a nonexistent faucet tool lacks Mainnet support/);
 assert.match(appSource, /version:"1\.5\.5"/);
 assert.match(appSource, /an informed guess is okay.*label it plainly as a guess/s);
@@ -90,17 +93,18 @@ assert.match(earningSkill, /does not execute limit orders, autonomous\/recurring
 assert.match(earningSkill, /Do not call an opportunity risk-free, passive, guaranteed, a sure thing/);
 assert.match(earningSkill, /Do not treat one person using many separate public faucet programs as abuse/);
 assert.match(earningSkill, /Never present test SOL as income or interchangeable with real SOL/);
-assert.match(earningSkill, /Never claim “I cannot browse the internet” before checking actual available tools and permission/);
+assert.match(earningSkill, /Never claim “I cannot browse the internet” when the built-in tools are available/);
 const faucetSkill = fs.readFileSync(require.resolve("../skills/faucet-claim.md"), "utf8");
 assert.match(faucetSkill, /This playbook is guidance, not an executable tool/);
 assert.match(faucetSkill, /there is no `faucet_claim` tool/);
 assert.match(faucetSkill, /do not invent a “mainnet unsupported” error for a nonexistent tool/i);
+assert.match(faucetSkill, /Sonderr's built-in `web_search`/);
 assert.match(appSource, /Skills are not preloaded/i);
 assert.match(appSource, /load_skill/);
 assert.match(appSource, /unload_skill/);
 assert.match(readme, /Accept & swap/);
 assert.match(readme, /exact-amount approval card/);
-assert.match(readme, /61 playbooks/);
+assert.match(readme, /62 playbooks/);
 assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
 const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");
 assert.match(installer, /git clone --depth 1/);

@@ -125,13 +125,13 @@ The agent layer connects configured model providers to workspace and integration
 
 ### Skills and tools (backend)
 
-Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 61 playbooks cover engineering, data, product, security, quality, Web3, and operations, including a dedicated faucet-claim workflow, a complete Sonderr product guide, wallet research, and Web3 earning.
+Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 62 playbooks cover engineering, data, product, security, quality, Web3, and operations, including dedicated web-research and faucet-claim workflows, a complete Sonderr product guide, wallet research, and Web3 earning.
 
 ### Workspace intelligence and controlled actions
 
 Sonderr can build an evidence-based workspace map, read bounded line ranges, make an exact in-place patch, and run only existing project checks. Every filesystem action remains workspace-scoped; changes require the active execution mode, and project checks require both `full_pc` mode and an explicit verification request. The composer also offers `/audit`, `/health`, `/plan`, `/verify`, `/security`, and `/docs` shortcuts for the most useful workflows.
 
-Tools including `analyze_workspace`, `read_workspace_range`, `patch_workspace_file`, `run_project_checks`, `list_workspace_files`, `read_workspace_file`, `write_workspace_file`, `search_workspace`, `run_terminal_command`, `load_skill`, `todo_write`, `todo_read`, and `present_file` run server-side with access levels controlled in Settings → Tools & Access. Tool calls stream to the chat as collapsed activity blocks in real time and are persisted with the session, so reopening a task replays them.
+Tools including `analyze_workspace`, `read_workspace_range`, `patch_workspace_file`, `run_project_checks`, `list_workspace_files`, `read_workspace_file`, `write_workspace_file`, `search_workspace`, `web_search`, `open_web_page`, `run_terminal_command`, `load_skill`, `todo_write`, `todo_read`, and `present_file` run server-side with access levels controlled in Settings → Tools & Access. Built-in web research needs no MCP setup or shell permission; it uses bounded read-only public HTTPS requests and blocks local/private hosts, non-text downloads, and oversized pages. Tool calls stream to the chat as collapsed activity blocks in real time and are persisted with the session, so reopening a task replays them.
 
 ### File delivery and uploads (v1.5.1)
 
@@ -210,12 +210,12 @@ Sonderr v1.5.5 provides a localhost engineering workspace with these capabilitie
 - present_file artifact cards with the Claude-style side preview panel (markdown / code / JSON / CSV / images)
 - device uploads (20 MB, sandboxed) plus clipboard paste and drag & drop
 - Vision mode: image Q&A over vision-capable models + edit_image generation/editing
-- 61 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
+- 62 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
 - persistent task lists and resumable active-work quality budgets for multi-stage tasks
 - workspace analysis, bounded source reading, exact file patching, and controlled project checks
 - a long-running task workflow that checkpoints progress and resumes from verified workspace state
 - system prompt with explicit tool contracts, untrusted-content handling, privacy boundaries, and honest verification rules
-- token-aware Ask mode: short standalone questions use a compact prompt, no tool catalog, and no unrelated chat history; workspace, wallet, MCP, and other tool-backed requests receive only relevant Ask tools
+- token-aware Ask mode: short standalone questions use a compact prompt, no tool catalog, and no unrelated chat history; workspace, wallet, web research, MCP, and other tool-backed requests receive only relevant Ask tools
 - provider TPM recovery: compact long context when needed, reduce output budgets, and honor a provider's timed token-rate cooldowns before retrying
 - Sonderr branding, clean AI-harness-style UI
 

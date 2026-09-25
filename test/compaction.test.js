@@ -87,20 +87,27 @@ assert.ok(!walletAskTools.some(name => name.startsWith("prepare_wallet")), "read
 const walletSendTools = selectToolsForRequest("ask", "Send 0.1 ETH to this address").map(tool => tool.function.name);
 assert.ok(walletSendTools.includes("prepare_wallet_transaction"));
 assert.equal(selectToolsForRequest("ask", "How does email work?").length, 0, "general questions do not receive action tools");
+assert.ok(selectToolsForRequest("ask", "Draft and send an email to my client").some(tool => tool.function.name === "send_email"), "explicit email actions receive the confirmation-card tool");
+assert.ok(selectToolsForRequest("ask", "Connect my Notion MCP server").some(tool => tool.function.name === "connect_mcp_server"), "explicit MCP setup requests receive connector tools");
+assert.ok(selectToolsForRequest("ask", "Run curl to inspect this endpoint").some(tool => tool.function.name === "run_terminal_command"), "explicit shell requests receive the terminal tool");
 const buildTools = selectToolsForRequest("build", "Implement and test this feature").map(tool => tool.function.name);
 assert.ok(buildTools.includes("write_workspace_file"), "Build keeps core workspace editing tools available");
 assert.ok(buildTools.includes("task_checkpoint_write"), "Build keeps long-running task checkpointing available");
 assert.ok(buildTools.includes("run_project_checks"), "verification requests receive verification tools");
+assert.ok(selectToolsForRequest("build", "Continue the long-running multi-stage task with checkpoint memory").some(tool => tool.function.name === "task_memory_write"), "long Build requests receive temporary task memory tools");
 assert.ok(!buildTools.includes("send_email") && !buildTools.includes("call_mcp_tool"), "unrelated integrations are excluded from ordinary Build requests");
 assert.ok(buildTools.length < 24, "ordinary Build prompts send a focused schema set, not the full tool catalog");
 const planTools = selectToolsForRequest("plan", "Plan a wallet transfer and email notification").map(tool => tool.function.name);
 assert.ok(!planTools.some(name => /prepare_wallet|send_email|write_workspace|run_terminal|call_mcp|connect_mcp|add_mcp|task_checkpoint_write/.test(name)), "Plan mode never receives write, send, connect, or transaction-preparation tools");
 for (const query of ["claim solana main net faucets", "web search for current Solana faucet terms", "websearcj"]){
   const researchTools = selectToolsForRequest("ask", query).map(tool => tool.function.name);
-  assert.ok(researchTools.includes("list_mcp_servers"), `search/faucet request exposes MCP discovery: ${query}`);
-  assert.ok(researchTools.includes("list_mcp_tools") && researchTools.includes("call_mcp_tool"), `search/faucet request can inspect and use a connected search tool: ${query}`);
-  assert.ok(researchTools.includes("run_terminal_command"), `search/faucet request exposes the Full-PC read-only research fallback: ${query}`);
+  assert.ok(researchTools.includes("web_search"), `search/faucet request exposes built-in web search without setup: ${query}`);
+  assert.ok(researchTools.includes("open_web_page"), `search/faucet request can verify source pages: ${query}`);
+  assert.ok(!researchTools.includes("run_terminal_command"), `ordinary web research does not need broad shell access: ${query}`);
 }
+const faucetTools = selectToolsForRequest("ask", "claim solana main net faucets").map(tool => tool.function.name);
+assert.ok(faucetTools.includes("get_wallet_status"), "a mainnet claim can check the exact Solana receive address when needed");
+assert.ok(!faucetTools.includes("get_wallet_price") && !faucetTools.includes("prepare_wallet_transaction"), "faucet research does not receive unrelated wallet-price or spending tools");
 assert.equal(selectToolsForRequest("ask", "Hello there").length, 0, "unrelated greetings do not receive web or shell tools");
 
 (async () => {
