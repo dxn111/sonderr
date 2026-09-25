@@ -67,41 +67,31 @@ function inferNetworkFromText(text, chainHint, requestedNetwork) {
   const source = String(text || "").toLowerCase(), candidates = new Set();
   if (/\bbase\s*(?:sepolia|testnet)\b/.test(source)) candidates.add("base-sepolia");
   else if (/\b(?:base\s+(?:main[\s-]?net|chain|network|balance|wallet)|on\s+base)\b/.test(source)) candidates.add("base-mainnet");
-  if (/\b(?:ethereum|eth)\s*(?:sepolia|testnet)\b/.test(source)) candidates.add("sepolia");
+  if (/\b(?:ethereum|eth)\s*(?:sepolia|testnet)\b|\b(?:sepolia|testnet)\s+(?:ethereum|eth)\b/.test(source)) candidates.add("sepolia");
   else if (/\b(?:ethereum|eth)\s+main[\s-]?net\b/.test(source)) candidates.add("ethereum-mainnet");
-  if (/\bsolana\s+devnet\b|\bdevnet\s+solana\b/.test(source)) candidates.add("solana-devnet");
-  else if (/\bsolana\s+testnet\b|\btestnet\s+solana\b/.test(source)) candidates.add("solana-testnet");
-  else if (/\bsolana\s+main[\s-]?net(?:[\s-]?beta)?\b/.test(source)) candidates.add("solana-mainnet");
-  if (/\bsepolia\b/.test(source) && !/\bbase\s*(?:sepolia|testnet)\b/.test(source)) candidates.add("sepolia");
+  else if (/\bmain[\s-]?net\s+(?:ethereum|eth)\b/.test(source)) candidates.add("ethereum-mainnet");
+  if (/\b(?:solana|sol)\s+devnet\b|\bdevnet(?:\s+(?:wallet|balance|address|account|on))?\s+(?:solana|sol)\b/.test(source)) candidates.add("solana-devnet");
+  else if (/\b(?:solana|sol)\s+testnet\b|\btestnet(?:\s+(?:wallet|balance|address|account|on))?\s+(?:solana|sol)\b/.test(source)) candidates.add("solana-testnet");
+  else if (/\b(?:solana|sol)\s+main[\s-]?net(?:[\s-]?beta)?\b|\bmain[\s-]?net(?:[\s-]?beta)?(?:\s+(?:wallet|balance|address|account|on))?\s+(?:solana|sol)\b/.test(source)) candidates.add("solana-mainnet");
+  if (/\bsepolia\b/.test(source) && !/\b(?:base|ethereum|eth)\s*(?:sepolia|testnet)\b/.test(source) && !/\b(?:sepolia|testnet)\s+(?:base|ethereum|eth)\b/.test(source)) {
+    throw new Error("Which Sepolia network do you mean: Base Sepolia or Ethereum Sepolia?");
+  }
   if (/\bdevnet\b/.test(source)) candidates.add("solana-devnet");
-  if (/\btestnet\b/.test(source) && !/\b(?:solana|ethereum|eth|base)\s*(?:testnet|sepolia)\b/.test(source) && !/\b(?:testnet)\s+(?:solana|ethereum|eth)\b/.test(source)) {
-    const family = chainHint ? chainOf(chainHint) : null;
-    if (family === "solana") candidates.add("solana-testnet");
-    else throw new Error("Which testnet do you mean: Solana Testnet, Base Sepolia, or Ethereum Sepolia?");
+  if (/\btestnet\b/.test(source) && !/\b(?:solana|sol|ethereum|eth|base)\s*(?:testnet|sepolia)\b/.test(source) && !/\b(?:testnet)\s+(?:solana|sol|ethereum|eth|base)\b/.test(source)) {
+    throw new Error("Which testnet do you mean: Solana Testnet, Base Sepolia, or Ethereum Sepolia?");
   }
   if (/\bmain[\s-]?net\b/.test(source) && ![...candidates].some(id => id.endsWith("mainnet"))) {
-    const family = chainHint ? chainOf(chainHint) : null;
-    if (family === "solana") candidates.add("solana-mainnet");
-    else throw new Error("Which mainnet do you mean: Solana, Base, or Ethereum?");
+    throw new Error("Which mainnet do you mean: Solana, Base, or Ethereum?");
   }
   if (!candidates.size) {
-    const asksSolana = /\bsolana\b/.test(source), asksEvm = /\b(?:ethereum|eth|base)\b/.test(source);
+    const asksSolana = /\b(?:solana|sol)\b/.test(source), asksEvm = /\b(?:ethereum|eth|base)\b/.test(source);
     if (asksSolana && asksEvm) throw new Error("Your message mentions both EVM and Solana wallets. Use get_wallet_accounts for all balances, or ask for one network at a time.");
     if (asksSolana) return { chain: "solana", networkId: null };
     if (/\beth\b/.test(source)) throw new Error("ETH exists on multiple EVM networks. Specify Ethereum Mainnet, Base Mainnet, or the exact testnet.");
     if (/\bethereum\b/.test(source)) return { chain: "evm", networkId: "ethereum-mainnet" };
     return null;
   }
-  let matches = [...candidates];
-  if (requestedNetwork) {
-    const requested = String(requestedNetwork).toLowerCase();
-    const selected = matches.find(id => id === requested || BUILT_IN_NETWORKS.evm[id]?.label.toLowerCase() === requested || BUILT_IN_NETWORKS.solana[id]?.label.toLowerCase() === requested);
-    if (selected) matches = [selected];
-  }
-  if (chainHint) {
-    const family = chainOf(chainHint), sameChain = matches.filter(id => (BUILT_IN_NETWORKS.evm[id] ? "evm" : "solana") === family);
-    if (sameChain.length) matches = sameChain;
-  }
+  const matches = [...candidates];
   if (matches.length !== 1) throw new Error("Your message mentions multiple wallet networks. Make a separate request for each, or specify the exact network for this lookup.");
   const id = matches[0];
   return { chain: BUILT_IN_NETWORKS.evm[id] ? "evm" : "solana", networkId: id };

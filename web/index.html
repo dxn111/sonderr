@@ -17,7 +17,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.5.9 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.5.10 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -283,6 +283,24 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<!-- Kept visible until the release check confirms this install is current. -->
+<div class="update-gate" id="updateGate" role="dialog" aria-modal="true" aria-labelledby="updateGateTitle" aria-describedby="updateGateSummary">
+  <section class="update-gate-card">
+    <div class="update-gate-brand"><img src="/logo.svg" alt=""><span>Sonderr</span><span class="update-gate-version">SECURITY CENTER</span></div>
+    <div class="update-gate-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M24 4.5 40 11v11.4c0 10.6-6.6 17.2-16 21.1C14.6 39.6 8 33 8 22.4V11l16-6.5Z"/><path d="m17.5 24.5 4.3 4.3 9-10"/></svg></div>
+    <p class="update-gate-eyebrow">REQUIRED RELEASE CHECK</p>
+    <h1 id="updateGateTitle">Checking for security updates…</h1>
+    <p class="update-gate-summary" id="updateGateSummary">Sonderr checks its official release before opening your workspace.</p>
+    <div class="update-gate-release" id="updateGateRelease" hidden>
+      <div class="update-gate-release-top"><span>OFFICIAL RELEASE</span><strong id="updateGateVersion"></strong></div>
+      <div class="update-gate-notes" id="updateGateNotes"></div>
+    </div>
+    <p class="update-gate-error" id="updateGateError" role="alert" hidden></p>
+    <button class="update-gate-button" id="updateGateButton" type="button" disabled>Checking release…</button>
+    <a class="update-gate-link" id="updateGateLink" href="https://github.com/dxn111/sonderr/releases/latest" target="_blank" rel="noopener noreferrer" hidden>View the official release ↗</a>
+    <p class="update-gate-footnote" id="updateGateFootnote">This screen cannot be dismissed. When an update is required, install it to continue; older releases may miss important security fixes and product improvements.</p>
+  </section>
+</div>
 <script src="/ui.js"></script>
 </body>
 </html>

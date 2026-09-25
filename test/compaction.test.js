@@ -7,7 +7,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const { compactConversation, sizeOf } = require("../server/compaction");
-const { parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, readCompletionResponse, maxTokensWithinTpm, requestMaxTokens, isSmallDirectRequest, selectToolsForRequest } = require("../server/provider");
+const { parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, readCompletionResponse, maxTokensWithinTpm, requestMaxTokens, isSmallDirectRequest, walletRoutingText, hasExactWalletNetwork, selectToolsForRequest } = require("../server/provider");
 
 const longTranscript = [
   { role: "user", content: "Old unrelated request" },
@@ -148,6 +148,17 @@ assert.ok(faucetTools.includes("get_wallet_status"), "a mainnet claim can check 
 assert.ok(!faucetTools.includes("get_wallet_price") && !faucetTools.includes("prepare_wallet_transaction"), "faucet research does not receive unrelated wallet-price or spending tools");
 assert.equal(selectToolsForRequest("ask", "Hello there").length, 0, "unrelated greetings do not receive web or shell tools");
 assert.ok(selectToolsForRequest("ask", "Check my Solana main net balance").some(tool => tool.function.name === "get_wallet_status"), "spaced Mainnet phrasing exposes the network-specific live balance tool");
+assert.ok(selectToolsForRequest("ask", "check main net sol").some(tool => tool.function.name === "get_wallet_status"), "short Sol ticker requests still expose the exact wallet-status tool");
+assert.ok(selectToolsForRequest("ask", "check devnet solana").some(tool => tool.function.name === "get_wallet_status"), "reversed Devnet/Solana phrasing still exposes the exact wallet-status tool");
+assert.ok(selectToolsForRequest("ask", "check main net eth").some(tool => tool.function.name === "get_wallet_status"), "network-first EVM phrasing exposes the status tool");
+assert.ok(!selectToolsForRequest("ask", "check the main net wallet").some(tool => /^get_wallet_(?:accounts|status)$/.test(tool.function.name)), "an unspecified Mainnet does not query every wallet chain or guess one");
+assert.ok(!selectToolsForRequest("ask", "check testnet").some(tool => /^get_wallet_(?:accounts|status)$/.test(tool.function.name)), "an unspecified testnet does not guess a chain");
+assert.deepEqual(selectToolsForRequest("ask", "what is my Solana Devnet address").filter(tool => /^get_wallet_(?:accounts|status)$/.test(tool.function.name)).map(tool => tool.function.name), ["get_wallet_status"], "an exact-network address lookup uses one status tool rather than both wallet tools");
+assert.ok(!hasExactWalletNetwork("check Ethereum and Solana balances"), "mentioning two families is not an exact single-network request");
+assert.ok(selectToolsForRequest("ask", "bro your wallet!").some(tool => tool.function.name === "get_wallet_accounts"), "a request for Sonderr's own wallet uses the configured-account tool");
+const walletFollowup = walletRoutingText("ask", "sol", [{ role: "user", content: "check the main net wallet" }, { role: "assistant", content: "Which network?" }]);
+assert.deepEqual(selectToolsForRequest("ask", walletFollowup).filter(tool => /^get_wallet_(?:accounts|status)$/.test(tool.function.name)).map(tool => tool.function.name), ["get_wallet_status"], "a short Sol answer retains only the immediately preceding wallet request and routes to status");
+assert.deepEqual(walletRoutingText("ask", "sol", [{ role: "user", content: "check devnet" }, { role: "user", content: "check main net wallet" }]), "check main net wallet sol", "network follow-ups do not inherit an older conflicting network");
 
 (async () => {
   await assert.rejects(readCompletionResponse(new Response("<html>gateway error</html>", { status: 502 })), /unreadable response \(HTTP 502\)/);

@@ -88,12 +88,33 @@ function containsPromptExcerpt(output, systemPrompt) {
   return false;
 }
 
+function hasPseudoToolMarkup(output) {
+  // Some weaker OpenAI-compatible models serialize a tool request as text
+  // instead of using the structured tool_calls field. They also commonly
+  // escape angle brackets/underscores, or put a friendly sentence before the
+  // dump. Normalize those forms before checking; otherwise the text can be
+  // shown as if an action ran. Ignore fenced and inline code examples so the
+  // assistant can still explain this syntax when explicitly asked.
+  const visible = String(output || "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`\n]*`/g, "")
+    .replace(/\\([\\_*<>])/g, "$1")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+  const markup = /<\s*\/?\s*(?:tool\s*_?\s*call\b|function\s*=|parameter\s*=|arguments\s*=)/i;
+  const serializedCall = /"(?:tool_call|tool_calls|function_call)"\s*:/i;
+  return markup.test(visible) || serializedCall.test(visible);
+}
+
 function sanitizeAssistantOutput(output, systemPrompt = "") {
   const raw = String(output || "");
   const explicitLeak = /(?:^|\n)\s*(?:system|developer|hidden)\s*(?:prompt|instructions?)\s*[:=-]/i.test(raw)
     || /(?:here(?:'s| is)|revealing|verbatim).{0,50}(?:system prompt|developer instructions)/i.test(raw);
   if (explicitLeak || containsPromptExcerpt(raw, systemPrompt)) {
     return "I can’t provide hidden instructions, internal configuration, or credentials. I can explain Sonderr’s public behavior and safety boundaries instead.";
+  }
+  if (hasPseudoToolMarkup(raw)) {
+    return "I received tool-call-shaped text instead of a normal answer. That text alone is not evidence an action happened; I’ll report only results shown by actual tool activity.";
   }
   return redactText(raw);
 }
@@ -186,6 +207,7 @@ module.exports = {
   assertSafeWorkspacePath,
   redactText,
   sanitizeValue,
+  hasPseudoToolMarkup,
   sanitizeAssistantOutput,
   assessUserMessage,
   hasMcpConfigurationIntent,

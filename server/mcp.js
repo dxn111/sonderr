@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const safety = require("./safety");
+const APP_VERSION = require("../package.json").version;
 
 const CONFIG_DIR = path.join(process.cwd(), ".sonderr");
 const CONFIG_FILE = path.join(CONFIG_DIR, "mcp.json");
@@ -184,7 +185,7 @@ async function connectServer(id) {
     const runtime = { transport: "http", server, nextId: 1, pending: new Map(), tools: [], error: "" };
     runtimes.set(server.id, runtime);
     try {
-      const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: "1.5.9" } });
+      const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: APP_VERSION } });
       runtime.serverInfo = initialized?.serverInfo || null;
       runtime.capabilities = initialized?.capabilities || {};
       await notifyHttp(runtime, "notifications/initialized", {});
@@ -211,7 +212,7 @@ async function connectServer(id) {
   child.once("error", error => { runtime.error = error.message; });
   child.once("exit", () => { for (const pending of runtime.pending.values()) pending.reject(new Error("MCP server exited")); runtime.pending.clear(); });
   try {
-    const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: "1.5.9" } });
+    const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: APP_VERSION } });
     runtime.serverInfo = initialized?.serverInfo || null;
     runtime.capabilities = initialized?.capabilities || {};
     writeMessage(runtime, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });

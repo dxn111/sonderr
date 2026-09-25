@@ -31,8 +31,8 @@ function toast(msg) {
 const state = {
   settings: null, providers: {}, models: [], modelsLoading: false, modelsError: "",
   sessions: [], session: null, mode: "ask", contextFiles: [], files: [], images: [], lastGeneralModel: "",
-  sending: false, apiConfigured: false, anonymousFreeModels: false, workspace: "", nodeVersion: "", onboarding: null,
-  plugins: [], activePluginId: "", surface: "chat"
+  sending: false, apiConfigured: false, anonymousFreeModels: false, workspace: "", nodeVersion: "", appVersion: "", onboarding: null,
+  plugins: [], activePluginId: "", surface: "chat", updateCheck: null
 };
 const STUDIO_PHASES = {
   idea: { title: "Give the idea a shape", text: "Describe the user, problem, and smallest useful result. Studios turns a vague idea into a first milestone.", mode: "ask", prompt: "I have a project idea. Help me define who it is for, the core problem, and the smallest useful first milestone." },
@@ -87,17 +87,115 @@ function renderGreeting(name = "") {
 }
 
 /* ---------- runtime / boot ---------- */
-async function boot() {
-  renderGreeting();
-  loadSessions();
+function setUpdateGateActive(active) {
+  const gate = $("updateGate");
+  const app = document.querySelector(".app");
+  if (gate) gate.hidden = !active;
+  if (app) app.inert = Boolean(active);
+}
+
+function renderUpdateGate(result) {
+  state.updateCheck = result || { status: "unavailable", message: "The official release status could not be verified." };
+  const check = state.updateCheck;
+  const gate = $("updateGate"), button = $("updateGateButton"), error = $("updateGateError");
+  if (["current", "development"].includes(check.status)) { setUpdateGateActive(false); return; }
+  setUpdateGateActive(true);
+  error.hidden = true;
+  $("updateGateRelease").hidden = true;
+  $("updateGateLink").hidden = true;
+  if (check.status === "update-required" || check.status === "installing") {
+    $("updateGateTitle").textContent = check.status === "installing" ? "Installing your security update" : "A required update is ready";
+    $("updateGateSummary").textContent = check.status === "installing"
+      ? "Sonderr is safely replacing the old app, checking the new version, and restarting your local workspace. Keep this window open."
+      : "This release is newer than your installed version. Updating is required to continue; older versions may miss security fixes and important improvements." + (check.installSupported === false ? " The one-click updater is unavailable on this system; use the official release page for the manual update path." : "");
+    $("updateGateVersion").textContent = "v" + (check.latestVersion || "");
+    $("updateGateNotes").textContent = String(check.notes || "Security maintenance, reliability fixes, and the latest Sonderr improvements.").trim();
+    $("updateGateRelease").hidden = false;
+    if (typeof check.releaseUrl === "string" && /^https:\/\/github\.com\/dxn111\/sonderr\/releases\/tag\/[\w.%+-]+$/.test(check.releaseUrl)) $("updateGateLink").href = check.releaseUrl;
+    $("updateGateLink").hidden = false;
+    $("updateGateFootnote").textContent = check.installSupported === false
+      ? "No skip option is available. This platform needs a manual installation of the official release; the workspace remains locked until the updated build is running."
+      : "No skip option is available for this required release. Your workspace remains locked until the official update is installed and verified.";
+    button.hidden = check.installSupported === false;
+    button.disabled = check.status === "installing";
+    button.textContent = check.status === "installing" ? "Installing and restarting…" : "Install update & restart";
+    return;
+  }
+  $("updateGateTitle").textContent = "Update status couldn’t be verified";
+  $("updateGateSummary").textContent = check.message || "Sonderr must verify its official release before opening this workspace.";
+  $("updateGateFootnote").textContent = "There is no bypass. Reconnect to the internet, then retry the official security check.";
+  button.hidden = false;
+  button.disabled = false;
+  button.textContent = "Retry security check";
+  $("updateGateLink").hidden = false;
+}
+
+async function retryRequiredUpdateCheck() {
+  const button = $("updateGateButton");
+  button.disabled = true;
+  button.textContent = "Checking official release…";
+  try { renderUpdateGate(await api("/api/update-check?refresh=1")); }
+  catch (error) { renderUpdateGate({ status: "unavailable", message: error.message }); }
+}
+
+async function installRequiredUpdate() {
+  const check = state.updateCheck;
+  if (check?.status !== "update-required" || !check.latestTag || check.installSupported === false) return;
+  const button = $("updateGateButton");
+  button.disabled = true;
+  button.textContent = "Preparing secure update…";
+  $("updateGateError").hidden = true;
   try {
-    const [health, workspace, settings, onboarding] = await Promise.all([
-      fetch("/api/health").then(r => r.json()),
+    await api("/api/update/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: check.latestTag }) });
+    renderUpdateGate({ ...check, status: "installing" });
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      try {
+        const health = await api("/api/health");
+        if (health.version === check.latestVersion) { location.reload(); return; }
+      } catch { /* the service is expected to be offline during its restart */ }
+    }
+    renderUpdateGate(check);
+    $("updateGateError").textContent = "The update did not complete in time. Sonderr restored the previous install where possible; it remains locked until the required release is verified. Check your connection and retry.";
+    $("updateGateError").hidden = false;
+  } catch (error) {
+    renderUpdateGate(check);
+    $("updateGateError").textContent = error.message || "The update could not be started. Your current install was not intentionally removed.";
+    $("updateGateError").hidden = false;
+  }
+}
+
+$("updateGateButton").addEventListener("click", () => {
+  if (state.updateCheck?.status === "unavailable") retryRequiredUpdateCheck();
+  else if (state.updateCheck?.status === "update-required") installRequiredUpdate();
+});
+
+async function boot() {
+  setUpdateGateActive(true);
+  renderGreeting();
+  try {
+    const health = await fetch("/api/health").then(r => r.json());
+    let updateCheck;
+    try { updateCheck = await api("/api/update-check"); }
+    catch (error) { updateCheck = { status: "unavailable", message: error.message || "Sonderr could not verify its official release." }; }
+    renderUpdateGate(updateCheck);
+    if (!["current", "development"].includes(updateCheck.status)) {
+      const rs = $("runtimeStatus");
+      rs.className = "runtime warn";
+      rs.querySelector(".runtime-label").textContent = updateCheck.status === "update-required" ? "Required update" : "Release check needed";
+      return;
+    }
+    const [workspace, settings, onboarding] = await Promise.all([
       fetch("/api/workspace").then(r => r.json()).catch(() => null),
       api("/api/settings"),
       api("/api/onboarding")
     ]);
+    loadSessions();
     state.apiConfigured = Boolean(health.provider === "configured" || settings.apiConfigured);
+    state.appVersion = String(health.version || "");
+    const brandVersion = document.querySelector(".brand-version");
+    if (brandVersion && state.appVersion) brandVersion.textContent = "v" + state.appVersion + " · privacy-first AI + Web3";
     state.anonymousFreeModels = Boolean(settings.anonymousFreeModels);
     state.settings = settings; state.providers = settings.providers || {};
     state.onboarding = onboarding.onboarding || { completed: false };
@@ -119,6 +217,7 @@ async function boot() {
   } catch {
     const rs = $("runtimeStatus");
     rs.className = "runtime bad"; rs.querySelector(".runtime-label").textContent = "Runtime unreachable";
+    renderUpdateGate({ status: "unavailable", message: "Sonderr could not verify the runtime or official release. Reconnect and retry; the workspace remains locked until its status is known." });
   }
 }
 
@@ -445,7 +544,7 @@ function renderStudioProject() {
     (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '') + '</div>';
   project.dataset.studioSessionId = state.session.id;
   const railScroll = project.querySelector(".studio-rail-scroll");
-  if (railScroll && previousScrollTop) railScroll.scrollTop = previousScrollTop;
+  if (railScroll && sameProject) railScroll.scrollTop = previousScrollTop;
   const latestStudio = () => state.session?.studio || studio;
   project.querySelector(".studio-save-goal").onclick = () => updateStudioData({ ...latestStudio(), goal: $("studioGoalInput").value });
   project.querySelectorAll("[data-milestone-id]").forEach(input => { input.onchange = () => { const current = latestStudio(); updateStudioData({ ...current, milestones: current.milestones.map(item => item.id === input.dataset.milestoneId ? { ...item, done: input.checked } : item) }); }; });
@@ -2050,7 +2149,7 @@ function renderSettings() {
         <h2>About</h2>
         <p class="panel-sub">Sonderr is a privacy-first local AI workspace with optional Web3 capabilities. The terminal only launches it — the browser is the product.</p>
         <div class="about-rows">
-          <div class="about-row"><span>Version</span><b>1.5.9</b></div>
+          <div class="about-row"><span>Version</span><b>${esc(state.appVersion || "—")}</b></div>
           <div class="about-row"><span>Workspace</span><b title="${esc(state.workspace)}">${esc(state.workspace || "—")}</b></div>
           <div class="about-row"><span>Runtime</span><b>Node ${esc(state.nodeVersion || "")} · localhost</b></div>
           <div class="about-row"><span>API status</span><b>${state.anonymousFreeModels ? "Kilo free models · no key" : state.apiConfigured ? "Connected" : "Not configured"}</b></div>

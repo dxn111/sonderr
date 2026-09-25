@@ -1,4 +1,4 @@
-# SONDERR v1.5.9
+# SONDERR v1.5.10
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="#availability">Availability</a> ·
+  <a href="#availability">Availability &amp; updates</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#web-workspace">Web workspace</a> ·
   <a href="#architecture">Architecture</a> ·
@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.9 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.10 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -58,6 +58,14 @@ There is intentionally no separate "AI CLI" experience in v1.5. The launcher sta
 ## Availability
 
 Sonderr's source and self-service installer are available from the public repository. The installer tracks the latest `main` branch and installs dependencies from the lockfile; it is not a signed release package. Check the repository and review the installer before running it. Repository and release visibility are controlled separately from product support and availability.
+
+### Required release updates
+
+Starting with v1.5.10, the standard managed install checks the official GitHub Releases endpoint when the workspace starts. Older builds do not contain this gate; upgrade them once with the installer above to enter the required-update flow. GitHub receives a normal HTTPS request and can see its source IP and request metadata; Sonderr does **not** send your installed version, prompts, workspace files, settings, or credentials. The version comparison happens on your machine. A newer stable release blocks the workspace until it is installed and the restarted app reports that version. There is no “skip this version” option for managed releases.
+
+Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
+
+This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
 
 ## How it works
 
@@ -137,7 +145,7 @@ The agent layer connects configured model providers to workspace and integration
 
 Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 64 playbooks cover engineering, data, product, security, quality, Web3, and operations, including dedicated developer coaching, web-research, MCP connection, and faucet-claim workflows, a complete Sonderr product guide, wallet research, and Web3 earning.
 
-Sonderr Studios opens from the sidebar at `/studios` as a full-page workspace, not just a separate chat. Start a website, browser app, general project, Developer Program contribution, or responsible Bounty Program research space. Each project keeps a brief, milestones, progress, and an adjacent build discussion; website and app projects also include a workspace-file preview with desktop/mobile viewport controls. The preview is isolated and blocks network requests; it is for local front-end review, not external service or deployment verification. Studio projects persist as distinct sessions and can be reopened from Studios or Recents. The Plugin Hub also offers Sites and Code Review workflows, each with focused instructions that are included only when enabled for a chat.
+Sonderr Studios opens from the sidebar at `/studios` as a full-page workspace, not just a separate chat. Start a website, browser app, general project, Developer Program contribution, or responsible Bounty Program research space. Each project keeps a brief, milestones, progress, and an adjacent build discussion; website and app projects also include a workspace-file preview with desktop/mobile viewport controls. The preview is isolated and blocks network requests; it is for local front-end review, not external service or deployment verification. Studio projects persist as distinct sessions and can be reopened from Studios or Recents. The Studio board validates milestone IDs, preserves completion only for unchanged work, and uses a real structured tool action rather than printed pseudo-call text. The Plugin Hub also offers Sites and Code Review workflows, each with focused instructions that are included only when enabled for a chat.
 
 ### Kilo Gateway and free AI models
 
@@ -220,7 +228,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.9 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.10 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening
@@ -230,13 +238,14 @@ Sonderr v1.5.9 provides a localhost engineering workspace with these capabilitie
 - present_file artifact cards with the Claude-style side preview panel (markdown / code / JSON / CSV / images)
 - device uploads (20 MB, sandboxed) plus clipboard paste and drag & drop
 - Vision mode: image Q&A over vision-capable models + edit_image generation/editing
-- 63 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
+- 64 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
 - persistent task lists and resumable active-work quality budgets for multi-stage tasks
 - workspace analysis, bounded source reading, exact file patching, and controlled project checks
 - a long-running task workflow that checkpoints progress and resumes from verified workspace state
 - system prompt with explicit tool contracts, untrusted-content handling, privacy boundaries, and honest verification rules
 - token-aware Ask mode: short standalone questions use a compact prompt, no tool catalog, and no unrelated chat history; workspace, wallet, web research, MCP, and other tool-backed requests receive only relevant Ask tools
 - provider TPM recovery: compact long context when needed, reduce output budgets, and honor a provider's timed token-rate cooldowns before retrying
+- mandatory official-release checking and update gating for standard managed installs, with source-checkout protection, one-click POSIX updates, rollback, and an honest fail-closed path when release status cannot be verified
 - Sonderr branding, clean AI-harness-style UI
 
 ## License

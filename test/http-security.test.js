@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), "sonderr-http-security-"));
+const updates = require("../server/updates");
 const { createServer } = require("../server/app");
 
 function request(port, { path = "/", method = "GET", headers = {}, body = "" } = {}) {
@@ -33,6 +34,16 @@ function request(port, { path = "/", method = "GET", headers = {}, body = "" } =
     const studiosPage = await request(port, { path: "/studios" });
     assert.equal(studiosPage.status, 200);
     assert.match(studiosPage.body, /id="studiosHome"/);
+    const developmentUpdateCheck = await request(port, { path: "/api/update-check" });
+    assert.equal(developmentUpdateCheck.status, 200);
+    assert.equal(JSON.parse(developmentUpdateCheck.body).status, "development", "a source checkout is never force-updated over local changes");
+    const originalUpdateCheck = updates.checkForUpdate;
+    updates.checkForUpdate = async () => ({ status: "update-required", currentVersion: "1.5.9", latestVersion: "1.5.10", latestTag: "v1.5.10", updateAvailable: true });
+    const blockedWorkspaceApi = await request(port, { path: "/api/sessions" });
+    assert.equal(blockedWorkspaceApi.status, 426, "the server blocks workspace APIs, not only the visible UI, while an update is required");
+    const allowedUpdateMetadata = await request(port, { path: "/api/update-check" });
+    assert.equal(allowedUpdateMetadata.status, 200, "the gate keeps only health/update endpoints available");
+    updates.checkForUpdate = originalUpdateCheck;
     const trustedHeaders = { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` };
     const createdStudio = await request(port, { path: "/api/sessions", method: "POST", headers: trustedHeaders, body: JSON.stringify({ title: "Studio smoke", surface: "studios", studio: { track: "developer", goal: "Ship a small fix", milestones: [{ text: "Inspect the code" }] } }) });
     assert.equal(createdStudio.status, 201);

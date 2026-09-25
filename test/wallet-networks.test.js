@@ -26,10 +26,16 @@ assert.deepEqual(wallet.inferNetworkFromText("check my Base balance", "solana"),
 assert.deepEqual(wallet.inferNetworkFromText("check Ethereum", "solana"), { chain: "evm", networkId: "ethereum-mainnet" });
 assert.deepEqual(wallet.inferNetworkFromText("check my Solana mainnet", "solana"), { chain: "solana", networkId: "solana-mainnet" });
 assert.deepEqual(wallet.inferNetworkFromText("check my Solana main net", "solana", "solana-devnet"), { chain: "solana", networkId: "solana-mainnet" }, "spaced main net overrides a stale Devnet choice");
+assert.deepEqual(wallet.inferNetworkFromText("check main net sol"), { chain: "solana", networkId: "solana-mainnet" }, "short ticker phrasing routes to Solana Mainnet");
+assert.deepEqual(wallet.inferNetworkFromText("check devnet solana"), { chain: "solana", networkId: "solana-devnet" }, "network-first phrasing routes to Solana Devnet");
+assert.deepEqual(wallet.inferNetworkFromText("check main net eth"), { chain: "evm", networkId: "ethereum-mainnet" }, "network-first EVM phrasing routes to Ethereum Mainnet");
+assert.deepEqual(wallet.inferNetworkFromText("check testnet sol"), { chain: "solana", networkId: "solana-testnet" }, "short ticker phrasing routes to Solana Testnet");
 assert.deepEqual(wallet.resolveExplicitToolNetwork("get_wallet_status", { chain: "solana", network: "solana-devnet" }, "check my Solana main net balance"), { name: "get_wallet_status", inferred: { chain: "solana", networkId: "solana-mainnet" }, input: { chain: "solana", network: "solana-mainnet" } });
 assert.deepEqual(wallet.inferNetworkFromText("check Solana main-net beta", "solana"), { chain: "solana", networkId: "solana-mainnet" });
-assert.deepEqual(wallet.inferNetworkFromText("Ethereum mainnet and Base mainnet", "evm", "base-mainnet"), { chain: "evm", networkId: "base-mainnet" });
+assert.throws(() => wallet.inferNetworkFromText("Ethereum mainnet and Base mainnet", "evm", "base-mainnet"), /multiple wallet networks/i, "stale tool arguments cannot select one of two networks explicitly requested");
 assert.throws(() => wallet.inferNetworkFromText("check my testnet balance", "evm"), /Which testnet do you mean/);
+assert.throws(() => wallet.inferNetworkFromText("check mainnet", "solana", "solana-mainnet"), /Which mainnet do you mean/, "a stale chain hint cannot resolve generic mainnet");
+assert.throws(() => wallet.inferNetworkFromText("check Sepolia", "evm", "sepolia"), /Which Sepolia network do you mean/, "bare Sepolia does not silently pick Ethereum or Base");
 assert.throws(() => wallet.inferNetworkFromText("check my ETH balance", "evm"), /ETH exists on multiple EVM networks/);
 assert.throws(() => wallet.inferNetworkFromText("check Ethereum and Solana balances"), /Use get_wallet_accounts/);
 

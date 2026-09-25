@@ -238,6 +238,27 @@ function isSmallDirectRequest(mode, userText) {
   return text.length <= 160 && /\?\s*$/.test(text);
 }
 
+function walletRoutingText(mode, userText, history = []) {
+  const current = String(userText || "").trim();
+  if (mode !== "ask" || current.length > 64 || !/^(?:sol|solana|eth|ethereum|base|mainnet|main[ -]net|devnet|testnet|wallet|my wallet|your wallet|my balance|your balance|address|balance|yes|that one|the solana one)[.!?\s]*$/i.test(current)) return current;
+  const priorUserText = (Array.isArray(history) ? history : [])
+    .filter(message => message?.role === "user" && typeof message.content === "string")
+    .slice(-1)
+    .map(message => message.content.trim())
+    .filter(Boolean);
+  if (!priorUserText.some(text => /\b(?:wallet|balance|address|main[\s-]?net|devnet|testnet|sepolia)\b/i.test(text))) return current;
+  return [...priorUserText, current].join(" ");
+}
+
+function hasExactWalletNetwork(text) {
+  const source = String(text || "").toLowerCase();
+  if (/\b(?:solana|sol)\b/.test(source) && /\b(?:ethereum|eth|base)\b/.test(source)) return false;
+  return /\b(?:solana|sol)\s+(?:main[\s-]?net(?:[\s-]?beta)?|devnet|testnet)\b|\b(?:main[\s-]?net(?:[\s-]?beta)?|devnet|testnet)(?:\s+(?:wallet|balance|address|account|on))?\s+(?:solana|sol)\b/.test(source)
+    || /\bbase(?:\s+(?:main[\s-]?net|sepolia|testnet|chain|network|balance|wallet))?\b/.test(source)
+    || /\b(?:ethereum|eth)\s+(?:main[\s-]?net|sepolia|testnet)\b|\b(?:main[\s-]?net|sepolia|testnet)\s+(?:ethereum|eth)\b/.test(source)
+    || /\bdevnet\b|\bethereum\b/.test(source);
+}
+
 function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
   const catalog = Array.isArray(tools) ? tools : [];
   const text = String(userText || "").toLowerCase();
@@ -262,17 +283,25 @@ function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
     if (/\b(?:run|execute|terminal|command|test|tests|check|build)\b/.test(text)) add(["run_project_checks"]);
     if (mode !== "plan" && /\b(?:edit|change|fix|write|create|update|patch|replace)\b/.test(text)) add(["write_workspace_file", "patch_workspace_file"]);
   }
-  const walletIntent = !faucetIntent && (/\b(?:wallet|receive address|wallet address|crypto balance|token balance|portfolio|holdings|wallet value|wallet activity|wallet history|wallet watch|incoming funds|token contract|token mint|token price|coin price|gas fee|transaction|swap|trade|allowance)\b|\b(?:my|our)\s+(?:sol|solana|eth|ethereum|base|usdt|usdc)\s+(?:balance|address|wallet)\b|\b(?:solana|ethereum|eth|base)\b.{0,40}\b(?:main[\s-]?net|devnet|testnet|sepolia)\b.{0,30}\b(?:balance|wallet|funds|address)\b|\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b.{0,28}\bprice\b|\bprice\b.{0,28}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b|\b(?:send|transfer|swap|trade|buy|sell|exchange)\b.{0,50}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|token|coin|crypto|wallet)\b/i.test(text));
+  const walletIntent = !faucetIntent && (/\b(?:wallet|receive address|wallet address|crypto balance|token balance|balances|funds|portfolio|holdings|wallet value|wallet activity|wallet history|wallet watch|incoming funds|token contract|token mint|token price|coin price|gas fee|transaction|swap|trade|allowance)\b|\b(?:my|our|your)\s+(?:sol|solana|eth|ethereum|base|usdt|usdc)\s+(?:balance|address|wallet)\b|\b(?:my|our|your|the)\s+(?:[\w-]+\s+){0,3}(?:balance|balances|funds)\b|\b(?:balance|balances|funds)\b.{0,24}\bwallet\b|\b(?:solana|sol|ethereum|eth|base)\b.{0,40}\b(?:main[\s-]?net|devnet|testnet|sepolia)\b|\b(?:main[\s-]?net|devnet|testnet|sepolia)\b.{0,24}\b(?:solana|sol|ethereum|eth|base)\b|\b(?:solana|ethereum|eth|base)\b.{0,40}\b(?:balance|wallet|funds|address)\b|\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b.{0,28}\bprice\b|\bprice\b.{0,28}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|btc|bitcoin)\b|\b(?:send|transfer|swap|trade|buy|sell|exchange)\b.{0,50}\b(?:sol|solana|eth|ethereum|base|usdt|usdc|token|coin|crypto|wallet)\b/i.test(text));
   if (walletIntent) {
     // Keep schemas task-shaped. Sending eight wallet tools on every crypto
     // question wastes TPM and makes unrelated tool calls more likely.
-    const namedNetwork = /\b(?:main[\s-]?net|devnet|testnet|sepolia|base|ethereum|solana)\b/i.test(text);
+    const namedNetwork = /\b(?:main[\s-]?net|devnet|testnet|sepolia|base|ethereum|solana|sol|eth)\b/i.test(text);
+    const exactNetwork = hasExactWalletNetwork(text);
+    const ambiguousNetwork = (/\b(?:main[\s-]?net|testnet|sepolia)\b/i.test(text) && !exactNetwork)
+      || (/\b(?:solana|sol)\b/i.test(text) && /\b(?:ethereum|eth|base)\b/i.test(text));
     const asksAddresses = /\b(?:address|addresses|receive|account|accounts|all networks)\b/i.test(text);
     const asksHoldings = /\b(?:portfolio|holdings|total value|wallet value|worth|value of|how much.*(?:wallet|portfolio)|performance|gone up|change since)\b/i.test(text);
-    const asksBalance = /\b(?:balance|balances|funds)\b/i.test(text);
-    if (asksAddresses || (!asksHoldings && !asksBalance && /\bwallet\b/i.test(text))) add(["get_wallet_accounts"]);
-    if (asksBalance) add(namedNetwork ? ["get_wallet_status"] : ["get_wallet_accounts"]);
+    const explicitRead = /\b(?:check|show|get|look up|fetch|what(?:'s| is)|tell me)\b/i.test(text);
+    const asksBalance = /\b(?:balance|balances|funds)\b/i.test(text)
+      || (explicitRead && exactNetwork && /\b(?:sol|solana|eth|ethereum|base)\b/i.test(text));
+    const accountRequest = asksAddresses || (!asksHoldings && !asksBalance && /\bwallet\b/i.test(text));
     if (asksHoldings) add(["get_wallet_portfolio"]);
+    else if ((asksBalance || accountRequest) && !ambiguousNetwork) {
+      if (exactNetwork && (asksBalance || asksAddresses || explicitRead)) add(["get_wallet_status"]);
+      else if (!namedNetwork || !exactNetwork) add(["get_wallet_accounts"]);
+    }
     if (/\b(?:price|pricing|worth|value today|current value)\b/i.test(text)) add(["get_wallet_price"]);
     if (/\b(?:market snapshot|liquidity|dex pools|pool volume|market cap|fdv)\b/i.test(text)) add(["get_wallet_market_snapshot"]);
     if (/\b(?:token info|token details|contract details|mint authorities|token supply|decimals)\b/i.test(text)) add(["get_wallet_token_info"]);
@@ -466,12 +495,12 @@ const TOOL_DEFINITIONS = [
   } },
   { type:"function", function:{
     name:"get_wallet_accounts",
-    description:"List balances and receive addresses for every generated wallet/network when the user asks generally or asks for all networks. If their current message names one exact network, the runtime routes this request to that network only, even if stale arguments say otherwise. Testnet balances have no real-world value. Public read only; does not expose local keys. ERC-20s share their EVM address, while Solana SPL token accounts are derived per mint.",
+    description:"Read the user's configured local Sonderr wallet: list balances and receive addresses for every generated wallet/network when they ask generally or ask for all networks. If they say ‘my wallet’, ‘your wallet’, or otherwise refer to Sonderr's wallet, use this local wallet rather than asking for an address. If their current request names one exact network, the runtime routes this request to that network only, even if stale arguments say otherwise. Testnet balances have no real-world value. Public read only; does not expose local keys. ERC-20s share their EVM address, while Solana SPL token accounts are derived per mint.",
     parameters:{ type:"object", properties:{} }
   } },
   { type:"function", function:{
     name:"get_wallet_status",
-    description:"Read the public wallet address, chain, block/slot, and native balance for one network. Infer and pass its exact network ID from the user's current message (treat ‘main net’ and ‘mainnet’ as the same phrase; likewise devnet/testnet); the user does not need to change Settings. If no specific network was named and they asked for their overall wallet/balance, call get_wallet_accounts instead of guessing. A returned status/card is a live RPC result for that exact network, not a sample. Never contradict a successful wallet result by claiming no live wallet tools are available. This is read-only and never exposes or requests a private key or seed phrase.",
+    description:"Read the user's configured local Sonderr wallet's public address, chain, block/slot, and native balance for one network; do not ask for an address when they mean this wallet. Infer and pass the exact network from the current request (treat ‘main net’ and ‘mainnet’ as equivalent; Sol/Solana and Devnet/Mainnet may appear in either order); the user does not need to change Settings. If no specific network is identified and they ask for an overall wallet/balance, call get_wallet_accounts instead of guessing. A returned status/card is a live RPC result for that exact network, not a sample. Never contradict a successful wallet result by claiming no live wallet tools are available. This is read-only and never exposes or requests a private key or seed phrase.",
     parameters:{ type:"object", properties:{ chain:{ type:"string", enum:["evm","solana"], description:"Optional EVM or Solana wallet family" }, network:{ type:"string", enum:WALLET_NETWORK_IDS, description:"Optional exact network ID; EVM address is shared across EVM networks and Solana address across clusters" } } }
   } },
   { type:"function", function:{
@@ -638,7 +667,7 @@ const TOOL_DEFINITIONS = [
   } },
   { type:"function", function:{
     name:"update_studio_board",
-    description:"Update the active Sonderr Studios project's brief and/or complete milestone list. Use only when the user's current message explicitly asks to edit the Studio board; explaining a plan does not authorize changes. Preserve milestone IDs and completion state. Never mark work complete unless the user explicitly requests that status change or verified project evidence supports it. Include every existing milestone when changing the list, and do not drop unrelated milestones.",
+    description:"Update the active Sonderr Studios project's brief and/or complete milestone list. Use only when the user's current message explicitly asks to edit the Studio board; explaining a plan does not authorize changes. Preserve every existing milestone ID and completion state unless asked otherwise. IDs must be unique: reuse each existing ID at most once and omit id for new milestones. Never duplicate an ID, mark work complete unless the user asks or evidence verifies it, omit unsupported fields, and include every existing milestone unless its removal was requested.",
     parameters:{ type:"object", properties:{
       goal:{ type:"string", description:"Replacement project brief, up to 500 characters. Omit to keep it unchanged." },
       milestones:{ type:"array", description:"Complete replacement list of up to 12 milestones; preserve IDs and done states unless the user asks for a change.", items:{ type:"object", properties:{
@@ -1127,6 +1156,14 @@ async function request({messages, system, probe=false, mode=""}) {
   let data = await readCompletionResponse(response);
   if (probe) return { ok: true, mode: "provider", model, provider: current.provider, content: "Connection successful." };
 
+  if (safety.hasPseudoToolMarkup(data?.choices?.[0]?.message?.content) && typeof executeTool === "function" && activeTools.length && !shouldStop()) {
+    emit("status", { text: "The model returned pretend tool syntax. Retrying once through Sonderr's actual structured tools; no action has been taken yet." });
+    activeSystem += "\n\n# Structured tool recovery\nThe prior generated text used pseudo-tool markup, which did not execute. Do not print XML, pseudo calls, or claim an action occurred. If the user's current request authorizes a tool action, invoke only the provided structured function tool with valid arguments; otherwise answer normally and say no action was taken.";
+    const retry = await fetchCompletion(messages);
+    budgetReduced = budgetReduced || retry.budgetReduced;
+    data = await readCompletionResponse(retry.response);
+  }
+
   let rounds = 0;
   let toolCalls = 0;
 
@@ -1239,24 +1276,26 @@ async function request({messages, system, probe=false, mode=""}) {
     }
   }
 
+  const finalContent = safety.sanitizeAssistantOutput((outputTruncated && !data?.choices?.[0]?.message?.content
+    ? "The selected model exhausted its output-token budget before returning any text. Shorten the request or choose a model with a larger output limit; in Settings, increase Max tokens if this provider/model supports it."
+    : data?.choices?.[0]?.message?.content) || (userPaused
+    ? "I paused the local task at your request and saved its checkpoint where available."
+    : hitRoundLimit || hitToolLimit
+    ? "I paused at Sonderr's safe tool limit. I saved the current task checkpoint where available; say ‘continue’ to resume from that point."
+    : ""), system);
+
   return {
     ok: true,
     mode: "provider",
     model,
-    content: safety.sanitizeAssistantOutput((outputTruncated && !data?.choices?.[0]?.message?.content
-      ? "The selected model exhausted its output-token budget before returning any text. Shorten the request or choose a model with a larger output limit; in Settings, increase Max tokens if this provider/model supports it."
-      : data?.choices?.[0]?.message?.content) || (userPaused
-      ? "I paused the local task at your request and saved its checkpoint where available."
-      : hitRoundLimit || hitToolLimit
-      ? "I paused at Sonderr's safe tool limit. I saved the current task checkpoint where available; say ‘continue’ to resume from that point."
-      : ""), system),
+    content: finalContent,
     incomplete,
     events,
     rounds,
     compactions: compactionCount,
     // Internal-only conversation state used by Build's local autonomous runner.
     // Never persist or expose raw provider messages through the session API.
-    conversation: incomplete ? messages : [...messages, { role: "assistant", content: data?.choices?.[0]?.message?.content || "" }]
+    conversation: incomplete ? messages : [...messages, { role: "assistant", content: finalContent }]
   };
 }
 
@@ -1329,4 +1368,4 @@ async function editImage({ prompt, sourcePath }) {
   throw new Error("Image endpoint returned no image data");
 }
 
-module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, readCompletionResponse, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, selectToolsForRequest };
+module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, readCompletionResponse, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, hasExactWalletNetwork, selectToolsForRequest };

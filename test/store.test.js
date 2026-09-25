@@ -63,7 +63,17 @@ try {
   const studioSession = store.createSession("A coached project", "studios");
   assert.equal(store.getSession(studioSession.id).surface, "studios", "Studios sessions persist their dedicated surface");
   assert.equal(store.updateStudio(studioSession.id, { track: "bounty", goal: "Test safely", milestones: [{ text: "Read scope", done: true }] }).studio.milestones[0].done, true);
-  assert.equal(store.getSession(studioSession.id).studio.track, "bounty");
+  const duplicateId = "milestone-duplicate";
+  const dedupedBoard = store.updateStudio(studioSession.id, { track: "developer", goal: "Find useful improvements", milestones: [
+    { id: duplicateId, text: "Explore the codebase", done: false },
+    { id: duplicateId, text: "Review user feedback", done: false },
+    { id: "milestone-last", text: "Test a contribution", done: true }
+  ] }).studio;
+  assert.equal(new Set(dedupedBoard.milestones.map(item => item.id)).size, dedupedBoard.milestones.length, "board persistence repairs duplicate milestone IDs");
+  assert.equal(dedupedBoard.milestones[0].id, duplicateId, "the first stable ID is preserved");
+  assert.notEqual(dedupedBoard.milestones[1].id, duplicateId, "a duplicate ID is replaced with a unique local ID");
+  assert.equal(dedupedBoard.milestones[2].done, true, "deduplication preserves other completion states");
+  assert.equal(store.getSession(studioSession.id).studio.track, "developer");
   assert.equal(store.updateStudio(session.id, { goal: "Should not convert chat" }), null, "ordinary chats cannot become Studio projects by update");
   assert.equal(store.createSession("Untrusted surface", "admin").surface, "chat", "unknown surfaces fail back to ordinary chat");
   assert.equal(store.setSessionPlugin(session.id, "sites"), "sites");

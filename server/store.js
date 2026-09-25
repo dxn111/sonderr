@@ -58,11 +58,17 @@ function cleanStudio(raw = {}) {
   const track = ["project", "site", "app", "developer", "bounty"].includes(raw.track) ? raw.track : "project";
   const goal = safety.redactText(String(raw.goal || "").replace(/[\u0000-\u001f]/g, " ").trim()).slice(0, 500);
   const previewPath = String(raw.previewPath || "").replace(/\\/g, "/").replace(/^\/+/, "").slice(0, 300);
-  const milestones = (Array.isArray(raw.milestones) ? raw.milestones : []).slice(0, 12).map(item => ({
-    id: /^[a-zA-Z0-9-]{1,64}$/.test(String(item?.id || "")) ? String(item.id) : crypto.randomUUID(),
-    text: safety.redactText(String(item?.text || "").replace(/[\u0000-\u001f]/g, " ").trim()).slice(0, 120),
-    done: item?.done === true
-  })).filter(item => item.text);
+  const usedMilestoneIds = new Set();
+  const milestones = (Array.isArray(raw.milestones) ? raw.milestones : []).slice(0, 12).map(item => {
+    let id = String(item?.id || "");
+    if (!/^[a-zA-Z0-9-]{1,64}$/.test(id) || usedMilestoneIds.has(id)) id = crypto.randomUUID();
+    usedMilestoneIds.add(id);
+    return {
+      id,
+      text: safety.redactText(String(item?.text || "").replace(/[\u0000-\u001f]/g, " ").trim()).slice(0, 120),
+      done: item?.done === true
+    };
+  }).filter(item => item.text);
   return { track, goal, milestones, ...(["site", "app"].includes(track) && previewPath ? { previewPath } : {}) };
 }
 
