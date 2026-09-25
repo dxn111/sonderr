@@ -67,6 +67,7 @@ if ! mv "$temporary_dir/source" "$INSTALL_DIR"; then
   exit 1
 fi
 
+chmod +x "$INSTALL_DIR/bin/sonderr-1.5.js"
 if ! ln -s "$INSTALL_DIR/bin/sonderr-1.5.js" "$COMMAND_PATH"; then
   mv "$INSTALL_DIR" "$temporary_dir/failed-install"
   if [ -n "$backup_dir" ]; then mv "$backup_dir" "$INSTALL_DIR"; fi

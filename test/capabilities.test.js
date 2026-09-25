@@ -128,6 +128,7 @@ const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");
 assert.match(installer, /git clone --depth 1/);
 assert.match(installer, /COMMAND_PATH="\$BIN_DIR\/sonderr"/);
 assert.match(installer, /\.backup\.\$\(date \+%Y%m%d%H%M%S\)/);
+assert.match(installer, /chmod \+x "\$INSTALL_DIR\/bin\/sonderr-1\.5\.js"/);
 assert.match(installer, /Previous install preserved at/);
 assert.doesNotMatch(readme, /v1\.7|v1\.6|35 backend skill playbooks/);
 const developerPage = fs.readFileSync(require.resolve("../web/docs-development.html"), "utf8");
