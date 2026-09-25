@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "bin": {
-    "sonderr-1.5": "bin/sonderr-1.5.js"
+    "sonderr": "bin/sonderr-1.5.js"
   },
   "scripts": {
     "start": "node bin/sonderr-1.5.js",

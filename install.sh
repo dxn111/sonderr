@@ -6,7 +6,7 @@ BRANCH="${SONDERR_BRANCH:-main}"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 BIN_DIR="${SONDERR_BIN_DIR:-$HOME/.local/bin}"
 INSTALL_DIR="${SONDERR_INSTALL_DIR:-$DATA_HOME/sonderr-v1.5}"
-COMMAND_PATH="$BIN_DIR/sonderr-1.5"
+COMMAND_PATH="$BIN_DIR/sonderr"
 
 for command_name in git node npm; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -48,7 +48,7 @@ npm --prefix "$temporary_dir/source" ci --omit=dev
 mv "$temporary_dir/source" "$INSTALL_DIR"
 ln -s "$INSTALL_DIR/bin/sonderr-1.5.js" "$COMMAND_PATH"
 
-printf '\nSonderr installed. Start it with: sonderr-1.5\n'
+printf '\nSonderr installed. Start it with: sonderr\n'
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) printf 'Add %s to your PATH to use the command from any terminal.\n' "$BIN_DIR" ;;

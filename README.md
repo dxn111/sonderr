@@ -33,12 +33,12 @@ Requirements: Node.js 20 or newer, npm, and Git.
 curl -fsSL https://raw.githubusercontent.com/dxn111/sonderr/main/install.sh | sh
 ```
 
-The installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr-1.5` command under `~/.local/bin`. It never uses `sudo` and refuses to overwrite an existing install directory or command. Review [`install.sh`](install.sh) before running it if you want to inspect the installer first.
+The installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr` command under `~/.local/bin`. It never uses `sudo` and refuses to overwrite an existing install directory or command. Review [`install.sh`](install.sh) before running it if you want to inspect the installer first.
 
 Then start Sonderr with:
 
 ```bash
-sonderr-1.5
+sonderr
 ```
 
 If `~/.local/bin` is not already on your `PATH`, add it as the installer instructs and open a new terminal.
@@ -51,7 +51,7 @@ The terminal is only the launcher.
 
 The Sonderr experience lives in a browser tab served from your machine:
 
-`sonderr-1.5` → local runtime → `http://127.0.0.1:4173`
+`sonderr` → local runtime → `http://127.0.0.1:4173`
 
 There is intentionally no separate "AI CLI" experience in v1.5. The launcher starts the localhost application; the web interface is the product surface.
 
@@ -63,7 +63,7 @@ Sonderr's source and self-service installer are available from the public reposi
 
 ```text
 ┌─────────────────────────┐
-│   sonderr-1.5           │
+│   sonderr               │
 │   local launcher        │
 └────────────┬────────────┘
              │
@@ -85,13 +85,13 @@ Sonderr starts on port `4173` and automatically opens the browser. If that port 
 Manual launch without automatic browser opening:
 
 ```bash
-sonderr-1.5 --no-open
+sonderr --no-open
 ```
 
 Custom port:
 
 ```bash
-sonderr-1.5 --port 4300
+sonderr --port 4300
 ```
 
 ## Web workspace
@@ -119,7 +119,7 @@ Sonderr v1.5 separates the launcher from the actual product:
 
 ### Launcher
 
-The `sonderr-1.5` command only starts the local runtime; it does not provide a separate AI CLI.
+The `sonderr` command only starts the local runtime; it does not provide a separate AI CLI.
 
 ### Local runtime
 
