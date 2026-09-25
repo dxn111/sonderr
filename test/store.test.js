@@ -53,6 +53,13 @@ try {
 
   const session = store.createSession("A safe title\nwithout a second line");
   assert.equal(session.title.includes("\n"), false);
+  assert.equal(session.surface, "chat");
+  const studioSession = store.createSession("A coached project", "studios");
+  assert.equal(store.getSession(studioSession.id).surface, "studios", "Studios sessions persist their dedicated surface");
+  assert.equal(store.updateStudio(studioSession.id, { track: "bounty", goal: "Test safely", milestones: [{ text: "Read scope", done: true }] }).studio.milestones[0].done, true);
+  assert.equal(store.getSession(studioSession.id).studio.track, "bounty");
+  assert.equal(store.updateStudio(session.id, { goal: "Should not convert chat" }), null, "ordinary chats cannot become Studio projects by update");
+  assert.equal(store.createSession("Untrusted surface", "admin").surface, "chat", "unknown surfaces fail back to ordinary chat");
   assert.equal(store.setSessionPlugin(session.id, "sites"), "sites");
   assert.equal(store.getSession(session.id).activePluginId, "sites", "active plugin persists per chat");
   assert.equal(store.setSessionPlugin(session.id, ""), "", "plugin can be removed from a chat");

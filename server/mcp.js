@@ -184,7 +184,7 @@ async function connectServer(id) {
     const runtime = { transport: "http", server, nextId: 1, pending: new Map(), tools: [], error: "" };
     runtimes.set(server.id, runtime);
     try {
-      const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: "1.5.7" } });
+      const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: "1.5.8" } });
       runtime.serverInfo = initialized?.serverInfo || null;
       runtime.capabilities = initialized?.capabilities || {};
       await notifyHttp(runtime, "notifications/initialized", {});
@@ -211,7 +211,7 @@ async function connectServer(id) {
   child.once("error", error => { runtime.error = error.message; });
   child.once("exit", () => { for (const pending of runtime.pending.values()) pending.reject(new Error("MCP server exited")); runtime.pending.clear(); });
   try {
-    const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: "1.5.7" } });
+    const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: "1.5.8" } });
     runtime.serverInfo = initialized?.serverInfo || null;
     runtime.capabilities = initialized?.capabilities || {};
     writeMessage(runtime, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });

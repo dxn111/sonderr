@@ -31,9 +31,16 @@ function toast(msg) {
 const state = {
   settings: null, providers: {}, models: [], modelsLoading: false, modelsError: "",
   sessions: [], session: null, mode: "ask", contextFiles: [], files: [], images: [], lastGeneralModel: "",
-  sending: false, apiConfigured: false, workspace: "", nodeVersion: "", onboarding: null,
-  plugins: [], activePluginId: ""
+  sending: false, apiConfigured: false, anonymousFreeModels: false, workspace: "", nodeVersion: "", onboarding: null,
+  plugins: [], activePluginId: "", surface: "chat"
 };
+const STUDIO_PHASES = {
+  idea: { title: "Give the idea a shape", text: "Describe the user, problem, and smallest useful result. Studios turns a vague idea into a first milestone.", mode: "ask", prompt: "I have a project idea. Help me define who it is for, the core problem, and the smallest useful first milestone." },
+  plan: { title: "Make a buildable plan", text: "Map the files, decisions, risks, and checks before spending time on implementation.", mode: "plan", prompt: "Plan this project into small milestones. Start by inspecting the current workspace, then identify the first files, risks, and verification steps." },
+  build: { title: "Build and verify", text: "Work on the current milestone, inspect the real project, and check that the result actually runs.", mode: "build", prompt: "Help me implement the first milestone in this workspace. Inspect the project, make focused changes, and run the relevant checks." },
+  review: { title: "Polish before shipping", text: "Look for regressions, awkward UX, missing tests, and unfinished details before calling the work done.", mode: "ask", prompt: "Review the current project or diff for concrete defects, accessibility gaps, missing tests, and the most valuable polish before release." }
+};
+let studioTrackDraft = "project";
 
 /* ---------- markdown (safe, offline) ---------- */
 function renderMarkdown(src) {
@@ -88,6 +95,7 @@ async function boot() {
       api("/api/onboarding")
     ]);
     state.apiConfigured = Boolean(health.provider === "configured" || settings.apiConfigured);
+    state.anonymousFreeModels = Boolean(settings.anonymousFreeModels);
     state.settings = settings; state.providers = settings.providers || {};
     state.onboarding = onboarding.onboarding || { completed: false };
     renderGreeting(state.onboarding.name || "");
@@ -183,8 +191,9 @@ async function loadModels(silent) {
     const data = await api("/api/models");
     state.models = data.models || [];
     state.apiConfigured = true;
-    if (data.active && state.settings) state.settings.model = data.active;
-    if (!state.settings?.model && state.models.length) await chooseModel(state.models[0].id, true);
+    state.anonymousFreeModels = Boolean(data.anonymous);
+    if (data.active && state.settings && data.active !== state.settings.model) await chooseModel(data.active, true);
+    else if (!state.settings?.model && state.models.length) await chooseModel(state.models[0].id, true);
   } catch (e) {
     state.models = []; state.modelsError = e.message;
     if (!silent) toast(e.message);
@@ -220,6 +229,7 @@ function renderModelMenu() {
     const badges = [];
     if (m.snapshot && Number(m.snapshot.slice(0, 4)) >= year) badges.push('<span class="mi-badge new">new</span>');
     if (m.small) badges.push('<span class="mi-badge small">small</span>');
+    if (m.free) badges.push('<span class="mi-badge free">free</span>');
     if (state.mode !== "vision" && m.vision) badges.push('<span class="mi-badge vision">vision</span>');
     return '<button class="model-item' + (m.id === active ? " selected" : "") + '" role="option" aria-selected="' + (m.id === active) + '" data-id="' + esc(m.id) + '">' +
       '<span class="mi-copy"><span class="mi-label">' + esc(m.label) + "</span><span class='mi-sub'>" + esc(m.id) + (m.snapshot ? " · " + m.snapshot : "") + "</span></span>" +
@@ -231,6 +241,7 @@ function renderModelMenu() {
   foot.textContent = state.modelsLoading ? "Fetching /models"
     : state.mode === "vision"
       ? pool.length + " vision model" + (pool.length === 1 ? "" : "s") + " · image input required"
+      : state.anonymousFreeModels ? state.models.length + " free model" + (state.models.length === 1 ? "" : "s") + " · no key · rate-limited by IP"
       : state.models.length + " model" + (state.models.length === 1 ? "" : "s") + " · best & newest first";
 }
 
@@ -247,10 +258,11 @@ async function loadSessions() {
       const resumeHint = s.taskCheckpoint?.interruptedAt ? " · Stopped · Resume?"
         : s.taskCheckpoint?.status === "active" ? " · Running locally"
           : s.taskCheckpoint?.status === "paused" ? " · Resume ready" : "";
-      el.innerHTML = "<strong>" + esc(s.title) + "</strong><small>" + esc(rel(s.updatedAt)) + " · " + s.messageCount + " msgs" + resumeHint + "</small>";
+      el.innerHTML = "<strong>" + (s.surface === "studios" ? '<span class="session-studios-mark">✦</span>' : "") + esc(s.title) + "</strong><small>" + esc(rel(s.updatedAt)) + " · " + s.messageCount + " msgs" + resumeHint + "</small>";
       el.onclick = () => { openSession(s.id); closeMobileNav(); };
       list.appendChild(el);
     }
+    renderStudioRecents();
     const interrupted = state.sessions.find(session => session.taskCheckpoint?.interruptedAt && !dismissedResumePrompts.has(session.id));
     if (interrupted && state.session?.id !== interrupted.id) showInterruptedTaskPrompt(interrupted);
   } catch { /* keep old list */ }
@@ -281,12 +293,17 @@ async function openSession(id) {
   try {
     const data = await api("/api/sessions/" + id);
     state.session = data.session;
+    state.surface = state.session.surface === "studios" ? "studios" : "chat";
+    setSurfacePath(state.surface);
+    renderSurface();
     state.activePluginId = state.session.activePluginId || "";
     state.contextFiles = []; state.images = []; renderContext();
-    if (state.activePluginId) setMode("build");
+    if (state.activePluginId) setMode(state.activePluginId === "code-review" ? "ask" : "build");
     else updateComposerForMode();
     renderPluginCatalog();
     $("welcome").hidden = true;
+    $("studiosHome").hidden = true;
+    renderStudioProject();
     const box = $("messages");
     box.hidden = false; box.innerHTML = "";
     for (const m of state.session.messages) {
@@ -317,17 +334,172 @@ function markActiveSession() {
   const idx = state.sessions.findIndex(s => s.id === state.session?.id);
   if (idx >= 0) document.querySelectorAll(".session")[idx]?.classList.add("active");
 }
-function newTask() {
+function setSurfacePath(surface, navigate = true) {
+  const target = surface === "studios" ? "/studios" : "/";
+  if (navigate && location.pathname !== target) history.pushState({ surface }, "", target);
+}
+function newTask(navigate = true) {
   state.session = null;
+  state.surface = "chat";
+  setSurfacePath("chat", navigate);
   state.activePluginId = "";
   state.contextFiles = []; state.images = []; renderContext();
   renderPluginCatalog();
   updateComposerForMode();
   $("messages").hidden = true; $("messages").innerHTML = "";
   $("welcome").hidden = false;
+  $("studiosHome").hidden = true;
+  $("studiosProject").hidden = true;
+  $("studioDiscussionHead").hidden = true;
   $("topbarTitle").textContent = "New task";
+  renderSurface();
   markActiveSession(); closeMobileNav();
   $("input").focus();
+}
+function renderSurface() {
+  const studios = state.surface === "studios";
+  $("studiosBtn").setAttribute("aria-current", studios ? "page" : "false");
+  $("studiosBtn").classList.toggle("active", studios);
+  $("input").placeholder = studios ? "Ask Sonderr Studios anything…" : "How can Sonderr help you today? Type / for commands.";
+  $("studioBackBtn").hidden = !studios;
+  $("studioNewBtn").hidden = !studios;
+  document.body.classList.toggle("in-studios", studios);
+}
+function renderStudioRecents() {
+  const recent = state.sessions.filter(session => session.surface === "studios").slice(0, 4);
+  $("studiosRecent").hidden = !recent.length;
+  const list = $("studiosRecentList");
+  list.innerHTML = "";
+  for (const session of recent) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = session.title;
+    button.title = session.title;
+    button.onclick = () => openSession(session.id);
+    list.appendChild(button);
+  }
+}
+const STUDIO_TRACKS = {
+  project: { label: "Project", title: "New project", milestones: ["Define a clear first milestone", "Build the first usable version", "Review and verify"] },
+  site: { label: "Website Studio", title: "New website", milestones: ["Choose an audience and visual direction", "Build responsive pages and interactions", "Preview, refine, and verify"] },
+  app: { label: "App Studio", title: "New app", milestones: ["Map the user flow and core screen", "Build a working app experience", "Preview, refine, and verify"] },
+  developer: { label: "Developer Program", title: "New contribution", milestones: ["Choose a focused contribution", "Implement and test the change", "Prepare a reviewable handoff"] },
+  bounty: { label: "Bounty Program", title: "New security research", milestones: ["Read the current scope and rules", "Create an authorized, safe test plan", "Prepare a private report"] }
+};
+function openStudioCreate(track = "project") {
+  studioTrackDraft = STUDIO_TRACKS[track] ? track : "project";
+  $("studiosCreateTitle").textContent = STUDIO_TRACKS[studioTrackDraft].title;
+  $("studiosProjectName").value = "";
+  $("studiosProjectGoal").value = "";
+  $("studiosCreate").hidden = false;
+  $("studiosCreate").scrollIntoView({ behavior: "smooth", block: "center" });
+  $("studiosProjectName").focus();
+}
+async function createStudioProject(event) {
+  event.preventDefault();
+  const name = $("studiosProjectName").value.trim();
+  const goal = $("studiosProjectGoal").value.trim();
+  if (!name) return;
+  const submit = $("studiosCreate").querySelector(".studios-create-submit");
+  submit.disabled = true;
+  try {
+    const studio = { track: studioTrackDraft, goal, milestones: STUDIO_TRACKS[studioTrackDraft].milestones.map(text => ({ text, done: false })) };
+    const data = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: name, surface: "studios", studio }) });
+    await loadSessions();
+    await openSession(data.session.id);
+  } catch (error) { toast("Could not create Studio: " + error.message); }
+  finally { submit.disabled = false; }
+}
+function renderStudioProject() {
+  const project = $("studiosProject");
+  const discussion = $("studioDiscussionHead");
+  if (state.surface !== "studios" || !state.session) { project.hidden = true; discussion.hidden = true; return; }
+  const studio = state.session.studio || { track: "project", goal: "", milestones: [] };
+  const track = STUDIO_TRACKS[studio.track] || STUDIO_TRACKS.project;
+  const milestones = studio.milestones || [];
+  const done = milestones.filter(item => item.done).length;
+  const percent = milestones.length ? Math.round(done / milestones.length * 100) : 0;
+  const previewPath = String(studio.previewPath || "");
+  const previewUrl = previewPath ? "/studio-preview/" + previewPath.split("/").map(encodeURIComponent).join("/") : "about:blank";
+  project.hidden = false; discussion.hidden = false;
+  project.innerHTML = '<div class="studio-project-kicker">SONDERR STUDIOS <span>／</span> ' + esc(track.label) + '</div>' +
+    '<h1>' + esc(state.session.title) + '</h1>' +
+    '<div class="studio-project-label">PROJECT BRIEF</div>' +
+    '<textarea id="studioGoalInput" rows="3" maxlength="500" aria-label="Project brief" placeholder="What should this project achieve?">' + esc(studio.goal || "") + '</textarea>' +
+    '<button class="studio-save-goal" type="button">Save brief</button>' +
+    '<div class="studio-project-progress"><strong>Milestones</strong><span>' + done + ' of ' + milestones.length + ' complete</span></div>' +
+    '<div class="studio-progress-track"><span style="width:' + percent + '%"></span></div>' +
+    '<div class="studio-milestones">' + milestones.map(item => '<label class="studio-milestone' + (item.done ? ' done' : '') + '"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>').join("") + '</div>' +
+    '<form class="studio-add-milestone" id="studioAddMilestone"><input id="studioMilestoneText" maxlength="120" required aria-label="New milestone" placeholder="Add a milestone…"><button type="submit">Add</button></form>' +
+    '<div class="studio-project-actions"><button type="button" data-studio-action="plan">Plan next step</button><button type="button" data-studio-action="build">Build milestone</button><button type="button" data-studio-action="review">Review progress</button></div>' +
+    (["site", "app"].includes(studio.track) ? '<section class="studio-site-canvas"><div class="studio-site-canvas-head"><span>LIVE CANVAS</span><strong>' + (studio.track === "app" ? "App preview" : "Website preview") + '</strong><a id="studioPreviewOpen" href="' + esc(previewUrl) + '" target="_blank" rel="noopener"' + (previewPath ? '' : ' hidden') + '>Open ↗</a></div><form id="studioPreviewForm"><input id="studioPreviewPath" aria-label="Workspace path to preview page" placeholder="my-site/index.html" value="' + esc(previewPath) + '"><button type="submit">Preview</button></form><div class="studio-preview-tools"><span>LOCAL PREVIEW · NETWORK DISABLED</span><div><button type="button" data-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview-size="mobile" aria-pressed="false">Mobile</button><button type="button" id="studioPreviewReload"' + (previewPath ? '' : ' disabled') + ' aria-label="Reload preview" title="Reload preview">↻</button></div></div><div class="studio-preview-frame-wrap" id="studioPreviewWrap"><iframe id="studioPreviewFrame" title="' + (studio.track === "app" ? "App" : "Website") + ' preview" sandbox="allow-scripts" referrerpolicy="no-referrer" src="' + esc(previewUrl) + '"></iframe>' + (!previewPath ? '<div class="studio-preview-empty"><span>▧</span><strong>Your canvas is ready</strong><small>Build a page with Sites, then enter its workspace path here. Try <code>my-site/index.html</code>.</small></div>' : '') + '</div><button class="studio-sites-plugin" type="button">✦ Build with Sites</button><p class="studio-preview-note">This preview reads workspace files only. External network requests, forms, and publishing stay disabled.</p></section>' : '') +
+    (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '');
+  project.querySelector(".studio-save-goal").onclick = () => updateStudioData({ ...studio, goal: $("studioGoalInput").value });
+  project.querySelectorAll("[data-milestone-id]").forEach(input => { input.onchange = () => updateStudioData({ ...studio, milestones: milestones.map(item => item.id === input.dataset.milestoneId ? { ...item, done: input.checked } : item) }); });
+  $("studioAddMilestone").onsubmit = event => { event.preventDefault(); const text = $("studioMilestoneText").value.trim(); if (milestones.length >= 12) return toast("A Studio can hold up to 12 milestones"); if (text) updateStudioData({ ...studio, milestones: [...milestones, { text, done: false }] }); };
+  project.querySelectorAll("[data-studio-action]").forEach(button => { button.onclick = () => {
+    const phase = STUDIO_PHASES[button.dataset.studioAction];
+    setMode(phase.mode); $("input").value = phase.prompt + " Project: " + state.session.title + ". Goal: " + (studio.goal || "not written yet");
+    autosize(); $("input").focus();
+  }; });
+  if (["site", "app"].includes(studio.track)) {
+    $("studioPreviewForm").onsubmit = event => {
+      event.preventDefault();
+      const nextPath = $("studioPreviewPath").value.trim().replace(/^\/+/, "");
+      if (!nextPath) return;
+      updateStudioData({ ...studio, previewPath: nextPath });
+    };
+    $("studioPreviewReload").onclick = () => {
+      const frame = $("studioPreviewFrame");
+      frame.src = frame.src;
+    };
+    project.querySelectorAll("[data-preview-size]").forEach(button => {
+      button.onclick = () => {
+        const mobile = button.dataset.previewSize === "mobile";
+        $("studioPreviewWrap").classList.toggle("mobile-preview", mobile);
+        project.querySelectorAll("[data-preview-size]").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+      };
+    });
+    project.querySelector(".studio-sites-plugin").onclick = () => {
+      state.activePluginId = "sites"; setMode("build"); renderContext();
+      $("input").value = (studio.track === "app" ? "Create a polished, working web app" : "Create a distinctive, polished website") + " for " + state.session.title + ". Read the Studio brief, inspect the existing project, then build and verify the first useful version.";
+      autosize(); $("input").focus();
+    };
+  }
+}
+async function updateStudioData(studio) {
+  if (!state.session || state.surface !== "studios") return;
+  try {
+    const data = await api("/api/studios/projects/" + encodeURIComponent(state.session.id), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studio }) });
+    state.session = data.session;
+    renderStudioProject();
+    loadSessions();
+  } catch (error) { toast("Could not save project: " + error.message); renderStudioProject(); }
+}
+function openStudios(navigate = true) {
+  state.session = null;
+  state.surface = "studios";
+  setSurfacePath("studios", navigate);
+  state.activePluginId = "";
+  state.contextFiles = []; state.images = []; renderContext();
+  renderPluginCatalog(); updateComposerForMode();
+  $("messages").hidden = true; $("messages").innerHTML = "";
+  $("welcome").hidden = true; $("studiosHome").hidden = false;
+  $("studiosProject").hidden = true; $("studioDiscussionHead").hidden = true;
+  $("topbarTitle").textContent = "Sonderr Studios";
+  renderSurface(); markActiveSession(); closeMobileNav();
+  $("chatScroll").scrollTop = 0;
+  $("input").focus();
+}
+function setStudioPhase(id) {
+  const phase = STUDIO_PHASES[id] || STUDIO_PHASES.idea;
+  document.querySelectorAll(".studios-phase").forEach(button => {
+    const active = button.dataset.phase === id;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  $("studiosPhaseDetail").innerHTML = '<div class="studios-phase-copy"><strong>' + esc(phase.title) + '</strong><p>' + esc(phase.text) + '</p></div><button class="studios-phase-action" type="button">Start a project →</button>';
+  $("studiosPhaseDetail").querySelector("button").onclick = () => openStudioCreate("project");
 }
 
 /* ---------- message rendering ---------- */
@@ -364,8 +536,11 @@ function addErrorCard(message) {
 }
 let chatPinnedToBottom = true;
 let chatFollowFrame = 0;
+function chatScrollTarget() {
+  return state.surface === "studios" && !$("studiosProject").hidden && matchMedia("(min-width: 901px)").matches ? $("messages") : $("chatScroll");
+}
 function scrollBottom(force = false) {
-  const sc = $("chatScroll");
+  const sc = chatScrollTarget();
   if (!sc || (!force && !chatPinnedToBottom)) return;
   if (chatFollowFrame) cancelAnimationFrame(chatFollowFrame);
   chatFollowFrame = requestAnimationFrame(() => {
@@ -374,10 +549,13 @@ function scrollBottom(force = false) {
     chatPinnedToBottom = true;
   });
 }
-$("chatScroll").addEventListener("scroll", () => {
-  const sc = $("chatScroll");
+function updateChatScrollPin(event) {
+  const sc = chatScrollTarget();
+  if (event.currentTarget !== sc) return;
   chatPinnedToBottom = sc.scrollHeight - sc.clientHeight - sc.scrollTop <= 120;
-}, { passive: true });
+}
+$("chatScroll").addEventListener("scroll", updateChatScrollPin, { passive: true });
+$("messages").addEventListener("scroll", updateChatScrollPin, { passive: true });
 
 /* ---------- tool blocks (Claude-style, collapsed, live) ---------- */
 const TOOL_ICONS = {
@@ -1205,6 +1383,7 @@ async function send() {
   await attachMentionedFiles(value);
   closeMentionMenu();
   $("welcome").hidden = true;
+  $("studiosHome").hidden = true;
   $("messages").hidden = false;
   const sentImages = state.images.slice();
   addUserMessage(value, sentImages);
@@ -1212,7 +1391,7 @@ async function send() {
   let row = null, finished = false;
   try {
     if (!state.session) {
-      const created = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: (value || sentImages[0]?.name || "New task").slice(0, 120) }) });
+      const created = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: (value || sentImages[0]?.name || "New task").slice(0, 120), surface: state.surface }) });
       state.session = created.session;
     }
     row = createAgentRow();
@@ -1495,6 +1674,7 @@ function updateComposerForMode() {
   const input = $("input");
   input.placeholder = state.mode === "vision" ? "Ask about the image — or describe an edit…"
     : state.activePluginId === "sites" ? "Describe the site you want to make…"
+    : state.surface === "studios" ? "Ask Sonderr Studios anything…"
     : state.mode === "build" ? "Describe what to build…"
     : state.mode === "plan" ? "What should we plan?"
     : "How can Sonderr help you today?";
@@ -1541,34 +1721,35 @@ function renderSettings() {
     body.innerHTML = `
       <div class="panel active" id="panelApi">
         <h2>API &amp; Models</h2>
-        <p class="panel-sub">Add your API key once — Sonderr discovers every model your provider offers and ranks them automatically.</p>
+        <p class="panel-sub">${s.provider === "kilo" ? "Try Kilo’s free models without entering an API key, or add a Kilo key for its full model catalog." : "Add your API key once — Sonderr discovers every model your provider offers and ranks them automatically."}</p>
         <div class="field">
           <label>Provider</label>
           <select id="setProvider">${Object.values(state.providers).filter(p => p.id !== "local").map(p => '<option value="' + esc(p.id) + '"' + (s.provider === p.id ? " selected" : "") + ">" + esc(p.label) + "</option>").join("")}</select>
           <div class="hint">OpenAI-compatible endpoints are all supported — including local runtimes like Ollama.</div>
+          <div class="hint" id="kiloProviderHelp" hidden>Kilo is a hosted model gateway, not a background server installed on this computer. Free-tagged models work without an API key (anonymous access is rate-limited by IP); adding a Kilo key unlocks your account’s broader catalog. Sonderr’s local agent still supplies its system prompt, skills, tools, and permission checks, then runs tool calls on this machine. Model requests and prompt context go to Kilo over HTTPS. <a href="https://kilo.ai/docs/gateway" target="_blank" rel="noopener">Gateway docs ↗</a> · <a href="https://kilo.ai/docs/gateway/authentication" target="_blank" rel="noopener">Free access &amp; limits ↗</a> · <a href="https://app.kilo.ai" target="_blank" rel="noopener">Kilo account ↗</a></div>
         </div>
         <div class="field" id="baseURLField">
           <label>Endpoint</label>
           <input type="text" id="setBaseURL" value="${esc(s.baseURL || "")}" placeholder="https://api.example.com/v1" spellcheck="false">
         </div>
         <div class="field">
-          <label>API key</label>
+          <label>${state.anonymousFreeModels ? "Kilo API key · optional" : s.provider === "kilo" ? "Kilo API key · optional for free models" : "API key"}</label>
           <div class="field-row">
-            <input type="password" id="setApiKey" placeholder="${state.apiConfigured ? "Key saved locally — leave blank to keep" : "Paste your API key"}" autocomplete="off" spellcheck="false">
-            <button class="btn primary" id="saveKeyBtn">Save key</button>
+            <input type="password" id="setApiKey" placeholder="${state.anonymousFreeModels ? "Optional · add a Kilo key for more models" : state.apiConfigured ? "Key saved locally — leave blank to keep" : "Paste your API key"}" autocomplete="off" spellcheck="false">
+            <button class="btn primary" id="saveKeyBtn">${s.provider === "kilo" ? "Add Kilo key" : "Save key"}</button>
           </div>
           <div class="hint">Stored only on this machine (<span style="font-family:var(--mono)">~/.sonderr/credentials.json</span>, mode 600) and sent solely to your provider endpoint.</div>
-          <div style="margin-top:10px">${state.apiConfigured ? '<span class="pill ok"><span class="dot"></span>Connected</span>' : '<span class="pill bad"><span class="dot"></span>Not configured</span>'}</div>
+          <div style="margin-top:10px">${state.anonymousFreeModels ? '<span class="pill ok"><span class="dot"></span>Kilo free models · no key</span>' : state.apiConfigured ? '<span class="pill ok"><span class="dot"></span>Connected</span>' : '<span class="pill bad"><span class="dot"></span>Not configured</span>'}</div>
           <div class="statusline" id="apiKeyStatus"></div>
         </div>
         <div class="model-manage">
           <div class="model-manage-head">
-            <span>Available models ${state.models.length ? "· " + state.models.length : ""}</span>
+          <span>${state.anonymousFreeModels ? "Kilo free models" : "Available models"} ${state.models.length ? "· " + state.models.length : ""}</span>
             <button class="mini-btn" id="setRefreshModels" title="Re-discover models"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg></button>
           </div>
           <div class="model-manage-list" id="settingsModelList"></div>
         </div>
-        <div class="hint" style="margin-top:8px">Sorted strongest / newest → oldest / lightest. Picking one sets it for all new messages.</div>
+        <div class="hint" style="margin-top:8px">${state.anonymousFreeModels ? "Only models marked free are available without a key. Picking one sets it for new messages." : "Sorted strongest / newest → oldest / lightest. Picking one sets it for all new messages."}</div>
         <details class="advanced">
           <summary>Advanced generation</summary>
           <div class="adv-body">
@@ -1584,7 +1765,6 @@ function renderSettings() {
       const p = state.providers[$("setProvider").value];
       $("setBaseURL").value = p?.baseURL || "";
       await saveSettings({ provider: $("setProvider").value, baseURL: $("setBaseURL").value.trim(), model: "" }, true);
-      state.apiConfigured = Boolean(providerHasKey() || $("setProvider").value === "ollama");
       if (state.apiConfigured) await loadModels(true);
       renderSettings();
     };
@@ -1599,6 +1779,7 @@ function renderSettings() {
       } catch (e) { $("advStatus").textContent = e.message; $("advStatus").className = "statusline bad"; }
     };
     renderSettingsModels();
+    $("kiloProviderHelp").hidden = $("setProvider").value !== "kilo";
   } else if (settingsTab === "tools") {
     const modes = [
       ["ask", "Ask before tools", "Every tool run needs your approval."],
@@ -1810,10 +1991,10 @@ function renderSettings() {
         <h2>About</h2>
         <p class="panel-sub">Sonderr is a privacy-first local AI workspace with optional Web3 capabilities. The terminal only launches it — the browser is the product.</p>
         <div class="about-rows">
-          <div class="about-row"><span>Version</span><b>1.5.7</b></div>
+          <div class="about-row"><span>Version</span><b>1.5.8</b></div>
           <div class="about-row"><span>Workspace</span><b title="${esc(state.workspace)}">${esc(state.workspace || "—")}</b></div>
           <div class="about-row"><span>Runtime</span><b>Node ${esc(state.nodeVersion || "")} · localhost</b></div>
-          <div class="about-row"><span>API status</span><b>${state.apiConfigured ? "Connected" : "Not configured"}</b></div>
+          <div class="about-row"><span>API status</span><b>${state.anonymousFreeModels ? "Kilo free models · no key" : state.apiConfigured ? "Connected" : "Not configured"}</b></div>
           <div class="about-row"><span>Models discovered</span><b>${state.models.length || "—"}</b></div>
           <div class="about-row"><span>Skills</span><b>${state.skillsCount != null ? state.skillsCount + " playbooks · loaded on demand" : "—"}</b></div>
           <div class="about-row"><span>Data folder</span><b style="font-family:var(--mono)">~/.sonderr</b></div>
@@ -1831,7 +2012,7 @@ function renderSettingsModels() {
   if (state.modelsError) { box.innerHTML = '<div class="model-empty">' + esc(state.modelsError) + "</div>"; return; }
   const active = state.settings?.model;
   box.innerHTML = state.models.slice(0, 40).map(m =>
-    '<button class="mm-item' + (m.id === active ? " selected" : "") + '" data-id="' + esc(m.id) + '"><span class="radio"></span><span class="mi-copy"><span class="mi-label">' + esc(m.label) + "</span><span class='mi-sub'>" + esc(m.id) + (m.snapshot ? " · " + m.snapshot : "") + "</span></span>" + (m.small ? '<span class="mi-badge small">small</span>' : "") + "</button>"
+    '<button class="mm-item' + (m.id === active ? " selected" : "") + '" data-id="' + esc(m.id) + '"><span class="radio"></span><span class="mi-copy"><span class="mi-label">' + esc(m.label) + "</span><span class='mi-sub'>" + esc(m.id) + (m.snapshot ? " · " + m.snapshot : "") + "</span></span>" + (m.small ? '<span class="mi-badge small">small</span>' : "") + (m.free ? '<span class="mi-badge free">free</span>' : "") + "</button>"
   ).join("") || '<div class="model-empty">No models returned.</div>';
   box.querySelectorAll(".mm-item").forEach(item => {
     item.onclick = () => chooseModel(item.dataset.id);
@@ -1877,6 +2058,7 @@ async function saveSettings(patch, silent) {
   const data = await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   state.settings = data.settings || { ...s, ...payload };
   if (Object.prototype.hasOwnProperty.call(data, "apiConfigured")) state.apiConfigured = data.apiConfigured;
+  if (Object.prototype.hasOwnProperty.call(data, "anonymousFreeModels")) state.anonymousFreeModels = data.anonymousFreeModels;
   if (!silent) toast("Settings saved");
   renderModelBtn();
   return data;
@@ -1910,7 +2092,7 @@ function usePlugin(pluginId) {
     return;
   }
   state.activePluginId = plugin.id;
-  setMode("build");
+  setMode(plugin.id === "code-review" ? "ask" : "build");
   renderContext();
   renderPluginCatalog();
   closePluginHub();
@@ -1931,7 +2113,7 @@ function renderPluginCatalog() {
     const active = state.activePluginId === plugin.id;
     const tags = (plugin.features || []).slice(0, 4).map(item => '<span>' + esc(item) + '</span>').join("");
     const examples = (plugin.examples || []).slice(0, 4).map(item => '<li>' + esc(item) + '</li>').join("");
-    return '<article class="plugin-card' + (active ? ' is-active' : '') + '"><div class="plugin-card-top"><span class="plugin-icon">▧</span><span class="plugin-status">' + esc(active ? "In this chat" : plugin.status || "Available") + '</span></div><div class="plugin-name-row"><h3>' + esc(plugin.name) + '</h3><span class="plugin-version">v' + esc(plugin.version || "1.0") + '</span></div><p>' + esc(plugin.summary || "A Sonderr workflow plugin.") + '</p><div class="plugin-tags">' + tags + '</div><details class="plugin-details"><summary>Read more</summary><p>' + esc(plugin.details || plugin.summary || "") + '</p>' + (examples ? '<strong class="plugin-detail-label">Try asking Sonderr</strong><ul>' + examples + '</ul>' : '') + '<div class="plugin-release"><span>Release date</span><strong>' + esc(date) + '</strong><span>Category</span><strong>' + esc(plugin.category || "Plugin") + '</strong></div></details><button class="btn ' + (active ? 'ghost' : 'primary') + ' plugin-use" data-plugin-id="' + esc(plugin.id) + '" aria-pressed="' + String(active) + '">' + (active ? 'Remove from chat' : 'Use this plugin') + '</button><small class="plugin-footnote">' + (plugin.id === "sites" ? "Creates and refines site files in your workspace. Hosting or publishing is separate." : "Enabled for this chat until you remove its chip in the composer.") + '</small></article>';
+    return '<article class="plugin-card' + (active ? ' is-active' : '') + '"><div class="plugin-card-top"><span class="plugin-icon">▧</span><span class="plugin-status">' + esc(active ? "In this chat" : plugin.status || "Available") + '</span></div><div class="plugin-name-row"><h3>' + esc(plugin.name) + '</h3><span class="plugin-version">v' + esc(plugin.version || "1.0") + '</span></div><p>' + esc(plugin.summary || "A Sonderr workflow plugin.") + '</p><div class="plugin-tags">' + tags + '</div><details class="plugin-details"><summary>Read more</summary><p>' + esc(plugin.details || plugin.summary || "") + '</p>' + (examples ? '<strong class="plugin-detail-label">Try asking Sonderr</strong><ul>' + examples + '</ul>' : '') + '<div class="plugin-release"><span>Release date</span><strong>' + esc(date) + '</strong><span>Category</span><strong>' + esc(plugin.category || "Plugin") + '</strong></div></details><button class="btn ' + (active ? 'ghost' : 'primary') + ' plugin-use" data-plugin-id="' + esc(plugin.id) + '" aria-pressed="' + String(active) + '">' + (active ? 'Remove from chat' : 'Use this plugin') + '</button><small class="plugin-footnote">' + (plugin.id === "sites" ? "Build websites or web apps in your workspace; local preview is separate from hosting." : "Enabled for this chat until you remove its chip in the composer.") + '</small></article>';
   }).join("");
   grid.innerHTML = cards + '<div class="plugin-hub-note"><span>✦</span><p><strong>More plugins are on the way.</strong><br>Plugins add focused workflows; Sonderr stays in control of the work.</p></div>';
   grid.querySelectorAll(".plugin-use").forEach(button => { button.onclick = () => usePlugin(button.dataset.pluginId); });
@@ -1953,7 +2135,13 @@ function autosize() {
   t.style.height = Math.min(t.scrollHeight, 180) + "px";
 }
 function wire() {
-  $("newTaskBtn").onclick = newTask;
+  $("newTaskBtn").onclick = () => newTask();
+  $("studiosBtn").onclick = () => openStudios();
+  $("studioBackBtn").onclick = () => newTask();
+  $("studioNewBtn").onclick = () => openStudios();
+  $("studiosTourBtn").onclick = () => { setStudioPhase("idea"); $("studiosWorkbench").scrollIntoView({ behavior: "smooth", block: "center" }); };
+  document.querySelectorAll(".studios-phase").forEach(button => { button.onclick = () => setStudioPhase(button.dataset.phase); });
+  setStudioPhase("idea");
   $("pluginHubBtn").onclick = openPluginHub;
   $("pluginHubClose").onclick = closePluginHub;
   $("pluginHubModal").addEventListener("click", e => { if (e.target === $("pluginHubModal")) closePluginHub(); });
@@ -2106,9 +2294,19 @@ function wire() {
       $("input").value = chip.dataset.prompt; autosize(); $("input").focus();
     };
   });
+  document.querySelectorAll(".studios-path").forEach(path => {
+    path.onclick = () => openStudioCreate(path.dataset.studioTrack);
+  });
+  $("studiosCreateClose").onclick = () => { $("studiosCreate").hidden = true; };
+  $("studiosCreate").onsubmit = createStudioProject;
 }
 
 wire();
+if (location.pathname === "/studios" || location.pathname === "/studios/") openStudios(false);
+window.addEventListener("popstate", () => {
+  if (location.pathname === "/studios" || location.pathname === "/studios/") openStudios(false);
+  else newTask(false);
+});
 boot();
 setInterval(refreshOpenTaskProgress, 8000);
 let walletWatchNoticeInitialized = false;

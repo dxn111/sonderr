@@ -17,13 +17,17 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.5.7 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.5.8 · privacy-first AI + Web3</span>
       </span>
     </div>
 
     <button class="new-task" id="newTaskBtn" title="Start a new task">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       New task
+    </button>
+    <button class="side-item studios-nav" id="studiosBtn" title="Open Sonderr Studios" aria-current="false">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M6 16V5h12v11M9 9h6M9 12h6"/><path d="M3 19l3-3m15 3l-3-3"/></svg>
+      <span>Sonderr Studios</span><span class="studios-nav-tag">Studio</span>
     </button>
 
     <div class="recents-label">Recents</div>
@@ -46,11 +50,13 @@
   <!-- ===================== Main ===================== -->
   <main class="main">
     <header class="topbar">
+      <button class="studio-back" id="studioBackBtn" type="button" hidden>← Sonderr</button>
       <button class="icon-btn mobile-only" id="menuBtn" aria-label="Toggle sidebar">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
       <div class="topbar-title" id="topbarTitle">New task</div>
       <div class="topbar-right">
+        <button class="studio-new" id="studioNewBtn" type="button" hidden>+ New Studio</button>
         <span class="workspace-chip" id="workspaceChip" hidden title="Workspace"></span>
       </div>
     </header>
@@ -67,6 +73,38 @@
           <button class="suggestion" data-vision="1">Analyze an image</button>
         </div>
       </section>
+      <section class="studios-home" id="studiosHome" hidden>
+        <div class="studios-home-top"><div class="studios-eyebrow">SONDERR STUDIOS · BUILD SPACE</div><button class="studios-tour-replay" id="studiosTourBtn" type="button">Explore the workflow ↓</button></div>
+        <h1>Your next project starts here.</h1>
+        <p>A visual workspace for ideas that become real websites, browser apps, and developer projects. Keep the brief, milestones, live preview, and build discussion together.</p>
+        <div class="studios-paths">
+          <button class="studios-path studio-site-path" data-studio-track="site"><span class="studios-path-icon">▧</span><strong>Website Studio</strong><small>Design, build, and preview a real site.</small><span class="studios-path-link">Create a website →</span></button>
+          <button class="studios-path studio-app-path" data-studio-track="app"><span class="studios-path-icon">▣</span><strong>App Studio</strong><small>Turn a workflow into a useful web app.</small><span class="studios-path-link">Create an app →</span></button>
+          <button class="studios-path" data-studio-track="project"><span class="studios-path-icon">↗</span><strong>Build a project</strong><small>Shape an idea into a working deliverable.</small><span class="studios-path-link">Create project →</span></button>
+          <button class="studios-path" data-studio-track="developer"><span class="studios-path-icon">⌘</span><strong>Developer Program</strong><small>Find a meaningful first contribution.</small><span class="studios-path-link">Create contribution space →</span></button>
+          <button class="studios-path" data-studio-track="bounty"><span class="studios-path-icon">◇</span><strong>Bounty Program</strong><small>Test responsibly and report privately.</small><span class="studios-path-link">Create research space →</span></button>
+        </div>
+        <form class="studios-create" id="studiosCreate" hidden>
+          <div class="studios-create-head"><strong id="studiosCreateTitle">New project</strong><button type="button" id="studiosCreateClose" aria-label="Close project form">×</button></div>
+          <label>Project name<input id="studiosProjectName" maxlength="120" required placeholder="e.g. Portfolio redesign"></label>
+          <label>What should this project achieve?<textarea id="studiosProjectGoal" maxlength="500" rows="3" placeholder="A short goal is enough to start."></textarea></label>
+          <button class="studios-create-submit" type="submit">Create Studio space →</button>
+        </form>
+        <div class="studios-workbench" id="studiosWorkbench">
+          <div class="studios-workbench-head"><span>THE WORKBENCH</span><strong>Move from idea to shipped work</strong></div>
+          <div class="studios-phases" role="tablist" aria-label="Studio workflow phases">
+            <button class="studios-phase active" data-phase="idea" role="tab" aria-selected="true"><span>01</span> Idea</button>
+            <button class="studios-phase" data-phase="plan" role="tab" aria-selected="false"><span>02</span> Plan</button>
+            <button class="studios-phase" data-phase="build" role="tab" aria-selected="false"><span>03</span> Build</button>
+            <button class="studios-phase" data-phase="review" role="tab" aria-selected="false"><span>04</span> Review</button>
+          </div>
+          <div class="studios-phase-detail" id="studiosPhaseDetail" role="tabpanel"></div>
+        </div>
+        <div class="studios-resources"><span>Program guides</span><a href="/docs/developer" target="_blank" rel="noopener">Developer Program ↗</a><a href="/docs/bounty" target="_blank" rel="noopener">Bounty Program ↗</a></div>
+        <div class="studios-recent" id="studiosRecent" hidden><strong>Continue in Studios</strong><div id="studiosRecentList"></div></div>
+      </section>
+      <section class="studios-project" id="studiosProject" hidden></section>
+      <div class="studio-discussion-head" id="studioDiscussionHead" hidden><span>STUDIO DISCUSSION</span><strong>Build with Sonderr</strong></div>
       <div class="messages" id="messages" hidden></div>
     </div>
 

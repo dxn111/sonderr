@@ -1,4 +1,4 @@
-# SONDERR v1.5.7
+# SONDERR v1.5.8
 
 ![Sonderr 1.5 banner](https://github.com/user-attachments/assets/ef409eb2-a776-4a4b-a9bc-4413ab47a0e0)
 
@@ -39,7 +39,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.7 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.8 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -95,14 +95,15 @@ The v1.5 web surface is intentionally closer to a modern AI harness than a tradi
 - clean white workspace
 - Sonderr blue interaction accents
 - persistent workspace sidebar
-- Sonderr Plugin Hub with a Sites website-building workflow
+- Sonderr Plugin Hub with Sites for websites and interactive browser apps
+- Sonderr Studios with separate Website and App workspaces and a sandboxed local preview canvas
 - recent sessions area
 - local runtime status
 - central task surface
 - composer for engineering tasks
 - Sonderr otter branding throughout
 
-The **Sonderr Plugin Hub** is available from the sidebar. Browse plugin summaries, expand **Read more** for details and release metadata, then choose **Use this plugin** to enable it for the current chat. Its first plugin, **Sites**, adds a focused website-building workflow to Build mode so Sonderr can make and refine site files in the active workspace. Hosting and publishing remain separate steps.
+The **Sonderr Plugin Hub** is available from the sidebar. Browse plugin summaries, expand **Read more** for details and release metadata, then choose **Use this plugin** to enable it for the current chat. **Sites** guides website and browser-app work from creative direction through real project files, interactions, responsive review, and the Studio preview canvas. Hosting and publishing remain separate steps.
 
 The UI is designed so the runtime can grow into tool execution, repository context, provider routing, verification, and longer-running agent workflows without changing the core product shape.
 
@@ -128,7 +129,11 @@ The agent layer connects configured model providers to workspace and integration
 
 ### Skills and tools (backend)
 
-Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 63 playbooks cover engineering, data, product, security, quality, Web3, and operations, including dedicated web-research, MCP connection, and faucet-claim workflows, a complete Sonderr product guide, wallet research, and Web3 earning.
+Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 64 playbooks cover engineering, data, product, security, quality, Web3, and operations, including dedicated developer coaching, web-research, MCP connection, and faucet-claim workflows, a complete Sonderr product guide, wallet research, and Web3 earning.
+
+Sonderr Studios opens from the sidebar at `/studios` as a full-page workspace, not just a separate chat. Start a website, browser app, general project, Developer Program contribution, or responsible Bounty Program research space. Each project keeps a brief, milestones, progress, and an adjacent build discussion; website and app projects also include a workspace-file preview with desktop/mobile viewport controls. The preview is isolated and blocks network requests; it is for local front-end review, not external service or deployment verification. Studio projects persist as distinct sessions and can be reopened from Studios or Recents. The Plugin Hub also offers Sites and Code Review workflows, each with focused instructions that are included only when enabled for a chat.
+
+**Kilo Gateway** is available in Settings → API & Models as a hosted OpenAI-compatible provider. Free-tagged models are discoverable without a key (anonymous requests are rate-limited); adding a Kilo API key unlocks the account's broader catalog. Sonderr still owns the system prompt, skills, tool selection, permission checks, and local tool execution—the gateway supplies model responses. Prompts and context are sent to Kilo over HTTPS; it is not a local background daemon. See [Kilo Gateway authentication and free access](https://kilo.ai/docs/gateway/authentication) and [model catalog](https://kilo.ai/docs/gateway/models-and-providers).
 
 ### Workspace intelligence and controlled actions
 
@@ -207,7 +212,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.7 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.8 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening

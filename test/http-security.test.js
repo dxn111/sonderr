@@ -30,6 +30,18 @@ function request(port, { path = "/", method = "GET", headers = {}, body = "" } =
     assert.equal(homepage.status, 200);
     assert.match(homepage.headers["content-security-policy"], /default-src 'self'/);
     assert.equal(homepage.headers["x-frame-options"], "DENY");
+    const studiosPage = await request(port, { path: "/studios" });
+    assert.equal(studiosPage.status, 200);
+    assert.match(studiosPage.body, /id="studiosHome"/);
+    const trustedHeaders = { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` };
+    const createdStudio = await request(port, { path: "/api/sessions", method: "POST", headers: trustedHeaders, body: JSON.stringify({ title: "Studio smoke", surface: "studios", studio: { track: "developer", goal: "Ship a small fix", milestones: [{ text: "Inspect the code" }] } }) });
+    assert.equal(createdStudio.status, 201);
+    const studioId = JSON.parse(createdStudio.body).session.id;
+    const updatedStudio = await request(port, { path: `/api/studios/projects/${studioId}`, method: "POST", headers: trustedHeaders, body: JSON.stringify({ studio: { track: "developer", goal: "Ship a tested fix", milestones: [{ text: "Inspect the code", done: true }] } }) });
+    assert.equal(updatedStudio.status, 200);
+    assert.equal(JSON.parse(updatedStudio.body).session.studio.milestones[0].done, true);
+    const reloadedStudio = await request(port, { path: `/api/sessions/${studioId}` });
+    assert.equal(JSON.parse(reloadedStudio.body).session.studio.goal, "Ship a tested fix");
 
     const blockedHost = await request(port, { path: "/api/health", headers: { Host: "untrusted.example" } });
     assert.equal(blockedHost.status, 403);

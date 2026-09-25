@@ -54,12 +54,26 @@ function listSessions() {
   return read().sessions.slice().sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-function createSession(title = "New task") {
+function cleanStudio(raw = {}) {
+  const track = ["project", "site", "app", "developer", "bounty"].includes(raw.track) ? raw.track : "project";
+  const goal = safety.redactText(String(raw.goal || "").replace(/[\u0000-\u001f]/g, " ").trim()).slice(0, 500);
+  const previewPath = String(raw.previewPath || "").replace(/\\/g, "/").replace(/^\/+/, "").slice(0, 300);
+  const milestones = (Array.isArray(raw.milestones) ? raw.milestones : []).slice(0, 12).map(item => ({
+    id: /^[a-zA-Z0-9-]{1,64}$/.test(String(item?.id || "")) ? String(item.id) : crypto.randomUUID(),
+    text: safety.redactText(String(item?.text || "").replace(/[\u0000-\u001f]/g, " ").trim()).slice(0, 120),
+    done: item?.done === true
+  })).filter(item => item.text);
+  return { track, goal, milestones, ...(["site", "app"].includes(track) && previewPath ? { previewPath } : {}) };
+}
+
+function createSession(title = "New task", surface = "chat", studio = null) {
   const data = read();
   const now = new Date().toISOString();
   const session = {
     id: crypto.randomUUID(),
     title: String(title || "New task").replace(/[\r\n]+/g, " ").trim().slice(0, 120) || "New task",
+    surface: surface === "studios" ? "studios" : "chat",
+    ...(surface === "studios" ? { studio: cleanStudio(studio || {}) } : {}),
     createdAt: now,
     updatedAt: now,
     messages: []
@@ -69,6 +83,16 @@ function createSession(title = "New task") {
   // smaller, and keeping an unlimited local transcript is a privacy and disk
   // risk for a desktop app.
   if (data.sessions.length > MAX_SESSIONS) data.sessions = data.sessions.slice(0, MAX_SESSIONS);
+  write(data);
+  return session;
+}
+
+function updateStudio(id, raw) {
+  const data = read();
+  const session = data.sessions.find(item => item.id === id && item.surface === "studios");
+  if (!session) return null;
+  session.studio = cleanStudio(raw);
+  session.updatedAt = new Date().toISOString();
   write(data);
   return session;
 }
@@ -490,4 +514,4 @@ function saveOnboarding(next = {}) {
   return { ...data.onboarding };
 }
 
-module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, getSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };
+module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };

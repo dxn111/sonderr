@@ -44,7 +44,7 @@ for (const id of ["integration-testing", "performance-profiling", "observability
   assert.ok(skill.instructions.length > 250, "skill is too thin: " + id);
 }
 
-assert.equal(skills.all().length, 63);
+assert.equal(skills.all().length, 64);
 assert.equal(JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count, skills.all().length);
 assert.equal(skills.MAX_AUTO_ATTACH, 2);
 assert.deepEqual(skills.validateCatalog(), []);
@@ -119,7 +119,7 @@ assert.match(appSource, /load_skill/);
 assert.match(appSource, /unload_skill/);
 assert.match(readme, /Accept & swap/);
 assert.match(readme, /exact-amount approval card/);
-assert.match(readme, /63 playbooks/);
+assert.match(readme, /64 playbooks/);
 assert.match(readme, /verified-domain search filters and focus-ranked page excerpts/);
 assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
 const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");

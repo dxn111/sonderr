@@ -15,6 +15,7 @@ const PROVIDERS = {
   gemini: { label: "Google Gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
   deepseek: { label: "DeepSeek", baseURL: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   openrouter: { label: "OpenRouter", baseURL: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat" },
+  kilo: { label: "Kilo Gateway", baseURL: "https://api.kilo.ai/api/gateway", model: "anthropic/claude-sonnet-4.6" },
   ollama: { label: "Ollama", baseURL: "http://127.0.0.1:11434/v1", model: "llama3.2" },
   custom: { label: "Custom OpenAI-compatible", baseURL: "", model: "" }
 };
@@ -29,9 +30,19 @@ function config() {
     provider: saved.provider,
     baseURL,
     apiKey: store.providerKey(saved.provider),
-    model: saved.model || preset.model || process.env.SONDERR_MODEL || "",
+    model: saved.model || (saved.provider === "kilo" && !store.providerKey("kilo") ? "" : preset.model || process.env.SONDERR_MODEL || ""),
     temperature: Number.isFinite(Number(saved.temperature)) ? Number(saved.temperature) : 0.2,
     maxTokens: Number.isFinite(Number(saved.maxTokens)) ? Number(saved.maxTokens) : 8192
+  };
+}
+
+function providerAccess() {
+  const current = config();
+  const anonymousKilo = current.provider === "kilo" && !current.apiKey;
+  return {
+    available: Boolean(current.apiKey || current.provider === "ollama" || anonymousKilo),
+    anonymous: anonymousKilo,
+    authenticated: Boolean(current.apiKey || current.provider === "ollama")
   };
 }
 
@@ -697,9 +708,9 @@ const VISION_TOOL_DEFINITIONS = [
 // ---------------------------------------------------------------------------
 // Automated model discovery
 // ---------------------------------------------------------------------------
-// OpenAI-compatible providers expose GET {baseURL}/models. Once the user adds
-// an API key in Settings, Sonderr calls listModels() and the model chooser in
-// the composer is populated automatically — sorted strongest/newest first.
+// OpenAI-compatible providers expose GET {baseURL}/models. Authenticated
+// providers use the locally stored key; Kilo also allows anonymous catalog
+// discovery, which is filtered to explicitly free models before it reaches UI.
 
 let modelCache = { key:"", at:0, models:null };
 const MODEL_CACHE_TTL = 5 * 60 * 1000;
@@ -764,14 +775,16 @@ function prettyModelLabel(id) {
 
 async function listModels() {
   const current = config();
-  if (!current.baseURL || (!current.apiKey && current.provider !== "ollama")) {
+  const anonymousKilo = current.provider === "kilo" && !current.apiKey;
+  if (!current.baseURL || (!current.apiKey && current.provider !== "ollama" && !anonymousKilo)) {
     const error = new Error("Add your API key in Settings — Sonderr will discover the models automatically.");
     error.code = "NOT_CONFIGURED";
     throw error;
   }
   const cacheKey = current.provider + "|" + current.baseURL + "|" + current.apiKey;
   if (modelCache.models && modelCache.key === cacheKey && Date.now() - modelCache.at < MODEL_CACHE_TTL) {
-    return { models: modelCache.models, cached: true, provider: current.provider };
+    const models = modelCache.models;
+    return { models, cached: true, provider: current.provider, active: models.some(item => item.id === current.model) ? current.model : (models[0]?.id || ""), anonymous: anonymousKilo };
   }
   const url = String(current.baseURL).replace(/\/$/, "") + "/models";
   const headers = {};
@@ -790,6 +803,7 @@ async function listModels() {
     .map(item => typeof item === "string" ? { id: item } : item)
     .map(item => String(item?.id || item?.name || "").trim())
     .filter(id => id && !seen.has(id) && seen.add(id))
+    .filter(id => !anonymousKilo || /:free$/i.test(id))
     .map(id => {
       const dateMatch = id.match(DATE_HINT);
       return {
@@ -798,13 +812,14 @@ async function listModels() {
         score: modelScore(id),
         snapshot: dateMatch ? "20" + dateMatch[1] + (dateMatch[2] || "") + (dateMatch[3] ? "-" + dateMatch[3] : "") : "",
         small: SMALL_HINTS.test(id.toLowerCase()),
+        free: /:free$/i.test(id),
         vision: isVisionModel(id),
         owner: String(id).includes("/") ? String(id).split("/")[0] : ""
       };
     })
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   modelCache = { key: cacheKey, at: Date.now(), models };
-  return { models, cached: false, provider: current.provider };
+  return { models, cached: false, provider: current.provider, active: models.some(item => item.id === current.model) ? current.model : (models[0]?.id || ""), anonymous: anonymousKilo };
 }
 
 // ---------------------------------------------------------------------------
@@ -857,7 +872,7 @@ function unloadSkillMessage(messages, loaded) {
   if (toolMessage) toolMessage.content = JSON.stringify({ id: loaded.id, name: loaded.name, unloaded: true, note: "Full playbook instructions removed from active context." });
 }
 
-async function request({messages, system, probe=false}) {
+async function request({messages, system, probe=false, mode=""}) {
   const current = config();
   const baseURL = current.baseURL;
   const apiKey = current.apiKey;
@@ -881,17 +896,23 @@ async function request({messages, system, probe=false}) {
     if (onEvent) { try { onEvent(event); } catch {} }
   };
 
-  if (!baseURL || (!apiKey && current.provider !== "ollama") || !model) {
+  const anonymousKiloModel = current.provider === "kilo" && !apiKey && /:free$/i.test(model);
+  if (!baseURL || (!apiKey && current.provider !== "ollama" && !anonymousKiloModel) || !model) {
     return {
       ok: false,
       mode: "local",
-      content: "Sonderr is running locally, but the selected provider is not configured. Open Settings and choose a provider, endpoint, model, and API key."
+      content: current.provider === "kilo" && !apiKey
+        ? "Kilo's no-key mode only supports models whose IDs end in :free. Choose a free Kilo model or add a Kilo API key for the full catalog."
+        : "Sonderr is running locally, but the selected provider is not configured. Open Settings and choose a provider, endpoint, model, and API key."
     };
   }
 
   const url = endpoint(baseURL);
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers.Authorization = "Bearer " + apiKey;
+  if (current.provider === "kilo" && /^kilo-auto\//.test(model)) {
+    headers["x-kilocode-mode"] = ({ ask: "ask", plan: "plan", build: "build", vision: "general" })[mode] || "general";
+  }
 
   function makePayload(chat, tokenBudget) {
     return JSON.stringify({
@@ -1226,4 +1247,4 @@ async function editImage({ prompt, sourcePath }) {
   throw new Error("Image endpoint returned no image data");
 }
 
-module.exports = { generate, testConnection, config, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, selectToolsForRequest };
+module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, parseTpmLimitError, parseTpmRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, selectToolsForRequest };
