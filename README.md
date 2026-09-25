@@ -1,6 +1,6 @@
 # SONDERR v1.5.9
 
-![Sonderr 1.5 banner](https://github.com/user-attachments/assets/ef409eb2-a776-4a4b-a9bc-4413ab47a0e0)
+![Sonderr banner](.github/assets/sonderr-banner.svg)
 
 <p align="center">
   <strong>Privacy-first AI workspace with Web3 capabilities.</strong>
