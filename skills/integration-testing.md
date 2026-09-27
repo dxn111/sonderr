@@ -19,6 +19,6 @@ summary: Verify a real user flow across boundaries instead of only testing isola
 - Make destructive behavior opt-in and use disposable fixtures.
 
 ## Verify
-- The test fails before the regression fix and passes after it.
+- When execution is explicitly requested, check that the test fails before the regression fix and passes after it.
 - It can run from a clean checkout without a network secret.
 - Failure output identifies the broken boundary clearly.

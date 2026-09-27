@@ -28,4 +28,4 @@ Shell is unforgiving: one unquoted variable or unchecked exit code turns a scrip
 - Scripts that only work from one cwd or require interactive input nobody can give in cron.
 
 ## Verify
-- Run the script twice (idempotence), with a path containing spaces, and with a failing intermediate step.
+- When the user explicitly requests execution, run the script twice (idempotence), with a path containing spaces, and with a failing intermediate step; otherwise provide those as proposed checks.

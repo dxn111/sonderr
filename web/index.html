@@ -65,6 +65,7 @@
       </button>
       <div class="topbar-title" id="topbarTitle">New task</div>
       <div class="topbar-right">
+        <button class="agent-room-shortcut" id="agentRoomShortcut" type="button" aria-haspopup="dialog" aria-controls="agentRoomModal" hidden><span class="agent-room-shortcut-mark">✳</span><span>AI team</span><kbd>Alt 5</kbd></button>
         <button class="studio-new" id="studioNewBtn" type="button" hidden>+ New Studio</button>
         <span class="workspace-chip" id="workspaceChip" hidden title="Workspace"></span>
       </div>
@@ -333,6 +334,29 @@
     <button class="sonderr-install-primary" id="sonderrInstallStart">Install Sonderr-v1</button>
     <button class="sonderr-install-cloud" id="sonderrInstallCloud" type="button" disabled aria-disabled="true"><span>Use cloud-hosted model</span><span class="sonderr-install-coming">COMING SOON</span></button>
     <button class="sonderr-install-later" id="sonderrInstallLater">Maybe later</button>
+  </section>
+</div>
+
+
+<div class="agent-room-scrim" id="agentRoomModal" hidden>
+  <section class="agent-room-panel" role="dialog" aria-modal="true" aria-labelledby="agentRoomTitle" aria-describedby="agentRoomSubtitle">
+    <header class="agent-room-header">
+      <div class="agent-room-brand"><span class="agent-room-brand-mark">✳</span><div><span class="agent-room-eyebrow">SONDERR · COLLABORATION</span><h2 id="agentRoomTitle">AI agent room</h2><p id="agentRoomSubtitle">Live research, peer review, and team poll</p></div></div>
+      <div class="agent-room-header-actions"><span class="agent-room-live"><i></i><span id="agentRoomLiveLabel">Live</span></span><kbd>ALT 5</kbd><button class="agent-room-close" id="agentRoomClose" type="button" aria-label="Close agent room">×</button></div>
+    </header>
+    <div class="agent-room-layout">
+      <aside class="agent-room-roster-panel"><div class="agent-room-section-label">THE TEAM <span id="agentRoomCount">0</span></div><div class="agent-room-roster" id="agentRoomRoster"></div><div class="agent-room-disclosure">AI personas generated for this task. Names are fictional labels, not human staff.</div></aside>
+      <section class="agent-room-conversation" aria-label="Agent conversation"><div class="agent-room-conversation-head"><div><strong>Team chat</strong><span>Talk with the team, ask the commander, or message a worker.</span></div><button id="agentRoomJumpLatest" type="button">Latest ↓</button></div><div class="agent-room-feed" id="agentRoomFeed" aria-live="polite"></div><div class="agent-room-typing" id="agentRoomTyping" role="status" aria-live="polite" aria-atomic="true" hidden></div><form class="agent-room-composer" id="agentRoomComposer"><div class="agent-room-composer-top"><label for="agentRoomTarget">Send to</label><select id="agentRoomTarget" aria-label="Choose who to message"><option value="team">The whole team</option><option value="lead">Commander</option></select><span>AI teammates · read-only</span></div><div class="agent-room-composer-input"><textarea id="agentRoomMessage" rows="1" maxlength="1200" placeholder="Say hi or ask about their findings…" aria-label="Message the team"></textarea><button type="submit" id="agentRoomSend">Send <kbd>↵</kbd></button></div><div class="agent-room-composer-hint">Enter to send · Shift+Enter for a new line</div></form></section>
+      <aside class="agent-room-poll-panel"><div class="agent-room-section-label">LEAD POLL <span id="agentRoomPollState">—</span></div><div id="agentRoomPoll"></div><div class="agent-room-section-label agent-room-signals-heading">TEAM SIGNALS <span>LIVE</span></div><div class="agent-room-signals" id="agentRoomSignals" aria-label="Live team activity signals"></div><div class="agent-room-disclosure">Votes and risk levels are AI assessments. Check the supporting evidence before relying on them.</div></aside>
+    </div>
+    <footer class="agent-room-footer"><span>Workers are read-only and use your selected model provider.</span><button type="button" id="agentRoomDone">Done</button></footer>
+    <div class="agent-profile-overlay" id="agentProfileOverlay" hidden>
+      <section class="agent-profile-card" role="dialog" aria-modal="false" aria-labelledby="agentProfileName">
+        <button class="agent-profile-close" id="agentProfileClose" type="button" aria-label="Close profile">×</button>
+        <div class="agent-profile-banner"><div id="agentProfileAvatar"></div></div>
+        <div class="agent-profile-body"><span class="agent-profile-eyebrow">TASK PROFILE · AI PERSONA</span><h3 id="agentProfileName">Agent</h3><div class="agent-profile-role" id="agentProfileRole"></div><p class="agent-profile-bio" id="agentProfileBio"></p><div class="agent-profile-status"><i id="agentProfilePresenceDot"></i><span id="agentProfileStatus">Working</span></div><div class="agent-profile-task"><small>ASSIGNMENT</small><span id="agentProfileTask"></span></div><div class="agent-profile-stats"><div><b id="agentProfileTotalTokens">—</b><small>TOKENS USED</small></div><div><b id="agentProfileSpeed">—</b><small>AVG OUTPUT T/S</small></div><div><b id="agentProfileInputTokens">—</b><small>INPUT TOKENS</small></div><div><b id="agentProfileOutputTokens">—</b><small>OUTPUT TOKENS</small></div></div><small class="agent-profile-stats-note" id="agentProfileStatsNote">Usage is reported by the selected provider for this task.</small></div>
+      </section>
+    </div>
   </section>
 </div>
 

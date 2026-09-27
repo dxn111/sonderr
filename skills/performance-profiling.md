@@ -10,7 +10,7 @@ summary: Measure a bottleneck first, then make and verify the smallest high-conf
 1. Establish a baseline with the exact workload, environment, and metric: elapsed time, CPU, memory, request count, bundle size, or frame time.
 2. Locate the dominant cost with a profiler, trace, focused timer, or allocation measurement. Do not optimize from intuition alone.
 3. State the hypothesis and change one meaningful factor at a time.
-4. Re-run the same workload, compare results, and check correctness plus failure behavior.
+4. Re-run the same workload and compare results only when the user explicitly asks for profiling/verification; otherwise document the proposed workload and comparison without executing it.
 5. Record the tradeoff: memory versus CPU, startup versus steady state, readability versus speed, or cache freshness versus calls.
 
 ## Guardrails

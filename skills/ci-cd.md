@@ -19,7 +19,7 @@ A pipeline is a quality gate, so its value is trustworthiness × speed. Fast fee
 3. Pin tool versions (node, python, action refs) — unpinned CI rots silently.
 4. Cache dependencies with a lockfile key; verify cache actually hits.
 5. Make every step idempotent and re-runnable; a retry should never cause a different outcome.
-6. Gate deploys on the full suite; never deploy from a red pipeline.
+6. Design deploy gates around the full suite. Running pipelines, triggering deploys, or pushing commits requires explicit user scope; never bypass a failing gate.
 7. Keep secrets in the CI secret store, echoed nowhere.
 
 ## Pitfalls

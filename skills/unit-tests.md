@@ -17,7 +17,7 @@ Test observable behavior through the public interface, not internal calls. One t
 2. Write the failing test first when fixing a bug — it proves the bug exists and later proves the fix (regression lock).
 3. Structure as arrange/act/assert; assert on outcomes (return values, state, exceptions), never on call counts of private methods.
 4. Cover the edges the happy path forgets: empty input, zero, negative, huge, unicode, null, concurrent, network failure. Mock only true externals (network, clock, fs); over-mocking tests the mock, not the code.
-5. Run the full suite, not just new tests — name any pre-existing failures honestly instead of burying them.
+5. When the user explicitly asks to execute verification, run the smallest relevant suite first; expand only when requested or needed to answer their verification request. Otherwise provide the relevant command without running it.
 6. Keep tests fast and deterministic: no sleeps, no live network, seeded randomness; save and present the test file when the suite is substantial.
 
 ## Pitfalls
@@ -26,5 +26,5 @@ Test observable behavior through the public interface, not internal calls. One t
 
 ## Verify
 - Demonstrate that a regression test fails for the original behavior and passes after the fix when feasible.
-- Run the focused test and the relevant broader suite; report skips and existing failures explicitly.
+- Run the focused test and relevant broader suite only when execution was explicitly requested; report skips and existing failures explicitly.
 - Confirm tests use isolated fixtures and do not depend on live accounts, secrets, or timing luck.

@@ -18,7 +18,7 @@ Small, single-purpose commits tell the story of the change; the branch is the na
 2. Branch per task with a short descriptive name (`fix/sidebar-logo`, not `patch-2`).
 3. Stage deliberately (`git add <paths>`), never blanket `git add .` when unrelated changes exist.
 4. Write commit messages that say WHY: imperative subject line ≤ 72 chars, body for context when needed.
-5. Before merging: re-run tests, then merge (or rebase) and re-verify the result on the target branch.
+5. Before merging: if the user explicitly requested test execution, run the relevant tests. Merge/rebase only when explicitly in scope; report unrun checks and verify target state only when requested.
 6. On conflict: understand both sides fully before resolving — never pick a side blindly.
 
 ## Pitfalls

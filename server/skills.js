@@ -12,6 +12,7 @@ const path = require("node:path");
 
 const SKILLS_DIR = path.resolve(__dirname, "..", "skills");
 const MAX_AUTO_ATTACH = 2; // metadata only; full playbooks still load on demand
+const MAX_LOCAL_SKILL_CHARS = 3_600;
 const GENERIC_TRIGGERS = new Set(["api", "app", "build", "code", "component", "data", "design", "error", "file", "help", "model", "project", "quality", "review", "search", "server", "skill", "task", "test", "tool", "web", "work"]);
 const QUERY_ALIASES = new Map([
   ["ugly", ["frontend", "ui", "visual", "polish"]], ["prettier", ["frontend", "ui", "visual", "polish"]],
@@ -21,7 +22,13 @@ const QUERY_ALIASES = new Map([
   ["looks better", ["frontend"]], ["look better", ["frontend"]], ["look good", ["frontend"]],
   ["less ugly", ["frontend", "ui", "polish"]], ["clean up the ui", ["frontend", "visual"]],
   ["review my code", ["code review"]], ["review this pr", ["pr review"]], ["send an email", ["send email"]],
+  ["review my pull request", ["pr review"]], ["pull request review", ["pr review"]],
   ["write an email", ["send email"]], ["make a game", ["game design"]], ["build a website", ["website"]],
+  ["stuck", ["not working", "debug"]], ["blocked on a bug", ["debug", "error"]],
+  ["too slow", ["performance", "profiling"]], ["speed this up", ["speed up", "performance"]],
+  ["api review", ["api contract", "code review"]], ["review an api", ["api contract", "code review"]],
+  ["write unit tests", ["unit test", "test cases"]], ["test it", ["check my work", "test suite"]],
+  ["check whether it works", ["check my work", "verification"]], ["system prompt", ["prompt design"]],
   ["check my wallet", ["wallet balance"]], ["show my wallet", ["wallet balance"]],
   ["bugbounty", ["bug bounty program", "security report"]], ["dev", ["developer"]],
   ["crashed", ["crash", "debug"]], ["broken", ["bug", "debug"]], ["devnet solana", ["wallet balance"]], ["secure", ["security"]]
@@ -70,11 +77,86 @@ function all() { return SKILLS; }
 function get(id) { return BY_ID.get(String(id || "").trim()); }
 function has(id) { return BY_ID.has(String(id || "").trim()); }
 
-/** Full instructions for one skill (load_skill tool payload). */
-function load(id) {
+function sectionPriority(title, body, focusWords) {
+  const heading = String(title || "").toLowerCase();
+  let score = 0;
+  if (/purpose|mission|when to use|scope/.test(heading)) score += 12;
+  if (/guardrail|boundar|safety|security|privacy|consent|permission|risk/.test(heading)) score += 11;
+  if (/verify|verification|done when|finish|deliver/.test(heading)) score += 10;
+  if (/workflow|approach|steps|method|process|loop/.test(heading)) score += 8;
+  if (/pitfall|failure|edge case|troubleshoot/.test(heading)) score += 7;
+  const content = `${heading} ${body}`.toLowerCase();
+  let matches = 0;
+  for (const word of focusWords) if (content.includes(word)) matches++;
+  return score + Math.min(8, matches * 2);
+}
+
+function focusedInstructions(instructions, focus, maxChars) {
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || instructions.length <= maxChars) {
+    return { instructions, focused: false, sections: [] };
+  }
+  const lines = instructions.split(/\r?\n/);
+  const sections = [];
+  let current = { title: "Overview", lines: [], index: -1 };
+  const push = () => {
+    const body = current.lines.join("\n").trim();
+    if (body) sections.push({ ...current, body });
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const heading = lines[i].match(/^#{2,3}\s+(.+)$/);
+    if (heading) {
+      push();
+      current = { title: heading[1].trim(), lines: [lines[i]], index: i };
+    } else current.lines.push(lines[i]);
+  }
+  push();
+  const focusWords = meaningfulWords(focus).filter(word => word.length >= 3).slice(0, 12);
+  const ranked = sections.map((section, index) => ({
+    ...section,
+    order: index,
+    priority: sectionPriority(section.title, section.body, focusWords)
+  })).sort((a, b) => b.priority - a.priority || a.order - b.order);
+  const note = "[Focused playbook extract for this task; remaining sections were omitted to fit the local model context.]";
+  const budget = Math.max(600, maxChars - note.length - 4);
+  const chosen = [];
+  let used = 0;
+  for (const section of ranked) {
+    const block = section.body;
+    const remaining = budget - used;
+    if (block.length <= remaining) {
+      chosen.push(section);
+      used += block.length + 2;
+    } else if (section.priority >= 10 && remaining >= 240) {
+      const clipped = { ...section, body: block.slice(0, remaining - 35).trimEnd() + "\n[section shortened]" };
+      chosen.push(clipped);
+      used += clipped.body.length + 2;
+    }
+  }
+  if (!chosen.length) {
+    chosen.push({ ...ranked[0], body: ranked[0].body.slice(0, budget - 35).trimEnd() + "\n[section shortened]" });
+  }
+  const selected = chosen.sort((a, b) => a.order - b.order).map(section => section.body).join("\n\n");
+  return {
+    instructions: `${selected}\n\n${note}`.slice(0, maxChars),
+    focused: true,
+    sections: chosen.map(section => section.title)
+  };
+}
+
+/** Load full instructions for hosted models, or a focused extract for a small local context. */
+function load(id, { focus = "", maxChars = 0 } = {}) {
   const skill = get(id);
   if (!skill) return null;
-  return { id: skill.id, name: skill.name, category: skill.category, instructions: skill.instructions };
+  const focused = focusedInstructions(skill.instructions, focus, maxChars);
+  return {
+    id: skill.id,
+    name: skill.name,
+    category: skill.category,
+    instructions: focused.instructions,
+    focused: focused.focused,
+    sections: focused.sections,
+    omittedInstructions: focused.focused && focused.instructions.length < skill.instructions.length
+  };
 }
 
 /** One line per skill for the system-prompt directory. */
@@ -187,7 +269,7 @@ function forTask(text) {
   return rankForTask(text).map(item => item.id);
 }
 
-function rankForTask(text) {
+function rankForTask(text, limit = MAX_AUTO_ATTACH) {
   return SKILLS.map(skill => {
     const evidence = matchingEvidence(skill, text);
     // Strongest phrase is primary; a small capped bonus rewards a second
@@ -198,8 +280,53 @@ function rankForTask(text) {
     return { id: skill.id, score, confidence, evidence };
   }).filter(item => item.score >= 3.5)
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
-    .slice(0, MAX_AUTO_ATTACH)
+    .slice(0, Math.max(1, Math.min(10, Number(limit) || MAX_AUTO_ATTACH)))
     .map(item => ({ ...item, evidence: item.evidence.slice(0, 3) }));
+}
+
+function searchCatalog(query = "", { offset = 0, limit = 12 } = {}) {
+  const rawQuery = String(query || "").trim();
+  const listAll = !rawQuery || /^(?:\*|all|list all|every skill|available skills)$/i.test(rawQuery);
+  let results;
+  if (listAll) {
+    results = SKILLS.map(skill => ({ id: skill.id, score: 0, confidence: "catalog", evidence: [] }));
+  } else {
+    results = rankForTask(rawQuery, 10);
+    if (!results.length) {
+      const value = normalizeText(rawQuery);
+      results = SKILLS.filter(skill => normalizeText(`${skill.id} ${skill.name} ${skill.category} ${skill.summary} ${skill.triggers.join(" ")}`).includes(value))
+        .map(skill => ({ id: skill.id, score: 0, confidence: "related", evidence: [] }));
+    }
+  }
+  const safeOffset = Math.max(0, Math.min(results.length, Number.isInteger(Number(offset)) ? Number(offset) : 0));
+  const safeLimit = Math.max(1, Math.min(20, Number.isInteger(Number(limit)) ? Number(limit) : 12));
+  return {
+    query: listAll ? "all" : rawQuery,
+    total: results.length,
+    offset: safeOffset,
+    skills: results.slice(safeOffset, safeOffset + safeLimit).map(result => {
+      const skill = get(result.id);
+      return { id: skill.id, name: skill.name, category: skill.category, summary: skill.summary, triggers: skill.triggers.slice(0, 8), confidence: result.confidence, evidence: result.evidence.slice(0, 2) };
+    }),
+    hasMore: safeOffset + safeLimit < results.length,
+    note: "Catalog metadata only; load a playbook by exact id to read its full instructions."
+  };
+}
+
+// Some workflows carry a playbook requirement independent of lexical score.
+// Keep these rules narrow and tied to actions so ordinary questions that only
+// mention a domain do not pull in a long playbook unnecessarily.
+function requiredForTask(text) {
+  const value = normalizeText(text);
+  if (!value) return [];
+  const required = [];
+  const emailSoftwareWork = /\b(?:email|e mail)\b.{0,28}\b(?:address )?(?:validation|validator|regex|pattern|field|format|parser|schema|api|endpoint|component|code)\b|\b(?:validation|validator|regex|pattern|field|format|parser|schema|api|endpoint|component|code)\b.{0,28}\b(?:email|e mail)\b/i.test(value);
+  const outboundEmail = /\b(?:draft|write|compose|send|reply|respond|forward|prepare|rewrite|polish)\b.{0,80}\b(?:email|e mail|newsletter)\b/i.test(value)
+    || /\b(?:email|e mail|newsletter)\b.{0,80}\b(?:draft|write|compose|send|reply|respond|forward|prepare|rewrite|polish)\b/i.test(value);
+  if (outboundEmail && !emailSoftwareWork && has("email-safety")) required.push("email-safety");
+  const explicitVerification = /\b(?:run|execute|perform)\s+(?:the\s+)?(?:tests?|checks?)\b|\b(?:test|verify|check)\s+(?:this|that|it|the (?:change|fix|code|project|build|result|feature|work))\b|\bdoes it work\b/i.test(value);
+  if (explicitVerification && has("test-and-verify")) required.push("test-and-verify");
+  return required;
 }
 
 /** Combined response for a failed load_skill call: what IS available. */
@@ -220,4 +347,4 @@ function validateCatalog(items = SKILLS) {
   return errors;
 }
 
-module.exports = { all, get, has, load, directory, recommendations, promptBlock, forTask, rankForTask, matchingEvidence, availableIds, validateCatalog, MAX_AUTO_ATTACH };
+module.exports = { all, get, has, load, directory, recommendations, promptBlock, forTask, rankForTask, searchCatalog, requiredForTask, matchingEvidence, availableIds, validateCatalog, MAX_AUTO_ATTACH, MAX_LOCAL_SKILL_CHARS };

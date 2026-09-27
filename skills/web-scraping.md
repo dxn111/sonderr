@@ -13,11 +13,11 @@ summary: Extract web data respectfully — inspect structure first, parse defens
 Inspect before you parse: fetch the page, read the real HTML/JSON structure, and check for an official API or data export first — scraping a brittle page when an API exists is a bug, not a shortcut.
 
 ## Steps
-1. Fetch and inspect the target with tools (curl or a small script); locate the data in the DOM or network response; prefer JSON endpoints over HTML when available.
+1. Use available read-only tools to inspect the target; if fetching requires a script, command, or broader network access, first check whether the user explicitly requested execution. Locate the data in the DOM or network response; prefer JSON endpoints over HTML when available.
 2. Write the extractor against stable anchors (semantic tags, data attributes, IDs), not positional nth-child chains that break on redesign.
 3. Parse defensively: every field tolerates absence (null, not crash); log rows that failed shape validation instead of dropping them silently.
 4. Rate-limit requests, set a real User-Agent, cache raw responses to disk so re-runs do not re-hit the site.
-5. Run it, eyeball the first 10 rows against the live page, then scale up.
+5. Run the scraper and compare the first 10 rows only when the user explicitly asked to execute it; otherwise provide a small proposed sample check and leave the script unexecuted.
 6. Output clean CSV/JSON to the workspace and present it with present_file.
 
 ## Pitfalls

@@ -15,12 +15,12 @@ Reproduce first, theorize second. One confirmed fact from a real error message o
 
 ## Steps
 1. Capture the exact symptom: full error text, stack trace, expected vs actual behavior.
-2. Reproduce it reliably — a command, a request, or precise steps. If you cannot reproduce, state that and gather more data instead of guessing.
+2. Reproduce it reliably only when the user asks you to run/verify the behavior and the required access is enabled — a command, a request, or precise steps. Otherwise inspect existing logs/state and give the exact reproduction steps without running them.
 3. Read the stack trace bottom-up and open the exact files and lines involved before forming theories.
 4. Form at most two or three candidate causes; rank them by likelihood and cost to test.
 5. Test the cheapest hypothesis first with the smallest possible probe (log line, minimal input, isolated call).
 6. Fix the cause, not the symptom — a guard that hides the error is not a fix.
-7. Re-run the original reproduction to confirm the fix, then check adjacent paths for the same class of bug.
+7. Re-run the original reproduction only when execution was explicitly requested; otherwise explain that the fix is unverified at runtime and identify the exact reproduction command/steps.
 
 ## Pitfalls
 - "Fixing" by deleting the error handling or silencing the log.
@@ -28,5 +28,5 @@ Reproduce first, theorize second. One confirmed fact from a real error message o
 - Claiming a fix without running the failing case again.
 
 ## Verify
-- Original reproduction now passes; say the exact command or steps you ran.
+- When authorized, the original reproduction passes; say the exact command or steps you ran. Otherwise label it unverified.
 - No new errors introduced on the paths you touched.

@@ -55,7 +55,7 @@ function sanitizeStoredSession(session) {
       clean.content = clean.role === "assistant"
         ? safety.sanitizeAssistantOutput(clean.content || "")
         : safety.redactText(clean.content || "");
-      if (Array.isArray(clean.events)) clean.events = safety.sanitizeValue(clean.events).slice(-160);
+      if (Array.isArray(clean.events)) clean.events = safety.sanitizeValue(clean.events).slice(-400);
       return clean;
     }).filter(Boolean);
   }
@@ -373,7 +373,7 @@ function addMessage(id, role, content, meta = null) {
     createdAt: new Date().toISOString()
   };
   if (meta && typeof meta === "object") {
-    if (Array.isArray(meta.events) && meta.events.length) message.events = safety.sanitizeValue(meta.events).slice(-160);
+    if (Array.isArray(meta.events) && meta.events.length) message.events = safety.sanitizeValue(meta.events).slice(-400);
     if (meta.mode) message.mode = meta.mode;
     if (meta.model) message.model = meta.model;
     if (Array.isArray(meta.images) && meta.images.length) message.images = meta.images.slice(0, 4).map(String);
@@ -383,6 +383,25 @@ function addMessage(id, role, content, meta = null) {
   session.updatedAt = new Date().toISOString();
   write(data);
   return session;
+}
+
+function appendSessionEvent(id, event) {
+  const data = read();
+  const session = data.sessions.find(item => item.id === id);
+  if (!session || !event || typeof event !== "object") return false;
+  const roomId = String(event.room?.id || "");
+  const message = [...(session.messages || [])].reverse().find(item => item.role === "assistant"
+    && Array.isArray(item.events)
+    && (!roomId || item.events.some(saved => saved?.type === "agent_update" && saved.room?.id === roomId)));
+  if (!message) return false;
+  if (!Array.isArray(message.events)) message.events = [];
+  const entryId = String(event.entry?.id || "");
+  if (entryId && message.events.some(saved => saved?.entry?.id === entryId)) return true;
+  message.events.push(safety.sanitizeValue(event));
+  message.events = message.events.slice(-400);
+  session.updatedAt = new Date().toISOString();
+  write(data);
+  return true;
 }
 
 function settings() {
@@ -596,4 +615,4 @@ function saveOnboarding(next = {}) {
   return { ...data.onboarding };
 }
 
-module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, deleteTradingSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };
+module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, deleteTradingSession, setSessionPlugin, addMessage, appendSessionEvent, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };

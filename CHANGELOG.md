@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+## v1.5.16 — Read-only AI swarm and verified Q4 install
+
+- On compatible Linux x64 systems, install the SHA-256-verified Q4_0 GGUF model and bundled llama.cpp CPU runtime; retain the Transformers CPU install on other supported platforms.
+- Improve focused skill loading and small-model tool selection for the local Sonderr-v1 route.
+
+
+- Close workspace symlink aliases to protected data: file reads, file metadata, downloads, edits, and workspace search now reject links that resolve to `.env`, `.sonderr` control data, Git internals, or paths outside the workspace. Dangling symlinks are rejected before writes so they cannot redirect a new file outside the workspace.
+- Apply canonical destination checks in addition to the user-supplied path check, preventing a harmless-looking alias from bypassing sensitive-path filtering.
+- Constrain normal UI assets, documentation routes, and the fallback page to canonical files inside `web/`; malformed encodings and symlinks resolving outside that directory are rejected.
+- Adds Kilo-compatible AI collaboration rooms: one accountable lead and up to three read-only worker calls, human-style fictional AI names/roles, a shared findings board, peer review, and a lead-authored poll with individual AI votes and totals.
+- Improves worker evidence contracts and live activity labels; lead-assigned role hints and focused research/review instructions are carried into parallel calls.
+- Adds clickable stock agent portraits with task profiles, live presence, model-reported token/throughput stats, and a human vote card directly in the shared room. Human votes remain separate from AI worker tallies.
+- Gives workers scoped group-chat tools to ask for help, answer open teammate requests, and revise their current poll vote when new evidence changes their view.
+- Adds a live team-board reader, optional directed peer-help requests, and evidence-backed risk/contradiction flags with bounded per-worker limits. Reviewers receive answered help threads and risk notes, then can verify them against their own evidence.
+- Adds live team chat: users can message the whole room, ask the commander to consult up to two relevant workers, or direct a follow-up to one worker. Room replies are conversational, remain clearly AI-authored, stay read-only, and are saved back into the session.
+- Adds a responsive room composer with recipient selection, keyboard send shortcuts, live reply state, and distinct styling for user messages and teammate replies.
+- Lets users route a focused question straight to the single anonymous helper without creating a roster profile or persistent status; the commander can also request that bounded second opinion when useful.
+- Rehydrates saved collaboration rooms after a local app restart, restores their named roster and transcript, and lets the room continue with the currently selected provider.
+- Shows who a user message was sent to and adds visible teammate handoff activity when the commander checks a worker's evidence.
+- Streams assignments, research activity, findings, cross-reviews, and votes into the chat, and adds a responsive Alt+5 room view with the team roster and poll breakdown. The UI labels workers as AI personas; votes never authorize user actions.
+
+
 ## v1.5.15 — Sonderr-v1 installs and works locally
 
 - Adds an install prompt when Sonderr-v1 is selected but not yet available, with progress for verified model download and private CPU runtime setup. The cloud-hosted option is shown as disabled and Coming soon.

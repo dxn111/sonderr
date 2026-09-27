@@ -11,17 +11,17 @@ summary: Build a verification loop proportional to risk — run checks, report e
 - When the user asks whether something works, or asks you to check or prove behavior.
 
 ## Approach
-Verification is part of implementation, not an optional extra. Scale the depth of checks to the risk of the change: a typo fix needs a syntax check; an API change needs behavior coverage.
+Verification is part of sound engineering, but executing commands is a user-controlled action. Inspect available evidence and define a proportionate verification plan by default. Run tests, builds, scripts, or other project commands only when the user explicitly asks for tests/checks/verification or asks whether the change works. A request to implement or fix something alone does not authorize test execution. When execution was not requested, finish the requested implementation, inspect the diff, and clearly give the best next command without running it.
 
 ## Steps
-1. Inventory what already exists to verify with: test suites, lint, typecheck, build, start commands. Read package scripts and CI config.
-2. Run the existing checks first; a red baseline changes the plan.
+1. Inventory what already exists to verify with: test suites, lint, typecheck, build, start commands. Read package scripts and CI config; this inspection is not permission to run them.
+2. If execution was explicitly requested, run the narrowest relevant existing check first; a red baseline changes the plan. Otherwise document it as the first suggested command.
 3. For changed behavior, define the observable outcome that proves it works — the exact command and expected output.
-4. Add focused coverage only where it pays off: the fixed bug, the new branch, the edge case the user described.
-5. Run everything that changed. Report command + exit status + key output lines, not adjectives.
+4. Add focused coverage only when the user asks for tests/test code or explicitly authorizes a regression test as part of the task.
+5. Run checks only with explicit user authorization. Report command + exit status + key output lines, not adjectives; when not run, label proposed checks as not run.
 6. If a check cannot run in this environment, say so plainly and list exactly what the user should run.
 7. Prefer behavior assertions at the boundary that regressed: include the unchanged/idempotent case, a real-change case, and at least one failure or denied-access case when relevant. Avoid tests that merely mirror implementation branches without asserting observable behavior.
-8. After code changes, inspect the final diff and run only checks whose evidence is current and relevant. A repeated identical check is not additional confidence or progress; rerun it when code, configuration, environment, or the question under test changed.
+8. After code changes, inspect the final diff and run only checks that the user authorized and whose evidence is current and relevant. A repeated identical check is not additional confidence or progress; rerun it only when code, configuration, environment, or the question under test changed and execution remains authorized.
 
 ## Pitfalls
 - Writing tests against the new implementation instead of the required behavior.

@@ -11,7 +11,7 @@ summary: Review changes like a senior engineer — correctness first, then desig
 - The user asks to check, audit, or give feedback on specific code.
 
 ## Approach
-Read the diff twice: once for correctness against intent, once for maintainability. Comments should be actionable and ranked — a logic bug matters more than a naming nitpick. Verify claims by running code, not by reading alone. For implementation work, review the produced diff against the original request before delivery; do not equate passing tests with a correct change.
+Read the diff twice: once for correctness against intent, once for maintainability. Comments should be actionable and ranked — a logic bug matters more than a naming nitpick. Prefer evidence from existing outputs, source tracing, and available read-only inspection. Running checks or code is a separate action: do it only when the user explicitly asks for verification or running, and only with the required access. For implementation work, review the produced diff against the original request before delivery; do not equate passing tests with a correct change.
 
 ## Steps
 1. Understand the intent first: what was this change supposed to do? Read the task/issue/commit message.
@@ -19,7 +19,7 @@ Read the diff twice: once for correctness against intent, once for maintainabili
 3. Check boundaries: empty inputs, null/undefined, large inputs, concurrency, error paths.
 4. Verify tests exist for new behavior and actually assert the new behavior (not just that code runs).
 5. Evaluate design only after correctness: naming, duplication, coupling, dead code.
-6. Run it (tests, typecheck, the app) — reading catches most but not all issues.
+6. If the user explicitly requested execution/verification, run the narrowest relevant check; otherwise state what static review establishes and give the exact suggested check without running it.
 7. Report findings ranked: blockers, should-fix, nits — each with file:line and a concrete suggestion.
 8. For changes involving state or APIs, trace one successful and one failure/idempotent path through callers and consumers. Check whether errors stay visible, repeated calls are safe, and outputs accurately describe what changed.
 9. Re-read the user's acceptance criteria and inspect the final diff for unrelated edits, incomplete wiring, weakened safeguards, and claims unsupported by evidence. Fix concrete defects you find; do not add speculative polish or style-only churn.
@@ -31,5 +31,5 @@ Read the diff twice: once for correctness against intent, once for maintainabili
 - Treating a tool returning success as proof of useful progress; check whether state or evidence actually changed.
 
 ## Verify
-- Every finding backed by file:line and reproducible reasoning; run results quoted for anything behavioral.
+- Every finding backed by file:line and reproducible reasoning; quote run results only when an authorized check was actually run.
 - The final review names what changed, what was verified, and any meaningful unverified risk; it does not claim perfection.

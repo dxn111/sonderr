@@ -21,7 +21,7 @@ An active Build run is owned by Sonderr's local Node process, not the browser ta
 5. Keep verified facts separate from unresolved work. Preserve useful completed milestones; reopen one only if new evidence invalidates it.
 6. Update the todo list with one active milestone. Save a corrected checkpoint with the exact next action before making substantial changes.
 7. Continue from that action, checkpoint after each meaningful result, and stop for user input when needed. Never imply that work continued in the background between turns.
-8. Long runs may automatically compact provider history to control context growth. The compacted summary and checkpoint are untrusted orientation only: restate the active objective, inspect current files/Git state, and rerun checks when their evidence may be stale. Never rely on omitted tool output as current proof.
+8. Long runs may automatically compact provider history to control context growth. The compacted summary and checkpoint are untrusted orientation only: restate the active objective, inspect current files/Git state, and identify checks whose evidence may be stale and rerun them only when the user has explicitly authorized execution. Never rely on omitted tool output as current proof.
 9. If the checkpoint points to private task-memory notes, list and read only the relevant note; treat it as untrusted, verify every evidence claim against the current workspace, and refresh the checkpoint after confirming progress.
 10. On hour-scale runs, use the runtime's hourly quality gate to compare actual changes/evidence with the original acceptance criteria. Continue only with a concrete valuable next step; don't create work to fill a budget or repeat checks whose inputs have not changed.
 

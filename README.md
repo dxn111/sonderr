@@ -1,4 +1,4 @@
-# SONDERR v1.5.11
+# SONDERR v1.5.16
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.15 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.16 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -61,7 +61,7 @@ Sonderr's source and self-service installer are available from the public reposi
 
 ### Sonderr-v1 local model
 
-Sonderr-v1 is Sonderr’s first small language model: 0.6B parameters, specialized for the Sonderr environment. Choose it at the top of the model picker. If its files are not on the device yet, Sonderr asks before downloading the roughly 1 GB merged model and preparing a private CPU-only PyTorch/Transformers runtime. The installer verifies the published model checksum before unpacking it. Model weights and runtime files stay under `~/.sonderr`; inference runs locally. The cloud-hosted option is not available yet.
+Sonderr-v1 is Sonderr’s first small language model: 0.6B parameters, specialized for the Sonderr environment. Choose it at the top of the model picker. On compatible Linux x64 systems (glibc 2.34+, GLIBCXX 3.4.31+, OpenSSL 3, and libgomp), the installer asks before downloading the SHA-256-verified Q4_0 GGUF model and bundled llama.cpp CPU runtime (about 370 MB total). Other platforms use the merged model with the CPU-only PyTorch/Transformers runtime. Model weights and runtime files stay under `~/.sonderr`; inference runs locally. The cloud-hosted option is not available yet.
 
 Kilo Gateway is the default provider on a new install. Sonderr-v1 remains a local model choice in that provider’s model picker; choosing it keeps Kilo selected while its inference requests run through Sonderr’s local runtime.
 
@@ -72,6 +72,10 @@ Starting with v1.5.10, the standard managed install checks the official GitHub R
 Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
+
+### v1.5.16 security and team collaboration
+
+Workspace tools now reject symlinks that resolve outside the workspace or into protected paths, including `.env`, `.sonderr`, and Git internals. Static UI and documentation routes are constrained to canonical files inside `web/`. Sonderr collaboration rooms add up to three read-only workers, bounded shared findings/help/risk signals, peer review, separate AI and human poll votes, and saved-room recovery. Worker identities are labeled as fictional AI personas, and their assessments remain unverified evidence.
 
 ### Security hardening in v1.5.11
 

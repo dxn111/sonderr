@@ -35,6 +35,13 @@ def ensure_model():
             import torch as torch_module
             from transformers import AutoModelForCausalLM, AutoTokenizer
             torch = torch_module
+            # The managed install targets small CPUs. Avoid oversized thread
+            # pools that cost more than they save on four-core laptops.
+            torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+            try:
+                torch.set_num_interop_threads(1)
+            except RuntimeError:
+                pass
             dtype = torch.float16 if torch.cuda.is_available() else torch.float32
             if MODEL_DIR and os.path.isfile(os.path.join(MODEL_DIR, "config.json")):
                 tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
@@ -94,16 +101,19 @@ class Handler(BaseHTTPRequestHandler):
             messages = request.get("messages") or []
             messages = list(messages)
             if messages and messages[0].get("role") == "system":
-                messages[0] = {**messages[0], "content": SYSTEM_IDENTITY + "\n\n" + str(messages[0].get("content") or "")}
+                content = str(messages[0].get("content") or "")
+                if not content.startswith("You are Sonderr-v1"):
+                    content = SYSTEM_IDENTITY + "\n\n" + content
+                messages[0] = {**messages[0], "content": content}
             else:
                 messages.insert(0, {"role": "system", "content": SYSTEM_IDENTITY})
             tools = request.get("tools") or None
             prompt = tokenizer.apply_chat_template(messages, tools=tools, tokenize=False, add_generation_prompt=True)
             device = next(model.parameters()).device
             inputs = tokenizer(prompt, return_tensors="pt").to(device)
-            limit = max(32, min(4096, int(request.get("max_tokens", 768))))
+            limit = max(32, min(512, int(request.get("max_tokens", 384))))
             temperature = max(0.0, min(2.0, float(request.get("temperature", 0.2))))
-            kwargs = {"max_new_tokens": limit, "do_sample": temperature > 0, "pad_token_id": tokenizer.eos_token_id}
+            kwargs = {"max_new_tokens": limit, "do_sample": temperature > 0, "pad_token_id": tokenizer.eos_token_id, "use_cache": True}
             if temperature > 0:
                 kwargs["temperature"] = max(0.01, temperature)
                 kwargs["top_p"] = 0.9
