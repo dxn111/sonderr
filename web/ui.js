@@ -216,12 +216,22 @@ async function boot() {
     if (state.apiConfigured) loadModels(true);
     loadFiles();
     if (!state.onboarding.completed) openOnboarding();
-    else setTimeout(() => showSonderrV1Announcement(), 600);
+    else queueLaunchAnnouncement();
   } catch {
     const rs = $("runtimeStatus");
     rs.className = "runtime bad"; rs.querySelector(".runtime-label").textContent = "Runtime unreachable";
     renderUpdateGate({ status: "unavailable", message: "Sonderr could not verify the runtime or official release. Reconnect and retry; the workspace remains locked until its status is known." });
   }
+}
+
+// The launch poster belongs to app startup, independently of provider/model
+// discovery. The archive remains available from the sidebar after dismissal.
+function queueLaunchAnnouncement() {
+  if (location.pathname === "/studios" || location.pathname === "/studios/" || location.pathname === "/trading" || location.pathname === "/trading/") return;
+  setTimeout(() => {
+    if (document.hidden || !$('onboardingModal')?.hidden) return;
+    showSonderrV1Announcement();
+  }, 900);
 }
 
 function openOnboarding() {
@@ -268,6 +278,7 @@ function openOnboarding() {
         submit.hidden = true; $("onboardingForm").querySelectorAll("input,.onboarding-check,.onboarding-note").forEach(el => { el.disabled = true; });
       } else {
         modal.hidden = true;
+        if (state.onboarding?.completed) queueLaunchAnnouncement();
         if (data.nextSettings) openSettings(data.nextSettings);
         if (data.emailSetupRequired) toast("Welcome email saved as a preference — connect Gmail or configure SMTP to send it");
         if (data.welcomeSendError) toast("Welcome email was not sent: " + data.welcomeSendError);
@@ -283,25 +294,21 @@ function openOnboarding() {
 /* ---------- models (automated discovery) ---------- */
 function showSonderrV1Announcement(force = false) {
   const modal = $("sonderrV1Announcement");
-  let seen = false; try { seen = Boolean(localStorage.getItem("sonderr-v1-announcement-seen-3")); } catch {}
-  if (!modal || (!force && seen)) return;
+  if (!modal || (!force && location.pathname !== "/" && location.pathname !== "/index.html")) return;
   modal.hidden = false;
-  window.pauseSonderrLaunch?.();
-  window.seekSonderrLaunch?.(0);
-  window.playSonderrLaunch?.();
+  modal.setAttribute("aria-hidden", "false");
+  const video = $("sonderrLaunchVideo");
+  if (video) { video.currentTime = 0; video.play().catch(() => {}); }
 }
 function closeSonderrV1Announcement() {
   const modal = $("sonderrV1Announcement");
-  if (modal) modal.hidden = true;
-  window.pauseSonderrLaunch?.();
-  try { localStorage.setItem("sonderr-v1-announcement-seen-3", "1"); } catch {}
+  if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
+  $("sonderrLaunchVideo")?.pause();
 }
 function openAnnouncementsArchive() {
   const modal = $("announcementsModal");
   if (modal) modal.hidden = false;
-  window.pauseSonderrLaunch?.();
-  window.seekSonderrLaunch?.(0);
-  window.playSonderrLaunch?.();
+  $("sonderrLaunchVideo")?.pause();
 }
 
 function renderModelBtn() {
@@ -2790,12 +2797,12 @@ function wire() {
   setStudioPhase("idea");
   $("pluginHubBtn").onclick = openPluginHub;
   $("announcementsBtn")?.addEventListener("click", openAnnouncementsArchive);
-  $("announcementsClose")?.addEventListener("click", () => { $("announcementsModal").hidden = true; window.pauseSonderrLaunch?.(); });
-  $("announcementsModal")?.addEventListener("click", e => { if (e.target === $("announcementsModal")) { $("announcementsModal").hidden = true; window.pauseSonderrLaunch?.(); } });
+  $("announcementsClose")?.addEventListener("click", () => { $("announcementsModal").hidden = true; });
+  $("announcementsModal")?.addEventListener("click", e => { if (e.target === $("announcementsModal")) $("announcementsModal").hidden = true; });
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     const archive = $("announcementsModal"), intro = $("sonderrV1Announcement");
-    if (archive && !archive.hidden) { archive.hidden = true; window.pauseSonderrLaunch?.(); }
+    if (archive && !archive.hidden) archive.hidden = true;
     if (intro && !intro.hidden) closeSonderrV1Announcement();
   });
   $("sonderrV1Close")?.addEventListener("click", closeSonderrV1Announcement);
@@ -2809,23 +2816,9 @@ function wire() {
   };
   $("announcementsUseModel")?.addEventListener("click", () => {
     $("announcementsModal").hidden = true;
-    window.pauseSonderrLaunch?.();
     $("modelBtn")?.click();
   });
   $("sonderrV1Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV1Announcement")) closeSonderrV1Announcement(); });
-  const bindFilmControls = (playId, seekId, timeId) => {
-    const play = $(playId), seek = $(seekId), time = $(timeId);
-    const update = () => {
-      const t = Number(seek?.value || 0), mm = String(Math.floor(t / 60)).padStart(2, "0"), ss = String(Math.floor(t % 60)).padStart(2, "0");
-      if (time) time.textContent = `${mm}:${ss} / 01:38`;
-      if (play) play.textContent = window.__sonderrFilmPlaying ? "Ⅱ" : "▶";
-    };
-    play?.addEventListener("click", () => { if (window.__sonderrFilmPlaying) window.pauseSonderrLaunch?.(); else window.playSonderrLaunch?.(); window.__sonderrFilmPlaying = !window.__sonderrFilmPlaying; update(); });
-    seek?.addEventListener("input", () => { window.pauseSonderrLaunch?.(); window.__sonderrFilmPlaying = false; window.seekSonderrLaunch?.(seek.value); update(); });
-    window.addEventListener("sonderr-film-frame", e => { if (seek && document.activeElement !== seek) seek.value = String(Math.floor(e.detail.time)); window.__sonderrFilmPlaying = e.detail.playing; update(); });
-  };
-  bindFilmControls("sonderrFilmPlay", "sonderrFilmSeek", "sonderrFilmTime");
-  bindFilmControls("announcementsFilmPlay", "announcementsFilmSeek", "announcementsFilmTime");
   $("pluginHubClose").onclick = closePluginHub;
   $("pluginHubModal").addEventListener("click", e => { if (e.target === $("pluginHubModal")) closePluginHub(); });
   $("settingsBtn").onclick = () => { openSettings("api"); closeMobileNav(); };

@@ -1557,6 +1557,14 @@ async function handleChat(req, res, sessionMatch) {
 }
 
 function api(req,res,url,server) {
+  // Keep the release check on the JSON API path. Previously this check was
+  // attached only to apiRoute(), but generic API traffic was intercepted by
+  // the workspace update gate and /api/update-check fell through to index.html.
+  if (req.method === "GET" && url.pathname === "/api/update-check") {
+    return updates.checkForUpdate({ root: ROOT, currentVersion: packageJson.version, force: url.searchParams.get("refresh") === "1" })
+      .then(result => json(res, result))
+      .catch(() => json(res, { status: "unavailable", currentVersion: packageJson.version, updateAvailable: false, message: "Sonderr could not verify the latest official release. Reconnect and retry; this version stays locked until its update status is known." }));
+  }
   const updateExempt = req.method === "GET" && ["/api/health", "/api/update-check"].includes(url.pathname)
     || req.method === "POST" && url.pathname === "/api/update/install";
   if (updateExempt) return apiRoute(req,res,url,server);
