@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.14 — Flowing Sonderr-v1 launch film
+
+- Replaces the static-feeling launch cut with a continuously animated 88-second trailer, rendered and encoded at 60 fps with synchronized score.
+- Embeds the 1080p H.264 trailer in the launch poster and announcements archive.
+- Moves the local Sonderr-v1 inference service off the app's port and validates its JSON health identity before using it, preventing an app page from being mistaken for a successful model response.
+
 ## v1.5.11 — Sonderr-v1 · The start of the SLM generation
 
 - Pins Sonderr-v1 at the top of the model picker with a **NEW** badge. Selecting it switches the active provider to the local Sonderr model.

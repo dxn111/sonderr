@@ -4,6 +4,8 @@ const path = require("node:path");
 const safety = require("./safety");
 const { compactConversation, DEFAULT_MAX_CHARS: DEFAULT_CONTEXT_CHARS } = require("./compaction");
 const { spawn } = require("node:child_process");
+const SONDERR_V1_PORT = Number(process.env.SONDERR_V1_PORT) || 43174;
+const SONDERR_V1_ORIGIN = `http://127.0.0.1:${SONDERR_V1_PORT}`;
 
 // Remember provider-reported TPM ceilings for this running local process so
 // later turns can right-size themselves before burning a request on a 413.
@@ -11,7 +13,7 @@ const learnedTpmLimits = new Map();
 const TPM_LIMIT_TTL_MS = 15 * 60 * 1000;
 
 const PROVIDERS = {
-  sonderr: { label: "Sonderr-v1 · 0.6B", baseURL: "http://127.0.0.1:4174/v1", model: "sonderr-v1" },
+  sonderr: { label: "Sonderr-v1 · 0.6B", baseURL: `${SONDERR_V1_ORIGIN}/v1`, model: "sonderr-v1" },
   local: { label: "Not configured", baseURL: "", model: "" },
   openai: { label: "OpenAI / ChatGPT", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   gemini: { label: "Google Gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
@@ -27,14 +29,18 @@ let sonderrProcess = null;
 let sonderrBoot = null;
 let sonderrError = "";
 async function ensureSonderrService() {
-  const origin = "http://127.0.0.1:4174";
-  try { const r = await fetch(origin + "/health", { signal: AbortSignal.timeout(800) }); if (r.ok) return; } catch {}
+  const origin = SONDERR_V1_ORIGIN;
+  try {
+    const r = await fetch(origin + "/health", { signal: AbortSignal.timeout(800) });
+    const health = r.ok && /application\/json/i.test(r.headers.get("content-type") || "") ? await r.json() : null;
+    if (health?.ok === true && health.model === "sonderr-v1") return;
+  } catch {}
   if (!sonderrBoot) sonderrBoot = new Promise((resolve, reject) => {
     const root = path.resolve(__dirname, "..");
     const python = process.env.SONDERR_PYTHON || process.env.PYTHON || "python3";
     sonderrProcess = spawn(python, [path.join(__dirname, "sonderr_v1_service.py")], {
       cwd: root,
-      env: { ...process.env, SONDERR_V1_MODEL: path.join(root, "models", "sonderr-v1") },
+      env: { ...process.env, SONDERR_V1_PORT: String(SONDERR_V1_PORT), SONDERR_V1_MODEL: path.join(root, "models", "sonderr-v1") },
       stdio: ["ignore", "ignore", "pipe"]
     });
     sonderrError = "";
@@ -43,7 +49,11 @@ async function ensureSonderrService() {
     sonderrProcess.on("exit", () => { sonderrProcess = null; sonderrBoot = null; });
     const deadline = Date.now() + 20000;
     const poll = async () => {
-      try { const r = await fetch(origin + "/health", { signal: AbortSignal.timeout(800) }); if (r.ok) { resolve(); return; } } catch {}
+      try {
+        const r = await fetch(origin + "/health", { signal: AbortSignal.timeout(800) });
+        const health = r.ok && /application\/json/i.test(r.headers.get("content-type") || "") ? await r.json() : null;
+        if (health?.ok === true && health.model === "sonderr-v1") { resolve(); return; }
+      } catch {}
       if (!sonderrProcess || Date.now() > deadline) { reject(new Error("Could not start Sonderr-v1 local runtime." + (sonderrError ? " " + sonderrError.trim().split("\n").slice(-1)[0] : ""))); sonderrBoot = null; return; }
       setTimeout(poll, 350);
     };
@@ -55,7 +65,9 @@ async function ensureSonderrService() {
 function config() {
   const saved = store.settings();
   const preset = PROVIDERS[saved.provider] || PROVIDERS.custom;
-  const requestedBaseURL = saved.baseURL || preset.baseURL || process.env.SONDERR_API_BASE_URL || "";
+  const requestedBaseURL = saved.provider === "sonderr"
+    ? `${SONDERR_V1_ORIGIN}/v1`
+    : (saved.baseURL || preset.baseURL || process.env.SONDERR_API_BASE_URL || "");
   let baseURL = "";
   try { baseURL = validateBaseURL(requestedBaseURL); } catch { /* legacy/unsafe endpoints are disabled until corrected in Settings */ }
   return {
@@ -99,7 +111,7 @@ function validateBaseURL(value, { allowEmpty = true } = {}) {
 }
 
 async function fetchProvider(url, options, timeoutMs=120000) {
-  if (String(url).startsWith("http://127.0.0.1:4174/")) await ensureSonderrService();
+  if (String(url).startsWith(`${SONDERR_V1_ORIGIN}/`)) await ensureSonderrService();
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try {

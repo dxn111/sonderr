@@ -8,7 +8,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-HOST, PORT = "127.0.0.1", 4174
+HOST, PORT = "127.0.0.1", int(os.environ.get("SONDERR_V1_PORT", "43174"))
 MODEL_ID = "sonderr-v1"
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 MODEL_DIR = os.environ.get("SONDERR_V1_MODEL", "")
