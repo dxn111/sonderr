@@ -147,8 +147,9 @@ async function startInstall({ root = path.resolve(__dirname, ".."), currentVersi
       stdio: "ignore"
     });
     await new Promise((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
+      const timer = setTimeout(() => reject(new Error("The updater process did not start in time.")), 10_000);
+      child.once("spawn", () => { clearTimeout(timer); resolve(); });
+      child.once("error", error => { clearTimeout(timer); reject(error); });
     });
     installInProgress = true;
     return { ok: true, restarting: true, version: check.latestVersion };

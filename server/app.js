@@ -1565,6 +1565,7 @@ function api(req,res,url,server) {
       .then(result => json(res, result))
       .catch(() => json(res, { status: "unavailable", currentVersion: packageJson.version, updateAvailable: false, message: "Sonderr could not verify the latest official release. Reconnect and retry; this version stays locked until its update status is known." }));
   }
+  if (req.method === "POST" && url.pathname === "/api/update/install") return apiRoute(req, res, url, server);
   const updateExempt = req.method === "GET" && ["/api/health", "/api/update-check"].includes(url.pathname)
     || req.method === "POST" && url.pathname === "/api/update/install";
   if (updateExempt) return apiRoute(req,res,url,server);

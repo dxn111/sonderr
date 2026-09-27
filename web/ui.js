@@ -141,14 +141,20 @@ async function retryRequiredUpdateCheck() {
 }
 
 async function installRequiredUpdate() {
-  const check = state.updateCheck;
+  let check = state.updateCheck;
   if (check?.status !== "update-required" || !check.latestTag || check.installSupported === false) return;
   const button = $("updateGateButton");
   button.disabled = true;
-  button.textContent = "Preparing secure update…";
+  button.textContent = "Checking latest release…";
   $("updateGateError").hidden = true;
   try {
-    await api("/api/update/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: check.latestTag }) });
+    check = await api("/api/update-check?refresh=1");
+    renderUpdateGate(check);
+    if (check.status !== "update-required" || !check.latestTag || check.installSupported === false) return;
+    button.disabled = true;
+    button.textContent = "Preparing secure update…";
+    const install = await api("/api/update/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: check.latestTag }) });
+    if (install?.restarting !== true || install?.version !== check.latestVersion) throw new Error("The updater did not confirm the verified release. No update was assumed to be installed.");
     renderUpdateGate({ ...check, status: "installing" });
     const deadline = Date.now() + 180_000;
     while (Date.now() < deadline) {
@@ -159,11 +165,11 @@ async function installRequiredUpdate() {
       } catch { /* the service is expected to be offline during its restart */ }
     }
     renderUpdateGate(check);
-    $("updateGateError").textContent = "The update did not complete in time. Sonderr restored the previous install where possible; it remains locked until the required release is verified. Check your connection and retry.";
+    $("updateGateError").textContent = "The update did not complete in time. Sonderr restored the previous install where possible. Check ~/.sonderr/update.log for the installer result, then retry.";
     $("updateGateError").hidden = false;
   } catch (error) {
     renderUpdateGate(check);
-    $("updateGateError").textContent = error.message || "The update could not be started. Your current install was not intentionally removed.";
+    $("updateGateError").textContent = (error.message || "The update could not be started. Your current install was not intentionally removed.") + " Check ~/.sonderr/update.log for installer details.";
     $("updateGateError").hidden = false;
   }
 }

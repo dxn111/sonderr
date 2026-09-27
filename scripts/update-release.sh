@@ -10,7 +10,7 @@ WORKSPACE="${4:-$HOME}"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 EXPECTED_INSTALL="${SONDERR_INSTALL_DIR:-$DATA_HOME/sonderr-v1.5}"
 INSTALL_DIR="${SONDERR_UPDATE_INSTALL_DIR:-$EXPECTED_INSTALL}"
-LOG_DIR="$HOME/.sonderr"
+LOG_DIR="${SONDERR_UPDATE_LOG_DIR:-$HOME/.sonderr}"
 LOG_FILE="$LOG_DIR/update.log"
 TEMP_DIR=""
 BACKUP_DIR=""
@@ -78,7 +78,7 @@ trap 'exit 1' HUP INT TERM
 
 printf 'Waiting for the old Sonderr process to stop…\n' >>"$LOG_FILE"
 waited=0
-while kill -0 "$OLD_PID" 2>/dev/null; do
+while [ "$OLD_PID" != "0" ] && kill -0 "$OLD_PID" 2>/dev/null; do
   if [ "$waited" -ge 120 ]; then fail "old Sonderr process did not stop"; fi
   sleep 0.25
   waited=$((waited + 1))
@@ -88,7 +88,7 @@ printf 'Downloading verified release tag %s…\n' "$TAG" >>"$LOG_FILE"
 git clone --depth 1 --branch "$TAG" --single-branch "$REPOSITORY" "$TEMP_DIR/source" >>"$LOG_FILE" 2>&1 || fail "could not download the official release"
 PACKAGE_NAME="$(node -p 'require(process.argv[1]).name' "$TEMP_DIR/source/package.json")"
 PACKAGE_VERSION="$(node -p 'require(process.argv[1]).version' "$TEMP_DIR/source/package.json")"
-if [ "$PACKAGE_NAME" != "sonderr-v1.5" ] || "${TAG#v}" != "$PACKAGE_VERSION"; then fail "downloaded release version did not match the verified tag"; fi
+if [ "$PACKAGE_NAME" != "sonderr-v1.5" ] || [ "${TAG#v}" != "$PACKAGE_VERSION" ]; then fail "downloaded release version did not match the verified tag"; fi
 npm --prefix "$TEMP_DIR/source" ci --omit=dev >>"$LOG_FILE" 2>&1 || fail "dependency installation failed"
 
 BACKUP_DIR="$INSTALL_DIR.backup.$(date +%Y%m%d%H%M%S)"
@@ -102,20 +102,34 @@ if ! mv "$TEMP_DIR/source" "$INSTALL_DIR"; then
 fi
 chmod +x "$INSTALL_DIR/bin/sonderr-1.5.js"
 
-printf 'Starting Sonderr v%s on localhost…\n' "$PACKAGE_VERSION" >>"$LOG_FILE"
-nohup node "$INSTALL_DIR/bin/sonderr-1.5.js" --no-open --port "$PORT" >>"$LOG_FILE" 2>&1 </dev/null &
-NEW_PID=$!
+printf 'Waiting for the updated app on localhost…\n' >>"$LOG_FILE"
 started=0
 attempt=0
-while [ "$attempt" -lt 60 ]; do
+# Desktop supervisors can relaunch the managed command as soon as the old
+# process exits. Reuse that healthy process rather than starting a duplicate.
+while [ "$attempt" -lt 20 ]; do
   if node -e 'fetch(process.argv[1]).then(async r=>{const d=await r.json();process.exit(r.ok&&d.version===process.argv[2]?0:1)}).catch(()=>process.exit(1))' "http://127.0.0.1:$PORT/api/health" "$PACKAGE_VERSION" >>"$LOG_FILE" 2>&1; then
     started=1
     break
   fi
-  if ! kill -0 "$NEW_PID" 2>/dev/null; then break; fi
   attempt=$((attempt + 1))
   sleep 0.5
 done
+if [ "$started" -ne 1 ]; then
+  printf 'Starting Sonderr v%s on localhost…\n' "$PACKAGE_VERSION" >>"$LOG_FILE"
+  nohup node "$INSTALL_DIR/bin/sonderr-1.5.js" --no-open --port "$PORT" >>"$LOG_FILE" 2>&1 </dev/null &
+  NEW_PID=$!
+  attempt=0
+  while [ "$attempt" -lt 60 ]; do
+    if node -e 'fetch(process.argv[1]).then(async r=>{const d=await r.json();process.exit(r.ok&&d.version===process.argv[2]?0:1)}).catch(()=>process.exit(1))' "http://127.0.0.1:$PORT/api/health" "$PACKAGE_VERSION" >>"$LOG_FILE" 2>&1; then
+      started=1
+      break
+    fi
+    if ! kill -0 "$NEW_PID" 2>/dev/null; then break; fi
+    attempt=$((attempt + 1))
+    sleep 0.5
+  done
+fi
 if [ "$started" -ne 1 ]; then fail "updated app did not pass its localhost health check"; fi
 
 SWAPPED=0

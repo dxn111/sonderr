@@ -2,19 +2,20 @@
 const { execFile } = require("node:child_process");
 const { createServer } = require("../server/app");
 
-const DEFAULT_PORT=Number(process.env.SONDERR_PORT||4173);
 // The app has no remote-user authentication by design. Never bind it to a
 // network interface, even if a shell environment accidentally supplies one.
 const HOST="127.0.0.1";
 const noOpen=process.argv.includes("--no-open");
 
 function parsePort(){
+  const envPort=Number(process.env.SONDERR_PORT||4173);
+  const defaultPort=Number.isInteger(envPort)&&envPort>0&&envPort<65536?envPort:4173;
   const i=process.argv.indexOf("--port");
   if(i!==-1 && process.argv[i+1]){
     const n=Number(process.argv[i+1]);
     if(Number.isInteger(n)&&n>0&&n<65536)return n;
   }
-  return DEFAULT_PORT;
+  return defaultPort;
 }
 function openBrowser(url){
   if(noOpen)return;
