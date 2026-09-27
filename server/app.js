@@ -7,6 +7,7 @@ const path = require("node:path");
 const { URL } = require("node:url");
 const store = require("./store");
 const provider = require("./provider");
+const sonderrInstall = require("./sonderr_install");
 const skills = require("./skills");
 const mcp = require("./mcp");
 const connectors = require("./connectors");
@@ -1677,6 +1678,12 @@ function apiRoute(req,res,url,server) {
     return json(res,{...store.settings(),apiConfigured:provider.providerAccess().available,anonymousFreeModels:provider.providerAccess().anonymous,providers:provider.publicProviders()});
   if(req.method==="GET" && url.pathname==="/api/providers")
     return json(res,{providers:provider.publicProviders(),active:provider.config().provider});
+  if(req.method==="GET" && url.pathname==="/api/models/sonderr-v1/status")
+    return json(res,sonderrInstall.status());
+  if(req.method==="POST" && url.pathname==="/api/models/sonderr-v1/install") {
+    if(!safety.hasTrustedBrowserOrigin(req)) return json(res,{error:"Model installation must be started from Sonderr's local browser UI."},403);
+    return json(res,sonderrInstall.start());
+  }
   if(req.method==="GET" && url.pathname==="/api/models") {
     return provider.listModels()
       .then(m=>json(res,{ok:true,...m,active:m.active,configured:provider.providerAccess().available}))

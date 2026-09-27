@@ -10,6 +10,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST, PORT = "127.0.0.1", int(os.environ.get("SONDERR_V1_PORT", "43174"))
 MODEL_ID = "sonderr-v1"
+SYSTEM_IDENTITY = (
+    "You are Sonderr-v1, Sonderr's first small language model. You have 0.6B parameters and are specialized for the Sonderr environment. "
+    "You are a small language model by design, not a large general-purpose model. Be clear, practical, concise, and honest about your limits. "
+    "Sonderr's surrounding workspace, web search, and tools provide capabilities beyond the model's built-in knowledge; use them only when they are actually supplied. "
+    "Never identify yourself as Qwen, Alibaba, or another assistant. You are Sonderr-v1, version one, and the model and environment will continue to improve."
+)
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 MODEL_DIR = os.environ.get("SONDERR_V1_MODEL", "")
 ADAPTER_DIR = os.environ.get("SONDERR_V1_ADAPTER", "")
@@ -86,6 +92,11 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length))
             ensure_model()
             messages = request.get("messages") or []
+            messages = list(messages)
+            if messages and messages[0].get("role") == "system":
+                messages[0] = {**messages[0], "content": SYSTEM_IDENTITY + "\n\n" + str(messages[0].get("content") or "")}
+            else:
+                messages.insert(0, {"role": "system", "content": SYSTEM_IDENTITY})
             tools = request.get("tools") or None
             prompt = tokenizer.apply_chat_template(messages, tools=tools, tokenize=False, add_generation_prompt=True)
             device = next(model.parameters()).device

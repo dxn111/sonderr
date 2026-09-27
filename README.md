@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.11 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.15 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -58,6 +58,12 @@ There is intentionally no separate "AI CLI" experience in v1.5. The launcher sta
 ## Availability
 
 Sonderr's source and self-service installer are available from the public repository. The installer tracks the latest `main` branch and installs dependencies from the lockfile; it is not a signed release package. Check the repository and review the installer before running it. Repository and release visibility are controlled separately from product support and availability.
+
+### Sonderr-v1 local model
+
+Sonderr-v1 is Sonderr’s first small language model: 0.6B parameters, specialized for the Sonderr environment. Choose it at the top of the model picker. If its files are not on the device yet, Sonderr asks before downloading the roughly 1 GB merged model and preparing a private CPU-only PyTorch/Transformers runtime. The installer verifies the published model checksum before unpacking it. Model weights and runtime files stay under `~/.sonderr`; inference runs locally. The cloud-hosted option is not available yet.
+
+Kilo Gateway is the default provider on a new install. Sonderr-v1 remains a local model choice in that provider’s model picker; choosing it keeps Kilo selected while its inference requests run through Sonderr’s local runtime.
 
 ### Required release updates
 

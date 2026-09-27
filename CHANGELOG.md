@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.15 — Sonderr-v1 installs and works locally
+
+- Adds an install prompt when Sonderr-v1 is selected but not yet available, with progress for verified model download and private CPU runtime setup. The cloud-hosted option is shown as disabled and Coming soon.
+- Uses Kilo Gateway as the default provider on a new install. Sonderr-v1 stays a top-of-list local model choice under Kilo and routes locally without changing the selected provider.
+- Downloads the published merged model into `~/.sonderr`, checks its official SHA-256 before extraction, and prepares a private CPU-only PyTorch and Transformers environment on first install.
+- Routes the local service to the installed model/runtime and identifies Sonderr-v1 in its system instructions.
+- Reworks the launch trailer as continuously animated Sonderr scenes and kinetic titles, rendered as unique 1920×1080 frames at 60 fps.
+
 ## v1.5.14 — Flowing Sonderr-v1 launch film
 
 - Replaces the static-feeling launch cut with a continuously animated 88-second trailer, rendered and encoded at 60 fps with synchronized score.

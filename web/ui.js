@@ -206,6 +206,7 @@ async function boot() {
     if (brandVersion && state.appVersion) brandVersion.textContent = "v" + state.appVersion + " · privacy-first AI + Web3";
     state.anonymousFreeModels = Boolean(settings.anonymousFreeModels);
     state.settings = settings; state.providers = settings.providers || {};
+    if (settings.model === "sonderr-v1") api("/api/models/sonderr-v1/status").then(modelStatus => { if (modelStatus.status !== "installed") openSonderrInstall(); }).catch(() => {});
     state.onboarding = onboarding.onboarding || { completed: false };
     renderGreeting(state.onboarding.name || "");
     fetch("/api/skills").then(r => r.json()).then(d => { state.skillsCount = (d.skills || []).length; }).catch(() => {});
@@ -320,8 +321,9 @@ function openAnnouncementsArchive() {
 function renderModelBtn() {
   const label = $("modelBtnLabel");
   if (state.modelsLoading) { label.textContent = "Discovering…"; return; }
-  if (!state.apiConfigured) { label.textContent = state.settings?.provider === "sonderr" ? "Sonderr-v1" : "Choose model"; return; }
+  if (!state.apiConfigured) { label.textContent = state.settings?.model === "sonderr-v1" ? "Sonderr-v1" : "Choose model"; return; }
   const active = state.settings?.model;
+  if (active === "sonderr-v1") { label.textContent = "Sonderr-v1 · 0.6B"; return; }
   const found = active && state.models.find(m => m.id === active);
   label.textContent = found ? found.label : (active || (state.models[0]?.id ? state.models[0].label : "Model"));
 }
@@ -345,16 +347,59 @@ async function loadModels(silent) {
 async function chooseModel(id, silent) {
   try {
     if (id === "sonderr-v1") {
-      await saveSettings({ provider: "sonderr", baseURL: "http://127.0.0.1:4174/v1", model: id }, true);
+      const status = await api("/api/models/sonderr-v1/status");
+      if (status.status !== "installed") { openSonderrInstall(); return; }
+      await saveSettings({ model: id }, true);
       state.apiConfigured = true;
       state.modelsError = "";
       state.models = [{ id, label: "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters", local: true }];
+      loadModels(true);
     } else {
       await saveSettings({ model: id }, silent);
     }
     if (!silent) toast("Model set to " + id);
   } catch (e) { if (!silent) toast(e.message); }
   renderModelBtn(); renderModelMenu(); renderSettingsModels?.();
+}
+let sonderrInstallPoll = null;
+function closeSonderrInstall() { const modal = $("sonderrInstallModal"); if (modal) modal.hidden = true; }
+function openSonderrInstall() {
+  const modal = $("sonderrInstallModal"); if (!modal) return;
+  modal.hidden = false; $("sonderrInstallError").hidden = true;
+  api("/api/models/sonderr-v1/status").then(s => {
+    if (s.status === "installed") { closeSonderrInstall(); chooseModel("sonderr-v1", true); return; }
+    if (s.status === "installing") { setSonderrInstallProgress(s); pollSonderrInstall(); }
+  }).catch(() => {});
+}
+function setSonderrInstallProgress(s) {
+  $("sonderrInstallProgressWrap").hidden = false;
+  $("sonderrInstallStage").textContent = s.stage || "Preparing install…";
+  $("sonderrInstallPercent").textContent = Math.round(s.progress || 0) + "%";
+  $("sonderrInstallBar").style.width = Math.round(s.progress || 0) + "%";
+  $("sonderrInstallStart").disabled = true;
+  $("sonderrInstallStart").textContent = "Installing Sonderr-v1…";
+  if (s.status === "installed") { $("sonderrInstallDetail").textContent = "Ready to use on this device."; closeSonderrInstall(); chooseModel("sonderr-v1", true); toast("Sonderr-v1 installed and ready"); return; }
+  const mb = s.total ? Math.round((s.downloaded || 0) / 1048576) + " / " + Math.round(s.total / 1048576) + " MB downloaded" : "Preparing local inference runtime…";
+  $("sonderrInstallDetail").textContent = mb;
+  if (s.status === "error") {
+    $("sonderrInstallError").textContent = s.error || "Sonderr-v1 could not be installed.";
+    $("sonderrInstallError").hidden = false;
+    $("sonderrInstallStart").disabled = false; $("sonderrInstallStart").textContent = "Try again";
+  }
+}
+function pollSonderrInstall() {
+  clearTimeout(sonderrInstallPoll);
+  sonderrInstallPoll = setTimeout(async () => {
+    try { const s = await api("/api/models/sonderr-v1/status"); setSonderrInstallProgress(s); if (!["installed", "error"].includes(s.status)) pollSonderrInstall(); }
+    catch { pollSonderrInstall(); }
+  }, 1000);
+}
+async function startSonderrInstall() {
+  $("sonderrInstallError").hidden = true;
+  $("sonderrInstallProgressWrap").hidden = false;
+  $("sonderrInstallStart").disabled = true; $("sonderrInstallStart").textContent = "Starting install…";
+  try { setSonderrInstallProgress(await api("/api/models/sonderr-v1/install", { method: "POST" })); pollSonderrInstall(); }
+  catch (e) { $("sonderrInstallError").textContent = e.message; $("sonderrInstallError").hidden = false; $("sonderrInstallStart").disabled = false; $("sonderrInstallStart").textContent = "Try again"; }
 }
 function renderModelMenu() {
   const list = $("modelMenuList"), foot = $("modelMenuFoot");
@@ -390,6 +435,13 @@ function renderModelMenu() {
       : state.anonymousFreeModels ? state.models.length + " free model" + (state.models.length === 1 ? "" : "s") + " · no key · rate-limited by IP"
       : state.models.length + " model" + (state.models.length === 1 ? "" : "s") + " · best & newest first";
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("sonderrInstallStart")?.addEventListener("click", startSonderrInstall);
+  $("sonderrInstallClose")?.addEventListener("click", closeSonderrInstall);
+  $("sonderrInstallLater")?.addEventListener("click", closeSonderrInstall);
+  $("sonderrInstallModal")?.addEventListener("click", event => { if (event.target === $("sonderrInstallModal")) closeSonderrInstall(); });
+});
 
 /* ---------- sessions ---------- */
 async function loadSessions() {
@@ -2816,7 +2868,7 @@ function wire() {
   $("sonderrV1Explore")?.addEventListener("click", () => { closeSonderrV1Announcement(); openAnnouncementsArchive(); });
   const activateSonderr = async () => {
     try {
-      await api("/api/settings", { method: "POST", body: JSON.stringify({ provider: "sonderr", model: "sonderr-v1", baseURL: "http://127.0.0.1:4174/v1" }) });
+      await api("/api/settings", { method: "POST", body: JSON.stringify({ model: "sonderr-v1" }) });
       location.reload();
     } catch (error) { toast(error.message); }
   };

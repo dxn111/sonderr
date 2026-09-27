@@ -2,10 +2,12 @@ const store = require("./store");
 const fs = require("node:fs");
 const path = require("node:path");
 const safety = require("./safety");
+const sonderrInstall = require("./sonderr_install");
 const { compactConversation, DEFAULT_MAX_CHARS: DEFAULT_CONTEXT_CHARS } = require("./compaction");
 const { spawn } = require("node:child_process");
 const SONDERR_V1_PORT = Number(process.env.SONDERR_V1_PORT) || 43174;
 const SONDERR_V1_ORIGIN = `http://127.0.0.1:${SONDERR_V1_PORT}`;
+const SONDERR_V1_ID = "sonderr-v1";
 
 // Remember provider-reported TPM ceilings for this running local process so
 // later turns can right-size themselves before burning a request on a 413.
@@ -35,12 +37,13 @@ async function ensureSonderrService() {
     const health = r.ok && /application\/json/i.test(r.headers.get("content-type") || "") ? await r.json() : null;
     if (health?.ok === true && health.model === "sonderr-v1") return;
   } catch {}
+  if (!sonderrInstall.ready()) throw new Error("Sonderr-v1 is not installed yet. Choose Install Sonderr-v1 from the model menu.");
   if (!sonderrBoot) sonderrBoot = new Promise((resolve, reject) => {
     const root = path.resolve(__dirname, "..");
-    const python = process.env.SONDERR_PYTHON || process.env.PYTHON || "python3";
+    const python = process.env.SONDERR_PYTHON || sonderrInstall.PYTHON || process.env.PYTHON || "python3";
     sonderrProcess = spawn(python, [path.join(__dirname, "sonderr_v1_service.py")], {
       cwd: root,
-      env: { ...process.env, SONDERR_V1_PORT: String(SONDERR_V1_PORT), SONDERR_V1_MODEL: path.join(root, "models", "sonderr-v1") },
+      env: { ...process.env, SONDERR_V1_PORT: String(SONDERR_V1_PORT), SONDERR_V1_MODEL: sonderrInstall.MODEL_DIR },
       stdio: ["ignore", "ignore", "pipe"]
     });
     sonderrError = "";
@@ -82,11 +85,15 @@ function config() {
 
 function providerAccess() {
   const current = config();
+  if (current.model === SONDERR_V1_ID) {
+    const installed = sonderrInstall.ready();
+    return { available: installed, anonymous: false, authenticated: installed };
+  }
   const anonymousKilo = current.provider === "kilo" && !current.apiKey;
   return {
-    available: Boolean(current.apiKey || current.provider === "ollama" || current.provider === "sonderr" || anonymousKilo),
+    available: Boolean(current.apiKey || current.provider === "ollama" || anonymousKilo),
     anonymous: anonymousKilo,
-    authenticated: Boolean(current.apiKey || current.provider === "ollama" || current.provider === "sonderr")
+    authenticated: Boolean(current.apiKey || current.provider === "ollama" || (current.provider === "sonderr" && sonderrInstall.ready()))
   };
 }
 
@@ -167,7 +174,7 @@ async function readCompletionResponse(response) {
   return data;
 }
 
-function publicProviders() { return Object.fromEntries(Object.entries(PROVIDERS).map(([id, item]) => [id, { id, ...item }])); }
+function publicProviders() { return Object.fromEntries(Object.entries(PROVIDERS).filter(([id]) => id !== "sonderr").map(([id, item]) => [id, { id, ...item }])); }
 
 function providerMessages(messages) {
   return messages.map(message => {
@@ -937,7 +944,7 @@ function prettyModelLabel(id) {
 async function listModels() {
   const current = config();
   const anonymousKilo = current.provider === "kilo" && !current.apiKey;
-  if (current.provider === "sonderr") return [{ id: "sonderr-v1", label: "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters", local: true }];
+  if (current.provider === "sonderr") return { models: [{ id: "sonderr-v1", label: "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters", local: true }], cached: false, provider: "kilo", active: SONDERR_V1_ID, anonymous: false };
   if (!current.baseURL || (!current.apiKey && current.provider !== "ollama" && current.provider !== "sonderr" && !anonymousKilo)) {
     const error = new Error("Add your API key in Settings — Sonderr will discover the models automatically.");
     error.code = "NOT_CONFIGURED";
@@ -946,7 +953,7 @@ async function listModels() {
   const cacheKey = current.provider + "|" + current.baseURL + "|" + current.apiKey;
   if (modelCache.models && modelCache.key === cacheKey && Date.now() - modelCache.at < MODEL_CACHE_TTL) {
     const models = modelCache.models;
-    return { models, cached: true, provider: current.provider, active: models.some(item => item.id === current.model) ? current.model : (models[0]?.id || ""), anonymous: anonymousKilo };
+    return { models, cached: true, provider: current.provider, active: current.model === SONDERR_V1_ID ? SONDERR_V1_ID : (models.some(item => item.id === current.model) ? current.model : (models[0]?.id || "")), anonymous: anonymousKilo };
   }
   const url = String(current.baseURL).replace(/\/$/, "") + "/models";
   const headers = {};
@@ -981,7 +988,7 @@ async function listModels() {
     })
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   modelCache = { key: cacheKey, at: Date.now(), models };
-  return { models, cached: false, provider: current.provider, active: models.some(item => item.id === current.model) ? current.model : (models[0]?.id || ""), anonymous: anonymousKilo };
+  return { models, cached: false, provider: current.provider, active: current.model === SONDERR_V1_ID ? SONDERR_V1_ID : (models.some(item => item.id === current.model) ? current.model : (models[0]?.id || "")), anonymous: anonymousKilo };
 }
 
 // ---------------------------------------------------------------------------
@@ -1036,8 +1043,9 @@ function unloadSkillMessage(messages, loaded) {
 
 async function request({messages, system, probe=false, mode=""}) {
   const current = config();
-  const baseURL = current.baseURL;
-  const apiKey = current.apiKey;
+  const localSonderrModel = current.model === SONDERR_V1_ID;
+  const baseURL = localSonderrModel ? `${SONDERR_V1_ORIGIN}/v1` : current.baseURL;
+  const apiKey = localSonderrModel ? "" : current.apiKey;
   const model = current.model;
 
   const onEvent = typeof arguments[0].onEvent === "function" ? arguments[0].onEvent : null;
@@ -1058,8 +1066,8 @@ async function request({messages, system, probe=false, mode=""}) {
     if (onEvent) { try { onEvent(event); } catch {} }
   };
 
-  const anonymousKiloModel = current.provider === "kilo" && !apiKey && /:free$/i.test(model);
-  if (!baseURL || (!apiKey && current.provider !== "ollama" && current.provider !== "sonderr" && !anonymousKiloModel) || !model) {
+  const anonymousKiloModel = !localSonderrModel && current.provider === "kilo" && !apiKey && /:free$/i.test(model);
+  if (!baseURL || (!localSonderrModel && !apiKey && current.provider !== "ollama" && current.provider !== "sonderr" && !anonymousKiloModel) || !model) {
     return {
       ok: false,
       mode: "local",

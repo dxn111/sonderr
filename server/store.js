@@ -10,14 +10,16 @@ const CREDENTIALS_FILE = path.join(DATA_DIR, "credentials.json");
 const MAX_SESSIONS = 200;
 const MAX_MESSAGES_PER_SESSION = 240;
 const MAX_MESSAGE_CHARS = 200_000;
+const DEFAULT_PROVIDER = process.env.SONDERR_PROVIDER || "kilo";
+const DEFAULT_BASE_URL = process.env.SONDERR_API_BASE_URL || (DEFAULT_PROVIDER === "kilo" ? "https://api.kilo.ai/api/gateway" : "https://api.openai.com/v1");
 
 const initial = {
   version: 1,
   sessions: [],
   settings: {
-    provider: process.env.SONDERR_PROVIDER || "openai",
-    model: process.env.SONDERR_MODEL || "gpt-4o-mini",
-    baseURL: process.env.SONDERR_API_BASE_URL || "https://api.openai.com/v1",
+    provider: DEFAULT_PROVIDER,
+    model: process.env.SONDERR_MODEL || (DEFAULT_PROVIDER === "kilo" ? "" : "gpt-4o-mini"),
+    baseURL: DEFAULT_BASE_URL,
     temperature: 0.2,
     maxTokens: 8192,
     approvalMode: process.env.SONDERR_APPROVAL_MODE || "ask",
@@ -386,7 +388,13 @@ function addMessage(id, role, content, meta = null) {
 function settings() {
   const current = read().settings || {};
   const merged = { ...initial.settings, ...current };
-  if (!merged.provider) merged.provider = "openai";
+  if (!merged.provider) merged.provider = DEFAULT_PROVIDER;
+  // Older builds represented the local Sonderr-v1 model as a provider. Keep
+  // its selected model, but make Kilo the base provider as intended.
+  if (merged.provider === "sonderr") {
+    merged.provider = "kilo";
+    merged.baseURL = "https://api.kilo.ai/api/gateway";
+  }
   if (merged.provider === "local") {
     merged.provider = "openai";
     merged.baseURL = initial.settings.baseURL;

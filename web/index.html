@@ -321,6 +321,21 @@
   </section>
 </div>
 
+<div class="sonderr-install-scrim" id="sonderrInstallModal" hidden>
+  <section class="sonderr-install-card" role="dialog" aria-modal="true" aria-labelledby="sonderrInstallTitle" aria-describedby="sonderrInstallSummary">
+    <button class="sonderr-install-close" id="sonderrInstallClose" aria-label="Close install dialog">×</button>
+    <div class="sonderr-install-orb"><img src="/assets/sonderr-v1-mark.png" alt=""></div>
+    <div class="sonderr-install-eyebrow">SONDERR-V1 · 0.6B PARAMETERS</div>
+    <h2 id="sonderrInstallTitle">Sonderr-v1 isn’t installed yet.</h2>
+    <p id="sonderrInstallSummary">Want to install it? Download the model and prepare its local runtime. It needs about 1 GB plus runtime space.</p>
+    <div class="sonderr-install-progress" id="sonderrInstallProgressWrap" hidden><div class="sonderr-install-progress-label"><span id="sonderrInstallStage">Preparing install…</span><span id="sonderrInstallPercent">0%</span></div><div class="sonderr-install-track"><i id="sonderrInstallBar"></i></div><small id="sonderrInstallDetail">The model is downloaded directly to this device.</small></div>
+    <p class="sonderr-install-error" id="sonderrInstallError" role="alert" hidden></p>
+    <button class="sonderr-install-primary" id="sonderrInstallStart">Install Sonderr-v1</button>
+    <button class="sonderr-install-cloud" id="sonderrInstallCloud" type="button" disabled aria-disabled="true"><span>Use cloud-hosted model</span><span class="sonderr-install-coming">COMING SOON</span></button>
+    <button class="sonderr-install-later" id="sonderrInstallLater">Maybe later</button>
+  </section>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <!-- Kept visible until the release check confirms this install is current. -->
 <div class="update-gate" id="updateGate" role="dialog" aria-modal="true" aria-labelledby="updateGateTitle" aria-describedby="updateGateSummary">
