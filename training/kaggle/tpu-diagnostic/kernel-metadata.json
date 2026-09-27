@@ -1,0 +1,16 @@
+{
+  "id": "danipostma/sonderr-tpu-diagnostic",
+  "title": "Sonderr TPU Diagnostic",
+  "code_file": "tpu_check.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": true,
+  "enable_internet": true,
+  "machine_shape": "TpuV5E8",
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

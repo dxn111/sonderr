@@ -62,8 +62,8 @@ function post(port, pathname, data) {
   });
 }
 
-async function chat(port, sessionId, content) {
-  const response = await post(port, `/api/sessions/${sessionId}`, { content, mode: "ask" });
+async function chat(port, sessionId, content, options = {}) {
+  const response = await post(port, `/api/sessions/${sessionId}`, { content, mode: "ask", ...options });
   assert.equal(response.status, 200);
   const raw = await response.text();
   return raw.split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
@@ -118,6 +118,47 @@ async function chat(port, sessionId, content) {
     assert.equal(updatedBoard.milestones[2].id === "explore", false, "a newly added milestone receives its own unique ID");
     assert.equal(updatedBoard.milestones[1].done, false, "rewriting a completed milestone cannot silently carry completion onto different work");
     assert.ok(boardTurn.some(event => event.event === "final" && /verified local tool result/.test(event.message)));
+
+    const docsSession = store.createSession("Sonderr program docs routing");
+    const docsFirstTurn = await chat(port, docsSession.id, "Tell me about the Sonderr dev program.");
+    assert.match(observed.calls.at(-1).system, /Required Sonderr docs skill/);
+    assert.ok(observed.calls.at(-1).tools.some(tool => tool.function.name === "load_skill"), "first-party program questions get the docs skill loader");
+    assert.match(JSON.stringify(observed.calls.at(-1).messages), /web\/docs-development\.html/, "retrieved local docs are supplied as compact references");
+    assert.ok(docsFirstTurn.some(event => event.event === "tool_end" && event.name === "load_skill" && event.output?.loaded), "high-confidence docs intent visibly loads the skill before the model answers");
+    assert.equal(observed.calls.at(-1).messages.filter(message => message.role === "tool" && message.name === "load_skill").length, 1, "the router loads the skill once instead of depending on the model to remember it");
+    await chat(port, docsSession.id, "and bugbounty?");
+    assert.match(observed.calls.at(-1).system, /Required Sonderr docs skill/, "short bug-bounty follow-ups retain the Sonderr-docs context");
+    assert.match(JSON.stringify(observed.calls.at(-1).messages), /web\/docs-bounty\.html/, "bug-bounty follow-ups retrieve the relevant checked-in page");
+
+    const greetingSession = store.createSession("No skill for greeting");
+    const greetingTurn = await chat(port, greetingSession.id, "hello");
+    assert.ok(!greetingTurn.some(event => event.name === "load_skill"), "greetings never cause even an automatic skill load");
+
+    const bountyHelperSession = store.createSession("Bounty Program Guide");
+    await chat(port, bountyHelperSession.id, "What's in scope?", { docsAssistant: "bounty" });
+    const bountyHelperRequest = observed.calls.at(-1);
+    assert.match(bountyHelperRequest.system, /Dedicated Bounty Program help assistant/);
+    assert.match(bountyHelperRequest.system, /does not submit a vulnerability report|do not solicit vulnerability details/i);
+    assert.match(JSON.stringify(bountyHelperRequest.messages), /web\/docs-bounty\.html/);
+    assert.deepEqual(bountyHelperRequest.tools.map(tool => tool.function.name).sort(), ["load_skill", "unload_skill"], "program helper gets no workspace, wallet, MCP, or web-action tools");
+    const rejectedDocsOrigin = await fetch(`http://127.0.0.1:${port}/api/sessions/${bountyHelperSession.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Origin: "https://attacker.example" },
+      body: JSON.stringify({ content: "What's in scope?", mode: "ask", docsAssistant: "bounty" })
+    });
+    assert.equal(rejectedDocsOrigin.status, 403, "the embedded program helper requires Sonderr's local browser origin");
+    const oversizedHelperAsk = await post(port, `/api/sessions/${bountyHelperSession.id}`, { content: "x".repeat(2_501), mode: "ask", docsAssistant: "bounty" });
+    assert.equal(oversizedHelperAsk.status, 413, "program helper input stays bounded");
+
+    const tradingSession = store.createSession("Trading Agent prompt scope", "trading");
+    await chat(port, tradingSession.id, "hello", { tradingAgent: true });
+    assert.match(observed.calls.at(-1).system, /Sonderr Trading Agent — dedicated operating instructions/);
+    assert.match(observed.calls.at(-1).system, /do not redefine Sonderr's base assistant/);
+    const tradingResearch = store.createSession("Trading research prompt scope", "trading");
+    await chat(port, tradingResearch.id, "hello");
+    assert.doesNotMatch(observed.calls.at(-1).system, /Sonderr Trading Agent — dedicated operating instructions/, "the specialized prompt is not added to non-agent research sessions");
+    const normalSession = store.createSession("Base assistant prompt scope");
+    await chat(port, normalSession.id, "hello", { tradingAgent: true });
+    assert.doesNotMatch(observed.calls.at(-1).system, /Sonderr Trading Agent — dedicated operating instructions/, "client flags cannot apply trading-agent instructions to normal chat");
     console.log("wallet chat routing integration tests passed");
   } finally {
     provider.generate = originalGenerate;

@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const safety = require("../server/safety");
 
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "sonderr-store-test-"));
 process.env.HOME = temporaryHome;
@@ -84,6 +85,22 @@ try {
   assert.equal(saved.messages.length, 240);
   assert.equal(saved.messages[0].content, "message-2");
   assert.throws(() => store.addMessage(session.id, "tool", "not a visible chat role"), /Invalid message role/);
+
+  const legacyLeakSession = store.createSession("Old transcript");
+  const pseudoToolDump = String.raw`I'll update the milestones.\<tool\_call\>\<function=update_studio_board\>`;
+  store.addMessage(legacyLeakSession.id, "assistant", pseudoToolDump);
+  store.addMessage(legacyLeakSession.id, "user", 'I pasted API_KEY="sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"');
+  let cleanLegacy = store.getSession(legacyLeakSession.id);
+  assert.match(cleanLegacy.messages[0].content, /tool-call-shaped text/i, "unsafe pseudo tool syntax is removed before persistence");
+  assert.ok(cleanLegacy.messages[1].content.includes(safety.REDACTION), "credential strings in user turns are scrubbed before persistence");
+  const legacyDb = JSON.parse(fs.readFileSync(store.DATA_FILE, "utf8"));
+  const legacyRecord = legacyDb.sessions.find(item => item.id === legacyLeakSession.id);
+  legacyRecord.messages[0].content = 'Here is a fake {"tool_calls":[{"function":{"name":"update_studio_board"}}]}';
+  legacyRecord.messages[1].content = "old secret sk-proj-abcdefghijklmnopqrstuvwxyz0123456789";
+  fs.writeFileSync(store.DATA_FILE, JSON.stringify(legacyDb));
+  cleanLegacy = store.getSession(legacyLeakSession.id);
+  assert.match(cleanLegacy.messages[0].content, /tool-call-shaped text/i, "transcripts written by old releases are scrubbed on read");
+  assert.ok(cleanLegacy.messages[1].content.includes(safety.REDACTION), "legacy credentials are scrubbed before APIs or prompts can use them");
 
   const checkpoint = store.setTaskCheckpoint(session.id, {
     taskKey: "task-resume-key",

@@ -44,12 +44,16 @@ assert.equal(changed.activeNetworks.evm, "sepolia");
 assert.equal(changed.networkId, "sepolia");
 assert.equal(changed.supportedNetworks.find(item => item.id === "sepolia").testnet, true);
 assert.equal(wallet.publicConfig().activeNetworks.solana, "solana-mainnet");
+assert.equal(typeof wallet.accounts, "function", "the wallet-account tool implementation must be exported from its module");
 
 Promise.all([
   wallet.latestPrice({ chain: "evm", network: "sepolia" }),
   wallet.latestPrice({ chain: "solana", network: "solana-devnet" }),
-  wallet.marketSnapshot({ chain: "evm", network: "base-sepolia", tokenAddress: "0x0000000000000000000000000000000000000001" })
-]).then(prices => {
+  wallet.marketSnapshot({ chain: "evm", network: "base-sepolia", tokenAddress: "0x0000000000000000000000000000000000000001" }),
+  wallet.accounts()
+]).then(([price1, price2, market, accounts]) => {
+  const prices = [price1, price2, market];
+  assert.deepEqual(accounts.accounts, [], "unconfigured local wallet returns an empty address list without invoking RPC");
   for (const price of prices.slice(0, 2)) {
     assert.equal(price.priceUsd, null);
     assert.match(price.unavailableReason, /no real-world market price/i);
@@ -59,12 +63,27 @@ Promise.all([
 
   const originalFetch = global.fetch, token = "0x0000000000000000000000000000000000000001";
   const pair = (pairAddress, chainId, baseAddress, liquidity) => ({ chainId, pairAddress, dexId: "test-dex", baseToken: { address: baseAddress, symbol: "TKN" }, quoteToken: { address: "0x0000000000000000000000000000000000000002", symbol: "USD" }, priceUsd: "1.25", liquidity: { usd: liquidity }, volume: { h24: 200 }, marketCap: 1000, fdv: 1200, priceChange: { h24: 3.5 }, txns: { h24: { buys: 8, sells: 4 } }, pairCreatedAt: 1700000000000 });
-  global.fetch = async () => ({ ok: true, json: async () => [pair("pool-low", "base", token, 100), pair("pool-high", "base", token, 500), pair("wrong-chain", "ethereum", token, 9000)] });
+  global.fetch = async url => {
+    if (String(url).includes("/latest/dex/search")) {
+      const thinToken = pair("pool-thin", "base", "0x0000000000000000000000000000000000000003", 100);
+      thinToken.baseToken.symbol = "TKN-THIN";
+      return { ok: true, json: async () => ({ pairs: [pair("pool-low", "base", token, 100), pair("pool-high", "base", token, 500), thinToken, pair("wrong-chain", "ethereum", token, 9000)] }) };
+    }
+    return { ok: true, json: async () => [pair("pool-low", "base", token, 100), pair("pool-high", "base", token, 500), pair("wrong-chain", "ethereum", token, 9000)] };
+  };
   return wallet.marketSnapshot({ chain: "evm", network: "base-mainnet", tokenAddress: token }).then(snapshot => {
     assert.equal(snapshot.pairCount, 2, "pools from a different network are excluded");
     assert.equal(snapshot.pairs[0].pairAddress, "pool-high", "pools are sorted by reported liquidity");
     assert.equal(snapshot.pairs[0].assetPriceUsd, 1.25);
     assert.equal(snapshot.pairs[0].priceChangePct.h24, 3.5);
+    return wallet.discoverTokens({ network: "base-mainnet", query: "TKN" });
+  }).then(discovery => {
+    assert.equal(discovery.tokens.length, 2, "discovery excludes pairs on the other chain");
+    const selected = discovery.tokens.find(item => item.address === token), thin = discovery.tokens.find(item => item.address.endsWith("0003"));
+    assert.equal(selected.liquidityUsd, 500, "discovery keeps the most liquid indexed pair per token");
+    assert.deepEqual(selected.swaps24h, { buys: 8, sells: 4 });
+    assert.equal(thin.riskSignals.length, 1, "thin reported liquidity is surfaced as a screening heuristic");
+    assert.equal(selected.pairUrl, null, "untrusted non-DEX links are not returned");
   }).finally(() => { global.fetch = originalFetch; });
 }).then(() => {
   console.log("wallet network tests passed");

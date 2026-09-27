@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), "sonderr-http-security-"));
 const updates = require("../server/updates");
+const store = require("../server/store");
 const { createServer } = require("../server/app");
 
 function request(port, { path = "/", method = "GET", headers = {}, body = "" } = {}) {
@@ -31,9 +32,27 @@ function request(port, { path = "/", method = "GET", headers = {}, body = "" } =
     assert.equal(homepage.status, 200);
     assert.match(homepage.headers["content-security-policy"], /default-src 'self'/);
     assert.equal(homepage.headers["x-frame-options"], "DENY");
+    const history = store.createSession("Output boundary test");
+    const fakeWalletToken = "b".repeat(48);
+    store.addMessage(history.id, "assistant", 'Fake {"tool_calls":[{"function":{"name":"write_file"}}]} and API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789', {
+      events: [{ type: "tool_end", name: "other_tool", output: { access_token: "must-not-leak" } }, { type: "tool_end", name: "prepare_wallet_transaction", output: { token: fakeWalletToken, expiresAt: Date.now() + 20_000 } }]
+    });
+    const sessionList = await request(port, { path: "/api/sessions/" + history.id });
+    assert.equal(sessionList.body.includes("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"), false, "JSON APIs never return saved provider keys");
+    assert.equal(sessionList.body.includes('"tool_calls"'), false, "unsafe pseudo-call transcripts are not returned as assistant actions");
+    assert.equal(sessionList.body.includes("must-not-leak"), false, "nested event credentials are removed at the JSON boundary");
+    assert.equal(sessionList.body.includes(fakeWalletToken), true, "only the exact short-lived local wallet confirmation card can retain its action token");
     const studiosPage = await request(port, { path: "/studios" });
     assert.equal(studiosPage.status, 200);
     assert.match(studiosPage.body, /id="studiosHome"/);
+    const bountyPage = await request(port, { path: "/docs/bounty" });
+    const developerPage = await request(port, { path: "/docs/developer" });
+    assert.match(bountyPage.body, /data-program-assistant="bounty"/);
+    assert.match(bountyPage.body, /Safe testing and coordinated disclosure/);
+    assert.match(developerPage.body, /data-program-assistant="developer"/);
+    assert.match(developerPage.body, /Proposal template for bigger work/);
+    assert.equal((await request(port, { path: "/docs-help.js" })).status, 200, "program helper script is served locally");
+    assert.equal((await request(port, { path: "/docs-help.css" })).status, 200, "program helper styles are served locally");
     const developmentUpdateCheck = await request(port, { path: "/api/update-check" });
     assert.equal(developmentUpdateCheck.status, 200);
     assert.equal(JSON.parse(developmentUpdateCheck.body).status, "development", "a source checkout is never force-updated over local changes");
@@ -76,6 +95,17 @@ function request(port, { path = "/", method = "GET", headers = {}, body = "" } =
     assert.equal(JSON.parse(trustedWalletNetwork.body).wallet.activeNetworks.evm, "sepolia");
     const invalidWalletNetwork = await request(port, { path: "/api/wallet/network", method: "POST", headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` }, body: JSON.stringify({ chain: "evm", network: "devnet" }) });
     assert.equal(invalidWalletNetwork.status, 400, "an unsupported network must not silently fall back to mainnet");
+
+    const originlessTokenDiscovery = await request(port, { path: "/api/trading/discover", method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ network: "base-mainnet", query: "PEPE" }) });
+    assert.equal(originlessTokenDiscovery.status, 403, "token discovery is restricted to the local trading UI");
+    const invalidTokenDiscovery = await request(port, { path: "/api/trading/discover", method: "POST", headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` }, body: JSON.stringify({ network: "solana-mainnet", query: "PEPE" }) });
+    assert.equal(invalidTokenDiscovery.status, 400, "discovery must not silently search another network");
+    const shortTokenSearch = await request(port, { path: "/api/trading/discover", method: "POST", headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` }, body: JSON.stringify({ network: "base-mainnet", query: "P" }) });
+    assert.equal(shortTokenSearch.status, 400, "token search requires a minimally useful query");
+    const originlessActivity = await request(port, { path: "/api/trading/activity", method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ network: "base-mainnet" }) });
+    assert.equal(originlessActivity.status, 403, "wallet activity reads are restricted to the local trading UI");
+    const invalidActivityNetwork = await request(port, { path: "/api/trading/activity", method: "POST", headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` }, body: JSON.stringify({ network: "solana-mainnet" }) });
+    assert.equal(invalidActivityNetwork.status, 400, "activity route must not silently query another chain");
 
     const originlessWalletDecline = await request(port, { path: "/api/wallet/decline", method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: "not-a-real-token" }) });
     assert.equal(originlessWalletDecline.status, 403);

@@ -132,7 +132,8 @@ function toolCall(id, name, args) {
     const firstTurn = await request(appPort, `/api/sessions/${sessionId}`, "POST", { content: "Implement durable checkpoints for a long-running task", mode: "build" });
     assert.equal(firstTurn.status, 200);
     assert.match(firstTurn.body, /task_checkpoint_update/);
-    assert.match(firstTurn.body, /simulated provider interruption/);
+    assert.match(firstTurn.body, /Provider returned HTTP 502/);
+    assert.doesNotMatch(firstTurn.body, /simulated provider interruption/, "raw provider error bodies stay private");
     const savedCheckpoint = store.taskCheckpoint(sessionId);
     assert.equal(savedCheckpoint.status, "paused");
     assert.equal(savedCheckpoint.goal, "Implement and verify resumable task memory");

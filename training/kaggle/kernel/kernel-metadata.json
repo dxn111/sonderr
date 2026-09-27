@@ -1,0 +1,17 @@
+{
+ "id": "danipostma/sonderr-v1-identity-continuation-15-epochs",
+ "title": "Sonderr-v1 Identity Continuation \u00b7 15 Epochs",
+ "code_file": "sonderr_train.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": true,
+ "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": [
+  "danipostma/sonderr-v1-identity-stage-2-input"
+ ],
+ "competition_sources": [],
+ "kernel_sources": [],
+ "model_sources": []
+}

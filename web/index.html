@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <link rel="stylesheet" href="/ui.css">
+  <link rel="stylesheet" href="/announcements.css">
 </head>
 <body>
 <div class="app">
@@ -17,7 +18,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.5.10 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.5.11 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -28,6 +29,14 @@
     <button class="side-item studios-nav" id="studiosBtn" title="Open Sonderr Studios" aria-current="false">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M6 16V5h12v11M9 9h6M9 12h6"/><path d="M3 19l3-3m15 3l-3-3"/></svg>
       <span>Sonderr Studios</span><span class="studios-nav-tag">Studio</span>
+    </button>
+    <button class="side-item trading-nav" id="tradingBtn" title="Open Trading" aria-current="false">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/><path d="M15 6h6v6"/></svg>
+      <span>Trading</span>
+    </button>
+    <button class="side-item announcements-nav" id="announcementsBtn" title="Sonderr announcements" aria-haspopup="dialog" aria-controls="announcementsModal">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a2 2 0 0 0 2 2h2l10 5V4L7 9H5a2 2 0 0 0-2 2Z"/><path d="M7 15l2 6h3l-2.5-7.5M20 9l2-2m-2 10 2 2"/></svg>
+      <span>Sonderr announcements</span><span class="announcements-nav-tag">NEW</span>
     </button>
 
     <div class="recents-label">Recents</div>
@@ -74,9 +83,12 @@
         </div>
       </section>
       <section class="studios-home" id="studiosHome" hidden>
-        <div class="studios-home-top"><div class="studios-eyebrow">SONDERR STUDIOS · BUILD SPACE</div><button class="studios-tour-replay" id="studiosTourBtn" type="button">Explore the workflow ↓</button></div>
-        <h1>Your next project starts here.</h1>
-        <p>A visual workspace for ideas that become real websites, browser apps, and developer projects. Keep the brief, milestones, live preview, and build discussion together.</p>
+        <div class="studios-home-top"><div class="studios-eyebrow"><span class="studio-spark">✦</span> SONDERR STUDIOS <i>·</i> BUILD SPACE</div><button class="studios-tour-replay" id="studiosTourBtn" type="button">See how it works <span>↓</span></button></div>
+        <div class="studio-hero">
+          <div class="studio-hero-copy"><div class="studio-live-label"><span></span> YOUR CREATIVE WORKSPACE</div><h1>Make the idea<br>real.</h1><p>One focused space for planning, building, and refining the things you want to ship—with Sonderr beside you at every step.</p><div class="studio-hero-actions"><button class="studio-hero-primary" type="button" data-studio-track="site">Start a website <span>↗</span></button><button class="studio-hero-secondary" type="button" data-studio-track="project">Start a project</button></div><div class="studio-hero-caption"><span>✦</span> Your brief, milestones, files, and preview stay together.</div></div>
+          <div class="studio-hero-art" aria-hidden="true"><div class="studio-art-orbit studio-art-orbit-one"></div><div class="studio-art-orbit studio-art-orbit-two"></div><div class="studio-art-window"><div class="studio-art-window-bar"><i></i><i></i><i></i><span>your-next-thing.studio</span></div><div class="studio-art-window-content"><div class="studio-art-kicker">A GOOD IDEA, IN MOTION</div><div class="studio-art-title">From first<br>sketch to<br><em>something real.</em></div><div class="studio-art-line"></div><div class="studio-art-pills"><b>IDEA</b><span>PLAN</span><span>BUILD</span></div></div></div><div class="studio-art-float"><span>✦</span><div><b>Made with intention</b><small>Progress you can see</small></div></div></div>
+        </div>
+        <div class="studios-section-heading"><div><span>CHOOSE A STARTING POINT</span><h2>What are we making?</h2></div><small>You can change direction any time.</small></div>
         <div class="studios-paths">
           <button class="studios-path studio-site-path" data-studio-track="site"><span class="studios-path-icon">▧</span><strong>Website Studio</strong><small>Design, build, and preview a real site.</small><span class="studios-path-link">Create a website →</span></button>
           <button class="studios-path studio-app-path" data-studio-track="app"><span class="studios-path-icon">▣</span><strong>App Studio</strong><small>Turn a workflow into a useful web app.</small><span class="studios-path-link">Create an app →</span></button>
@@ -103,8 +115,9 @@
         <div class="studios-resources"><span>Program guides</span><a href="/docs/developer" target="_blank" rel="noopener">Developer Program ↗</a><a href="/docs/bounty" target="_blank" rel="noopener">Bounty Program ↗</a></div>
         <div class="studios-recent" id="studiosRecent" hidden><strong>Continue in Studios</strong><div id="studiosRecentList"></div></div>
       </section>
+      <section class="trade-studio" id="tradeStudio" hidden></section>
       <section class="studios-project" id="studiosProject" hidden></section>
-      <div class="studio-discussion-head" id="studioDiscussionHead" hidden><span>STUDIO DISCUSSION</span><strong>Build with Sonderr</strong></div>
+      <div class="studio-discussion-head" id="studioDiscussionHead" hidden><div class="studio-discussion-top"><div class="studio-discussion-identity"><span class="studio-discussion-mark">✦</span><div><span>YOUR BUILD PARTNER</span><strong>Studio conversation</strong></div></div><small>Ask a question, shape the plan, or build the next step.</small></div><div class="studio-discussion-actions" aria-label="Studio actions"><button type="button" data-studio-action="explain">Explain</button><button type="button" data-studio-action="plan">Plan</button><button type="button" data-studio-action="build">Build</button><button type="button" data-studio-action="review">Review</button></div></div>
       <div class="messages" id="messages" hidden></div>
     </div>
 
@@ -282,25 +295,55 @@
   </section>
 </div>
 
+<!-- ===================== Sonderr-v1 launch film ===================== -->
+<img id="sonderrV1KeyArt" src="/assets/sonderr-v1-key-art.png" alt="" hidden><img id="sonderrV1BrandMark" src="/assets/sonderr-v1-mark.png" alt="" hidden>
+<div class="sonderr-v1-announcement" id="sonderrV1Announcement" hidden>
+  <section class="sonderr-v1-card" role="dialog" aria-modal="true" aria-labelledby="sonderrV1Title">
+    <button class="sonderr-v1-close" id="sonderrV1Close" aria-label="Close model announcement">×</button>
+    <div class="sonderr-v1-film"><canvas id="sonderrLaunchCanvas" width="1920" height="1080" aria-label="Animated Sonderr-v1 launch film"></canvas><div class="sonderr-film-controls"><button id="sonderrFilmPlay" type="button" aria-label="Play launch film">▶</button><input id="sonderrFilmSeek" type="range" min="0" max="98" value="0" aria-label="Seek through launch film"><span id="sonderrFilmTime">00:00 / 01:38</span></div><div class="sonderr-v1-film-wash"></div><div class="sonderr-v1-film-caption"><span>THE START OF THE SLM GENERATION</span><b>SONDERR-V1</b><i>OUR FIRST MODEL · 0.6B PARAMETERS</i></div><span class="sonderr-v1-film-mark"><img src="/assets/sonderr-v1-mark.png" alt="">SONDERR<span>V1</span></span></div>
+    <div class="sonderr-v1-copy">
+      <div class="sonderr-v1-eyebrow"><span></span> THE START OF THE SLM GENERATION</div>
+      <h1 id="sonderrV1Title">Our first SLM. Built for Sonderr.</h1>
+      <p>Sonderr-v1 is our first small language model: 0.6B parameters and specialized for Sonderr. We are building an SLM generation, not a general-purpose LLM: Sonderr will stay small by design. Its practical capability comes from deep specialization and the environment around it—web search, your workspace, and the right tools. Both will keep getting better.</p>
+      <div class="sonderr-v1-facts"><span><b>0.6B</b> parameters</span><span><b>LOCAL</b> inference</span><span><b>SLM</b> by principle</span></div>
+      <div class="sonderr-v1-actions"><button id="sonderrV1Explore" class="sonderr-v1-primary">Explore the vision <span>→</span></button><button id="sonderrV1Later" class="sonderr-v1-secondary">Maybe later</button></div>
+      <small>Version one of Sonderr’s model line. A small, specialized model, made more capable by the environment it works in.</small>
+    </div>
+  </section>
+</div>
+
+<div class="announcements-scrim" id="announcementsModal" hidden>
+  <section class="announcements-panel" role="dialog" aria-modal="true" aria-labelledby="announcementsTitle">
+    <button class="modal-close" id="announcementsClose" aria-label="Close announcements">×</button>
+    <div class="announcements-header"><span class="announcements-mark">✦</span><div><span>SONDERR UPDATES</span><h2 id="announcementsTitle">Sonderr announcements</h2><p>Product launches and important changes, all in one place.</p></div></div>
+    <article class="announcement-entry"><div class="announcement-entry-meta"><span>MODEL VISION · FIRST SLM</span><time>Version 1</time></div><h3>The start of the SLM generation</h3><p>Sonderr-v1 is our first model: a 0.6B small language model specialized for the Sonderr environment. Sonderr will remain an SLM by principle. Its practical capability comes from that specialization and the environment around it: web search, workspace context, and tools. We’ll keep improving the model and the environment together.</p><div class="announcement-film"><canvas id="announcementsLaunchCanvas" width="1920" height="1080" aria-label="Animated Sonderr-v1 launch film"></canvas><div class="sonderr-film-controls"><button id="announcementsFilmPlay" type="button" aria-label="Play launch film">▶</button><input id="announcementsFilmSeek" type="range" min="0" max="98" value="0" aria-label="Seek through launch film"><span id="announcementsFilmTime">00:00 / 01:38</span></div></div><div class="announcement-entry-actions"><button id="announcementsUseModel" class="btn primary">Sonderr-v1 · first SLM</button><span>0.6B parameters · specialized for Sonderr</span></div></article>
+    <p class="announcements-archive-note">New product announcements will appear here so you can revisit them any time.</p>
+  </section>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <!-- Kept visible until the release check confirms this install is current. -->
 <div class="update-gate" id="updateGate" role="dialog" aria-modal="true" aria-labelledby="updateGateTitle" aria-describedby="updateGateSummary">
   <section class="update-gate-card">
-    <div class="update-gate-brand"><img src="/logo.svg" alt=""><span>Sonderr</span><span class="update-gate-version">SECURITY CENTER</span></div>
-    <div class="update-gate-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M24 4.5 40 11v11.4c0 10.6-6.6 17.2-16 21.1C14.6 39.6 8 33 8 22.4V11l16-6.5Z"/><path d="m17.5 24.5 4.3 4.3 9-10"/></svg></div>
-    <p class="update-gate-eyebrow">REQUIRED RELEASE CHECK</p>
-    <h1 id="updateGateTitle">Checking for security updates…</h1>
-    <p class="update-gate-summary" id="updateGateSummary">Sonderr checks its official release before opening your workspace.</p>
-    <div class="update-gate-release" id="updateGateRelease" hidden>
-      <div class="update-gate-release-top"><span>OFFICIAL RELEASE</span><strong id="updateGateVersion"></strong></div>
-      <div class="update-gate-notes" id="updateGateNotes"></div>
+    <div class="update-gate-brand"><img src="/logo.svg" alt=""><span>Sonderr</span><span class="update-gate-version">RELEASE CENTER</span></div>
+    <div class="update-gate-layout">
+      <div class="update-gate-main">
+        <div class="update-gate-statusline"><div class="update-gate-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M24 4.5 40 11v11.4c0 10.6-6.6 17.2-16 21.1C14.6 39.6 8 33 8 22.4V11l16-6.5Z"/><path d="m17.5 24.5 4.3 4.3 9-10"/></svg></div><span>OFFICIAL SECURITY CHECK</span></div>
+        <h1 id="updateGateTitle">Checking for security updates…</h1>
+        <p class="update-gate-summary" id="updateGateSummary">Sonderr checks its official release before opening your workspace.</p>
+        <div class="update-gate-release" id="updateGateRelease" hidden>
+          <div class="update-gate-release-top"><span>NEW STABLE RELEASE</span><strong id="updateGateVersion"></strong></div>
+          <div class="update-gate-notes" id="updateGateNotes"></div>
+        </div>
+        <p class="update-gate-error" id="updateGateError" role="alert" hidden></p>
+        <button class="update-gate-button" id="updateGateButton" type="button" disabled>Checking release…</button>
+        <a class="update-gate-link" id="updateGateLink" href="https://github.com/dxn111/sonderr/releases/latest" target="_blank" rel="noopener noreferrer" hidden>Open official release notes ↗</a>
+        <p class="update-gate-footnote" id="updateGateFootnote">This screen cannot be dismissed. When an update is required, install it to continue; older releases may miss important security fixes and product improvements.</p>
+      </div>
+      <aside class="update-gate-side"><div class="update-side-mark">✦</div><span class="update-side-label">WHY UPDATES MATTER</span><h2>Safer, steadier, better.</h2><p>Keeping Sonderr current helps protect your workspace and makes sure you have the latest fixes and improvements.</p><div class="update-side-list"><div><i>✓</i><span><b>Security fixes</b><small>Important protections stay current.</small></span></div><div><i>↗</i><span><b>New improvements</b><small>Get the latest tools and refinements.</small></span></div><div><i>⌁</i><span><b>Verified release</b><small>Install from Sonderr’s official release.</small></span></div></div><div class="update-side-footer"><span class="update-side-dot"></span> OFFICIAL RELEASE · LOCAL VERSION CHECK</div></aside>
     </div>
-    <p class="update-gate-error" id="updateGateError" role="alert" hidden></p>
-    <button class="update-gate-button" id="updateGateButton" type="button" disabled>Checking release…</button>
-    <a class="update-gate-link" id="updateGateLink" href="https://github.com/dxn111/sonderr/releases/latest" target="_blank" rel="noopener noreferrer" hidden>View the official release ↗</a>
-    <p class="update-gate-footnote" id="updateGateFootnote">This screen cannot be dismissed. When an update is required, install it to continue; older releases may miss important security fixes and product improvements.</p>
   </section>
 </div>
-<script src="/ui.js"></script>
+<script src="/sonderr-launch-renderer.js"></script><script src="/ui.js"></script>
 </body>
 </html>

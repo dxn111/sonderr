@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const safety = require("./safety");
 const { compactConversation, DEFAULT_MAX_CHARS: DEFAULT_CONTEXT_CHARS } = require("./compaction");
+const { spawn } = require("node:child_process");
 
 // Remember provider-reported TPM ceilings for this running local process so
 // later turns can right-size themselves before burning a request on a 413.
@@ -10,6 +11,7 @@ const learnedTpmLimits = new Map();
 const TPM_LIMIT_TTL_MS = 15 * 60 * 1000;
 
 const PROVIDERS = {
+  sonderr: { label: "Sonderr-v1 · 0.6B", baseURL: "http://127.0.0.1:4174/v1", model: "sonderr-v1" },
   local: { label: "Not configured", baseURL: "", model: "" },
   openai: { label: "OpenAI / ChatGPT", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini" },
   gemini: { label: "Google Gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
@@ -19,6 +21,36 @@ const PROVIDERS = {
   ollama: { label: "Ollama", baseURL: "http://127.0.0.1:11434/v1", model: "llama3.2" },
   custom: { label: "Custom OpenAI-compatible", baseURL: "", model: "" }
 };
+
+
+let sonderrProcess = null;
+let sonderrBoot = null;
+let sonderrError = "";
+async function ensureSonderrService() {
+  const origin = "http://127.0.0.1:4174";
+  try { const r = await fetch(origin + "/health", { signal: AbortSignal.timeout(800) }); if (r.ok) return; } catch {}
+  if (!sonderrBoot) sonderrBoot = new Promise((resolve, reject) => {
+    const root = path.resolve(__dirname, "..");
+    const python = process.env.SONDERR_PYTHON || process.env.PYTHON || "python3";
+    sonderrProcess = spawn(python, [path.join(__dirname, "sonderr_v1_service.py")], {
+      cwd: root,
+      env: { ...process.env, SONDERR_V1_MODEL: path.join(root, "models", "sonderr-v1") },
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    sonderrError = "";
+    sonderrProcess.stderr.on("data", chunk => { sonderrError = (sonderrError + chunk.toString()).slice(-3000); });
+    sonderrProcess.on("error", error => { sonderrError = error.message; });
+    sonderrProcess.on("exit", () => { sonderrProcess = null; sonderrBoot = null; });
+    const deadline = Date.now() + 20000;
+    const poll = async () => {
+      try { const r = await fetch(origin + "/health", { signal: AbortSignal.timeout(800) }); if (r.ok) { resolve(); return; } } catch {}
+      if (!sonderrProcess || Date.now() > deadline) { reject(new Error("Could not start Sonderr-v1 local runtime." + (sonderrError ? " " + sonderrError.trim().split("\n").slice(-1)[0] : ""))); sonderrBoot = null; return; }
+      setTimeout(poll, 350);
+    };
+    poll();
+  });
+  await sonderrBoot;
+}
 
 function config() {
   const saved = store.settings();
@@ -40,9 +72,9 @@ function providerAccess() {
   const current = config();
   const anonymousKilo = current.provider === "kilo" && !current.apiKey;
   return {
-    available: Boolean(current.apiKey || current.provider === "ollama" || anonymousKilo),
+    available: Boolean(current.apiKey || current.provider === "ollama" || current.provider === "sonderr" || anonymousKilo),
     anonymous: anonymousKilo,
-    authenticated: Boolean(current.apiKey || current.provider === "ollama")
+    authenticated: Boolean(current.apiKey || current.provider === "ollama" || current.provider === "sonderr")
   };
 }
 
@@ -67,27 +99,55 @@ function validateBaseURL(value, { allowEmpty = true } = {}) {
 }
 
 async function fetchProvider(url, options, timeoutMs=120000) {
+  if (String(url).startsWith("http://127.0.0.1:4174/")) await ensureSonderrService();
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try {
-    return await fetch(url,{...options,signal:controller.signal});
+    return await fetch(url,{...options,redirect:options.redirect || "error",signal:controller.signal});
   } catch(error) {
     if (error.name === "AbortError") throw new Error("Provider request timed out after 120 seconds");
     throw error;
   } finally { clearTimeout(timer); }
 }
 
+async function readBoundedResponseText(response, maxBytes = 2_000_000) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await response.body?.cancel(); } catch {}
+    throw new Error("Provider response exceeded Sonderr's response-size limit.");
+  }
+  if (!response.body?.getReader) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) throw new Error("Provider response exceeded Sonderr's response-size limit.");
+    return buffer.toString("utf8");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error("Provider response exceeded Sonderr's response-size limit.");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally { reader.releaseLock?.(); }
+  return Buffer.concat(chunks, size).toString("utf8");
+}
+
 async function readCompletionResponse(response) {
-  const raw = await response.text();
+  const raw = await readBoundedResponseText(response);
   let data;
   try { data = JSON.parse(raw); }
   catch {
-    const hint = safety.redactText(raw.replace(/\s+/g, " ").trim()).slice(0, 180);
-    throw new Error(`Provider returned an unreadable response (HTTP ${response.status})${hint ? `: ${hint}` : "."}`);
+    throw new Error(`Provider returned an unreadable response (HTTP ${response.status}).`);
   }
   if (data?.error) {
-    const detail = typeof data.error === "string" ? data.error : data.error.message || JSON.stringify(data.error);
-    throw new Error("Provider reported an error: " + safety.redactText(detail).slice(0, 300));
+    throw new Error(`Provider reported an error (HTTP ${response.status}). Check provider configuration, access, and quota.`);
   }
   if (!Array.isArray(data?.choices) || !data.choices.length) {
     throw new Error("Provider returned no completion choices. Check that the selected model supports chat completions and tools.");
@@ -310,7 +370,9 @@ function selectToolsForRequest(mode, userText, tools = TOOL_DEFINITIONS) {
     if (/\b(?:allowance|approval|approve)\b/.test(text)) add(["get_wallet_token_allowance"]);
     if (mode !== "plan" && /\b(?:start|enable|turn on|stop|disable|turn off)\b.{0,24}\b(?:watch|monitor|alert|notify)\b|\b(?:watch|monitoring)\b.{0,24}\b(?:on|off|start|stop|enable|disable)\b/i.test(text)) add(["set_wallet_watch"]);
     if (mode !== "plan" && /\b(?:send|transfer)\b/.test(text)) add(["prepare_wallet_transaction"]);
-    if (mode !== "plan" && /\b(?:swap|trade|buy|sell|exchange)\b/.test(text)) add(["prepare_wallet_swap"]);
+    const explicitSwapRequest = /\b(?:prepare|quote|stage)\b.{0,35}\b(?:swap|trade|buy|sell|exchange)\b|\b(?:swap|trade|buy|sell|exchange)\b.{0,35}\b(?:prepare|quote|stage)\b/i.test(text)
+      || (/\b(?:swap|trade|buy|sell|exchange)\b/i.test(text) && /\b\d+(?:\.\d+)?\b/.test(text) && /\b(?:base|ethereum|eth)\b/i.test(text));
+    if (mode !== "plan" && explicitSwapRequest) add(["prepare_wallet_swap"]);
     if (mode !== "plan" && /\b(?:create|new|make)\b.{0,24}\bwallet\b/.test(text)) add(["create_wallet"]);
   }
   if (faucetIntent && /\b(?:claim|receive|wallet address|receive address)\b/i.test(text) && /\bsol(?:ana)?\b/i.test(text)) add(["get_wallet_status"]);
@@ -863,7 +925,8 @@ function prettyModelLabel(id) {
 async function listModels() {
   const current = config();
   const anonymousKilo = current.provider === "kilo" && !current.apiKey;
-  if (!current.baseURL || (!current.apiKey && current.provider !== "ollama" && !anonymousKilo)) {
+  if (current.provider === "sonderr") return [{ id: "sonderr-v1", label: "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters", local: true }];
+  if (!current.baseURL || (!current.apiKey && current.provider !== "ollama" && current.provider !== "sonderr" && !anonymousKilo)) {
     const error = new Error("Add your API key in Settings — Sonderr will discover the models automatically.");
     error.code = "NOT_CONFIGURED";
     throw error;
@@ -978,13 +1041,13 @@ async function request({messages, system, probe=false, mode=""}) {
   const loadedSkills = activeSkillLoads(messages);
   // emit both records the event (persisted with the message) and streams it to the UI
   const emit = (type, payload) => {
-    const event = { type, ...safety.sanitizeValue(payload) };
+    const event = safety.sanitizeValue({ type, ...payload });
     events.push(event);
     if (onEvent) { try { onEvent(event); } catch {} }
   };
 
   const anonymousKiloModel = current.provider === "kilo" && !apiKey && /:free$/i.test(model);
-  if (!baseURL || (!apiKey && current.provider !== "ollama" && !anonymousKiloModel) || !model) {
+  if (!baseURL || (!apiKey && current.provider !== "ollama" && current.provider !== "sonderr" && !anonymousKiloModel) || !model) {
     return {
       ok: false,
       mode: "local",
@@ -1083,7 +1146,7 @@ async function request({messages, system, probe=false, mode=""}) {
         continue;
       }
       if (response.ok) return { response, tokenBudget, budgetReduced: tokenBudget < current.maxTokens };
-      const detail = await response.text().catch(() => "");
+      const detail = await readBoundedResponseText(response).catch(() => "");
       const observedTpm = parseTpmLimitError(detail);
       if (observedTpm) rememberTpmLimit(current, observedTpm.limit);
       if (response.status === 429) {
@@ -1116,7 +1179,7 @@ async function request({messages, system, probe=false, mode=""}) {
       const tpm = response.status === 413 ? observedTpm : null;
       if (response.status !== 413 || attempt >= 4) {
         if (tpm) throw new Error(`Provider TPM limit (${tpm.limit.toLocaleString()} tokens/minute) still rejects the compacted request. Try again after the current minute window, reduce attached/context files, or use a provider/model with a higher TPM allowance.`);
-        throw new Error("Provider returned HTTP " + response.status + (detail ? ": " + detail.slice(0, 300) : ""));
+        throw new Error("Provider returned HTTP " + response.status + ". Check provider configuration, access, and quota.");
       }
 
       let inputEstimate = tpm ? Math.max(0, tpm.requested - tokenBudget) : estimateTokenCount(payload) - tokenBudget;
@@ -1221,6 +1284,8 @@ async function request({messages, system, probe=false, mode=""}) {
         ? { id: clean.id, name: clean.name, category: clean.category, loaded: true, instructionChars: String(clean.instructions || "").length, note: "Full playbook loaded into the active model context; detailed text is hidden from the chat card." }
         : name === "task_memory_read" && clean && typeof clean === "object"
         ? { name: clean.name, bytes: Buffer.byteLength(String(clean.content || ""), "utf8"), note: "Private task note read; content is withheld from the chat event." }
+        : ["prepare_wallet_transaction", "prepare_wallet_swap"].includes(name)
+        ? safety.sanitizeToolOutput(name, output)
         : clean;
       emit("tool_end", { id: call.id, name, input: visibleInput, output: visibleOutput, failed, durationMs });
 
@@ -1349,23 +1414,24 @@ async function editImage({ prompt, sourcePath }) {
     };
   }
   const response = await fetchProvider(url, options, 240000);
-  const text = await response.text();
+  const text = await readBoundedResponseText(response, 16_000_000);
   if (!response.ok) {
     const hint = /images\/edits/.test(url) && response.status === 404
       ? " (this endpoint has no image-edit API)" : /images\/generations/.test(url) && response.status === 404
       ? " (this endpoint has no image-generation API)" : "";
-    throw new Error("Image endpoint returned HTTP " + response.status + hint + (text ? ": " + text.slice(0, 200) : ""));
+    throw new Error("Image endpoint returned HTTP " + response.status + hint + ". Check provider configuration and image endpoint support.");
   }
   let data;
   try { data = JSON.parse(text); } catch { throw new Error("Image endpoint returned a non-JSON response"); }
   const item = data?.data?.[0];
   if (item?.b64_json) return { buffer: Buffer.from(item.b64_json, "base64"), mime: "image/png" };
   if (item?.url) {
-    const img = await fetchProvider(item.url, {}, 120000);
-    if (!img.ok) throw new Error("Could not fetch the generated image (HTTP " + img.status + ")");
-    return { buffer: Buffer.from(await img.arrayBuffer()), mime: img.headers.get("content-type") || "image/png" };
+    const webResearch = require("./web");
+    const image = await webResearch.fetchPublicImage(item.url);
+    if (!image.buffer.length) throw new Error("Image service returned an empty image.");
+    return image;
   }
   throw new Error("Image endpoint returned no image data");
 }
 
-module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, readCompletionResponse, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, hasExactWalletNetwork, selectToolsForRequest };
+module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, readCompletionResponse, readBoundedResponseText, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, hasExactWalletNetwork, selectToolsForRequest };

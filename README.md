@@ -1,4 +1,4 @@
-# SONDERR v1.5.10
+# SONDERR v1.5.11
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.10 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.11 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -66,6 +66,12 @@ Starting with v1.5.10, the standard managed install checks the official GitHub R
 Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
+
+### Security hardening in v1.5.11
+
+Secret scrubbing now runs at shared output boundaries for chat text, nested tool events, saved conversation history, server-sent events, and JSON API responses. It recognizes common provider credentials, credential-labeled fields and URLs, and serialized call-shaped output. Provider error bodies are no longer echoed to chat, and provider/MCP response bodies and MCP protocol frames are size-bounded. Fake text or JSON that resembles a tool call is not treated as an action; only structured tool execution results count. The wallet's short-lived confirmation capability is retained only in its matching local confirmation card and is withheld from the model's tool-result context.
+
+Local credentials and MCP configuration use owner-only file permissions; Sonderr rejects symlinked credential/config paths and prevents MCP secrets from being embedded in command arguments or environment values. Provider redirects are blocked, and generated-image URLs are fetched only from public HTTPS destinations with DNS pinning, strict image types, and a 16 MB limit. These controls reduce accidental exposure but cannot guarantee perfect detection of every secret or model output—do not paste credentials into chat, and rotate any credential that may have been exposed.
 
 ## How it works
 
@@ -143,9 +149,9 @@ The agent layer connects configured model providers to workspace and integration
 
 ### Skills and tools (backend)
 
-Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 64 playbooks cover engineering, data, product, security, quality, Web3, and operations, including dedicated developer coaching, web-research, MCP connection, and faucet-claim workflows, a complete Sonderr product guide, wallet research, and Web3 earning.
+Skills are expert playbooks stored as Markdown files in `skills/` — one file per skill, no UI required. The harness reads lightweight metadata and selects up to two likely candidates for each request; it does not preload their full instructions. Sonderr loads a candidate only when its method materially helps, showing a `Load skill` activity while keeping the playbook text out of the UI card. It unloads the playbook when that workflow ends, or automatically with a visible `Unload skill` activity when a turn completes. Greetings and unrelated questions do not load skills. The 65 playbooks cover engineering, data, product, security, quality, Web3, and operations, including dedicated developer coaching, trading research, web-research, MCP connection, and faucet-claim workflows, a complete Sonderr product guide, wallet research, and Web3 earning.
 
-Sonderr Studios opens from the sidebar at `/studios` as a full-page workspace, not just a separate chat. Start a website, browser app, general project, Developer Program contribution, or responsible Bounty Program research space. Each project keeps a brief, milestones, progress, and an adjacent build discussion; website and app projects also include a workspace-file preview with desktop/mobile viewport controls. The preview is isolated and blocks network requests; it is for local front-end review, not external service or deployment verification. Studio projects persist as distinct sessions and can be reopened from Studios or Recents. The Studio board validates milestone IDs, preserves completion only for unchanged work, and uses a real structured tool action rather than printed pseudo-call text. The Plugin Hub also offers Sites and Code Review workflows, each with focused instructions that are included only when enabled for a chat.
+Sonderr Studios opens from the sidebar at `/studios` as a full-page workspace for websites, browser apps, general projects, Developer Program contributions, and responsible Bounty Program research. Its projects persist as distinct sessions and include validated milestone boards; Website and App projects also include an isolated local preview with desktop/mobile controls. The separate Trading page opens at `/trading` as a visual trading desk, not a chat. It provides current-source memecoin research, read-only wallet/portfolio context, comparisons, and an exact-contract swap form. The current swap executor supports direct Uniswap V3 pools on Base/Ethereum mainnet only; Solana memecoin swaps are not supported. The desk stages a short-lived quote and full review card; nothing is signed or broadcast without the user's separate confirmation. No copy trading or unattended execution is supported. The Plugin Hub also offers Sites and Code Review workflows, each with focused instructions included only when enabled for a chat.
 
 ### Kilo Gateway and free AI models
 
@@ -228,7 +234,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.10 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.11 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening

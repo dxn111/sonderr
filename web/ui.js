@@ -32,7 +32,8 @@ const state = {
   settings: null, providers: {}, models: [], modelsLoading: false, modelsError: "",
   sessions: [], session: null, mode: "ask", contextFiles: [], files: [], images: [], lastGeneralModel: "",
   sending: false, apiConfigured: false, anonymousFreeModels: false, workspace: "", nodeVersion: "", appVersion: "", onboarding: null,
-  plugins: [], activePluginId: "", surface: "chat", updateCheck: null
+  plugins: [], activePluginId: "", surface: "chat", updateCheck: null,
+  tradingAgentSession: null, tradingAgentHistory: [], tradingAgentBusy: false, tradingAgentRestorePromise: null, tradingRefreshTimer: null
 };
 const STUDIO_PHASES = {
   idea: { title: "Give the idea a shape", text: "Describe the user, problem, and smallest useful result. Studios turns a vague idea into a first milestone.", mode: "ask", prompt: "I have a project idea. Help me define who it is for, the core problem, and the smallest useful first milestone." },
@@ -98,6 +99,7 @@ function renderUpdateGate(result) {
   state.updateCheck = result || { status: "unavailable", message: "The official release status could not be verified." };
   const check = state.updateCheck;
   const gate = $("updateGate"), button = $("updateGateButton"), error = $("updateGateError");
+  gate.dataset.status = check.status || "unavailable";
   if (["current", "development"].includes(check.status)) { setUpdateGateActive(false); return; }
   setUpdateGateActive(true);
   error.hidden = true;
@@ -214,6 +216,7 @@ async function boot() {
     if (state.apiConfigured) loadModels(true);
     loadFiles();
     if (!state.onboarding.completed) openOnboarding();
+    else setTimeout(() => showSonderrV1Announcement(), 600);
   } catch {
     const rs = $("runtimeStatus");
     rs.className = "runtime bad"; rs.querySelector(".runtime-label").textContent = "Runtime unreachable";
@@ -278,10 +281,33 @@ function openOnboarding() {
 }
 
 /* ---------- models (automated discovery) ---------- */
+function showSonderrV1Announcement(force = false) {
+  const modal = $("sonderrV1Announcement");
+  let seen = false; try { seen = Boolean(localStorage.getItem("sonderr-v1-announcement-seen-3")); } catch {}
+  if (!modal || (!force && seen)) return;
+  modal.hidden = false;
+  window.pauseSonderrLaunch?.();
+  window.seekSonderrLaunch?.(0);
+  window.playSonderrLaunch?.();
+}
+function closeSonderrV1Announcement() {
+  const modal = $("sonderrV1Announcement");
+  if (modal) modal.hidden = true;
+  window.pauseSonderrLaunch?.();
+  try { localStorage.setItem("sonderr-v1-announcement-seen-3", "1"); } catch {}
+}
+function openAnnouncementsArchive() {
+  const modal = $("announcementsModal");
+  if (modal) modal.hidden = false;
+  window.pauseSonderrLaunch?.();
+  window.seekSonderrLaunch?.(0);
+  window.playSonderrLaunch?.();
+}
+
 function renderModelBtn() {
   const label = $("modelBtnLabel");
   if (state.modelsLoading) { label.textContent = "Discovering…"; return; }
-  if (!state.apiConfigured) { label.textContent = "Add API key"; return; }
+  if (!state.apiConfigured) { label.textContent = state.settings?.provider === "sonderr" ? "Sonderr-v1" : "Choose model"; return; }
   const active = state.settings?.model;
   const found = active && state.models.find(m => m.id === active);
   label.textContent = found ? found.label : (active || (state.models[0]?.id ? state.models[0].label : "Model"));
@@ -305,7 +331,14 @@ async function loadModels(silent) {
 }
 async function chooseModel(id, silent) {
   try {
-    await saveSettings({ model: id }, silent);
+    if (id === "sonderr-v1") {
+      await saveSettings({ provider: "sonderr", baseURL: "http://127.0.0.1:4174/v1", model: id }, true);
+      state.apiConfigured = true;
+      state.modelsError = "";
+      state.models = [{ id, label: "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters", local: true }];
+    } else {
+      await saveSettings({ model: id }, silent);
+    }
     if (!silent) toast("Model set to " + id);
   } catch (e) { if (!silent) toast(e.message); }
   renderModelBtn(); renderModelMenu(); renderSettingsModels?.();
@@ -316,24 +349,21 @@ function renderModelMenu() {
     list.innerHTML = '<div class="model-empty">Discovering models from your provider…</div>';
     foot.textContent = "Fetching /models"; return;
   }
-  if (!state.apiConfigured) {
-    list.innerHTML = '<div class="model-empty"><strong>No provider yet.</strong><br>Add your API key in Settings — Sonderr discovers the available models automatically and sorts them for you.</div>';
-    foot.textContent = "Open Settings to connect"; return;
-  }
-  if (state.modelsError) {
-    list.innerHTML = '<div class="model-empty"><strong>Could not load models.</strong><br>' + esc(state.modelsError) + "</div>";
-    foot.textContent = "Try the refresh button"; return;
-  }
   const active = state.settings?.model;
   const year = new Date().getFullYear();
-  const pool = state.mode === "vision" ? state.models.filter(m => m.vision) : state.models;
+  const discovered = state.models.filter(m => m.id !== "sonderr-v1");
+  const pool = state.mode === "vision" ? state.models.filter(m => m.vision) : [
+    { id: "sonderr-v1", label: "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters · local SLM", local: true },
+    ...discovered
+  ];
   list.innerHTML = pool.map(m => {
     const badges = [];
-    if (m.snapshot && Number(m.snapshot.slice(0, 4)) >= year) badges.push('<span class="mi-badge new">new</span>');
+    if (m.local && m.id === "sonderr-v1") { badges.push('<span class="mi-badge sonderr">SONDERR-V1</span>'); badges.push('<span class="mi-badge new">NEW</span>'); }
+    else if (m.snapshot && Number(m.snapshot.slice(0, 4)) >= year) badges.push('<span class="mi-badge new">new</span>');
     if (m.small) badges.push('<span class="mi-badge small">small</span>');
     if (m.free) badges.push('<span class="mi-badge free">free</span>');
     if (state.mode !== "vision" && m.vision) badges.push('<span class="mi-badge vision">vision</span>');
-    return '<button class="model-item' + (m.id === active ? " selected" : "") + '" role="option" aria-selected="' + (m.id === active) + '" data-id="' + esc(m.id) + '">' +
+    return '<button class="model-item' + (m.id === active ? " selected" : "") + '" role="option" aria-selected="' + (m.id === active) + '" data-id="' + esc(m.id) + '" data-provider="' + (m.id === "sonderr-v1" ? "sonderr" : "") + '">' +
       '<span class="mi-copy"><span class="mi-label">' + esc(m.label) + "</span><span class='mi-sub'>" + esc(m.id) + (m.snapshot ? " · " + m.snapshot : "") + "</span></span>" +
       badges.join("") + (m.id === active ? '<svg class="mi-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>' : "") +
       "</button>";
@@ -343,6 +373,7 @@ function renderModelMenu() {
   foot.textContent = state.modelsLoading ? "Fetching /models"
     : state.mode === "vision"
       ? pool.length + " vision model" + (pool.length === 1 ? "" : "s") + " · image input required"
+      : !state.apiConfigured ? "Sonderr-v1 · 0.6B · SLM · NEW"
       : state.anonymousFreeModels ? state.models.length + " free model" + (state.models.length === 1 ? "" : "s") + " · no key · rate-limited by IP"
       : state.models.length + " model" + (state.models.length === 1 ? "" : "s") + " · best & newest first";
 }
@@ -351,7 +382,7 @@ function renderModelMenu() {
 async function loadSessions() {
   try {
     const data = await api("/api/sessions");
-    state.sessions = data.sessions || [];
+    state.sessions = (data.sessions || []).filter(session => session.surface !== "trading");
     const list = $("sessionList");
     list.innerHTML = state.sessions.length ? "" : '<div class="empty-side">Your recent tasks will appear here.</div>';
     for (const s of state.sessions) {
@@ -394,6 +425,7 @@ function showInterruptedTaskPrompt(session) {
 async function openSession(id) {
   try {
     const data = await api("/api/sessions/" + id);
+    if (data.session.surface === "trading") { state.session = null; openTrading(); return true; }
     state.session = data.session;
     state.surface = state.session.surface === "studios" ? "studios" : "chat";
     setSurfacePath(state.surface);
@@ -437,7 +469,7 @@ function markActiveSession() {
   if (idx >= 0) document.querySelectorAll(".session")[idx]?.classList.add("active");
 }
 function setSurfacePath(surface, navigate = true) {
-  const target = surface === "studios" ? "/studios" : "/";
+  const target = surface === "studios" ? "/studios" : surface === "trading" ? "/trading" : "/";
   if (navigate && location.pathname !== target) history.pushState({ surface }, "", target);
 }
 function newTask(navigate = true) {
@@ -451,6 +483,7 @@ function newTask(navigate = true) {
   $("messages").hidden = true; $("messages").innerHTML = "";
   $("welcome").hidden = false;
   $("studiosHome").hidden = true;
+  $("tradeStudio").hidden = true;
   $("studiosProject").hidden = true;
   $("studioDiscussionHead").hidden = true;
   $("topbarTitle").textContent = "New task";
@@ -460,12 +493,17 @@ function newTask(navigate = true) {
 }
 function renderSurface() {
   const studios = state.surface === "studios";
+  const trading = state.surface === "trading";
   $("studiosBtn").setAttribute("aria-current", studios ? "page" : "false");
   $("studiosBtn").classList.toggle("active", studios);
-  $("input").placeholder = studios ? "Ask Sonderr Studios anything…" : "How can Sonderr help you today? Type / for commands.";
+  $("studiosBtn").setAttribute("aria-current", studios ? "page" : "false");
+  $("tradingBtn").setAttribute("aria-current", trading ? "page" : "false");
+  $("tradingBtn").classList.toggle("active", trading);
+  $("input").placeholder = studios ? "Ask Sonderr Studios anything…" : trading ? "Ask Sonderr about markets, risk, or your portfolio…" : "How can Sonderr help you today? Type / for commands.";
   $("studioBackBtn").hidden = !studios;
   $("studioNewBtn").hidden = !studios;
   document.body.classList.toggle("in-studios", studios);
+  document.body.classList.toggle("in-trading", trading);
 }
 function renderStudioRecents() {
   const recent = state.sessions.filter(session => session.surface === "studios").slice(0, 4);
@@ -515,31 +553,35 @@ async function createStudioProject(event) {
 function renderStudioProject() {
   const project = $("studiosProject");
   const discussion = $("studioDiscussionHead");
-  if (state.surface !== "studios" || !state.session) { project.hidden = true; discussion.hidden = true; return; }
+  const tradeStudio = $("tradeStudio");
+  if (state.surface !== "studios" || !state.session) { project.hidden = true; discussion.hidden = true; tradeStudio.hidden = true; return; }
   const sameProject = project.dataset.studioSessionId === state.session.id;
   const previousScrollTop = sameProject ? project.querySelector(".studio-rail-scroll")?.scrollTop || 0 : 0;
   const studio = state.session.studio || { track: "project", goal: "", milestones: [] };
+  tradeStudio.hidden = true;
   if (!studioLastSaved.has(state.session.id)) studioLastSaved.set(state.session.id, JSON.parse(JSON.stringify(studio)));
   const track = STUDIO_TRACKS[studio.track] || STUDIO_TRACKS.project;
   const milestones = studio.milestones || [];
   const done = milestones.filter(item => item.done).length;
   const percent = milestones.length ? Math.round(done / milestones.length * 100) : 0;
+  const nextMilestone = milestones.find(item => !item.done);
+  const nextMilestoneNumber = nextMilestone ? milestones.indexOf(nextMilestone) + 1 : milestones.length;
   const previewPath = String(studio.previewPath || "");
   const previewUrl = previewPath ? "/studio-preview/" + previewPath.split("/").map(encodeURIComponent).join("/") : "about:blank";
   const milestoneRows = milestones.map((item, index) => '<div class="studio-milestone-item' + (item.done ? ' done' : '') + '" data-milestone-row="' + esc(item.id) + '">' +
-    '<label class="studio-milestone-check"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>' +
+    '<span class="studio-milestone-index" aria-hidden="true">' + String(index + 1).padStart(2, "0") + '</span><label class="studio-milestone-check"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>' +
     '<div class="studio-milestone-actions"><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="up" aria-label="Move milestone up" title="Move up"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="down" aria-label="Move milestone down" title="Move down"' + (index === milestones.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" data-edit-milestone="' + esc(item.id) + '" aria-label="Edit milestone" title="Edit milestone">Edit</button><button type="button" data-remove-milestone="' + esc(item.id) + '" aria-label="Remove milestone" title="Remove milestone">×</button></div>' +
     '<form class="studio-milestone-editor" data-editor-for="' + esc(item.id) + '" hidden><input maxlength="120" required aria-label="Milestone text" value="' + esc(item.text) + '"><button type="submit">Save</button><button type="button" data-cancel-milestone="' + esc(item.id) + '">Cancel</button></form>' +
     '</div>').join("");
   project.hidden = false; discussion.hidden = false;
-  project.innerHTML = '<header class="studio-rail-head"><div class="studio-project-kicker">SONDERR STUDIOS <span>／</span> ' + esc(track.label) + '</div><h1 title="' + esc(state.session.title) + '">' + esc(state.session.title) + '</h1><div class="studio-rail-summary"><span>PROJECT PROGRESS</span><strong>' + percent + '%</strong></div><div class="studio-progress-track"><span style="width:' + percent + '%"></span></div></header>' +
+  project.innerHTML = '<header class="studio-rail-head"><div class="studio-project-kicker"><span class="studio-track-orb">✦</span> SONDERR STUDIOS <span>／</span> ' + esc(track.label) + '</div><h1 title="' + esc(state.session.title) + '">' + esc(state.session.title) + '</h1><div class="studio-rail-summary"><span>PROJECT MOMENTUM</span><strong>' + done + ' of ' + milestones.length + ' steps <b>·</b> ' + percent + '%</strong></div><div class="studio-progress-track"><span style="width:' + percent + '%"></span></div></header>' +
     '<div class="studio-rail-scroll"><div class="studio-project-label">PROJECT BRIEF</div>' +
     '<textarea id="studioGoalInput" rows="3" maxlength="500" aria-label="Project brief" placeholder="What should this project achieve?">' + esc(studio.goal || "") + '</textarea>' +
     '<button class="studio-save-goal" type="button">Save brief</button>' +
     '<div class="studio-milestone-heading"><strong>Milestones</strong><span>' + done + ' / ' + milestones.length + ' complete</span></div>' +
     '<div class="studio-milestones">' + (milestoneRows || '<div class="studio-milestones-empty">No milestones yet. Add one to give the project a clear next step.</div>') + '</div>' +
     '<form class="studio-add-milestone" id="studioAddMilestone"><input id="studioMilestoneText" maxlength="120" required aria-label="New milestone" placeholder="Add a milestone…"><button type="submit">+ Add</button></form>' +
-    '<div class="studio-project-actions"><button type="button" data-studio-action="explain">Explain this plan</button><button type="button" data-studio-action="plan">Plan next step</button><button type="button" data-studio-action="build">Build milestone</button><button type="button" data-studio-action="review">Review progress</button></div>' +
+    '<section class="studio-focus-card"><div class="studio-focus-kicker"><span>' + (nextMilestone ? 'UP NEXT' : 'MILESTONES COMPLETE') + '</span><small>' + (nextMilestone ? 'STEP ' + String(nextMilestoneNumber).padStart(2, "0") + ' / ' + String(milestones.length).padStart(2, "0") : 'READY TO REVIEW') + '</small></div><strong>' + esc(nextMilestone?.text || 'Take a final look at what you made.') + '</strong><p>' + (nextMilestone ? 'This is the next unfinished step in your project. Sonderr can inspect the workspace, work through it, and verify the result.' : 'Review the finished work, check the important details, and decide what—if anything—should happen next.') + '</p><button type="button" data-studio-action="' + (nextMilestone ? 'build-next' : 'review') + '">' + (nextMilestone ? 'Work on this step <span>→</span>' : 'Review this project <span>→</span>') + '</button></section>' +
     (["site", "app"].includes(studio.track) ? '<section class="studio-site-canvas"><div class="studio-site-canvas-head"><span>LIVE CANVAS</span><strong>' + (studio.track === "app" ? "App preview" : "Website preview") + '</strong><a id="studioPreviewOpen" href="' + esc(previewUrl) + '" target="_blank" rel="noopener"' + (previewPath ? '' : ' hidden') + '>Open ↗</a></div><form id="studioPreviewForm"><input id="studioPreviewPath" aria-label="Workspace path to preview page" placeholder="my-site/index.html" value="' + esc(previewPath) + '"><button type="submit">Preview</button></form><div class="studio-preview-tools"><span>LOCAL PREVIEW · NETWORK DISABLED</span><div><button type="button" data-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview-size="mobile" aria-pressed="false">Mobile</button><button type="button" id="studioPreviewReload"' + (previewPath ? '' : ' disabled') + ' aria-label="Reload preview" title="Reload preview">↻</button></div></div><div class="studio-preview-frame-wrap" id="studioPreviewWrap"><iframe id="studioPreviewFrame" title="' + (studio.track === "app" ? "App" : "Website") + ' preview" sandbox="allow-scripts" referrerpolicy="no-referrer" src="' + esc(previewUrl) + '"></iframe>' + (!previewPath ? '<div class="studio-preview-empty"><span>▧</span><strong>Your canvas is ready</strong><small>Build a page with Sites, then enter its workspace path here. Try <code>my-site/index.html</code>.</small></div>' : '') + '</div><button class="studio-sites-plugin" type="button">✦ Build with Sites</button><p class="studio-preview-note">This preview reads workspace files only. External network requests, forms, and publishing stay disabled.</p></section>' : '') +
     (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '') + '</div>';
   project.dataset.studioSessionId = state.session.id;
@@ -554,11 +596,15 @@ function renderStudioProject() {
   project.querySelectorAll(".studio-milestone-editor").forEach(form => { form.onsubmit = event => { event.preventDefault(); const current = latestStudio(), id = form.dataset.editorFor, text = form.querySelector("input").value.trim(); if (!text) return; updateStudioData({ ...current, milestones: current.milestones.map(item => item.id === id ? { ...item, text } : item) }); }; });
   project.querySelectorAll("[data-cancel-milestone]").forEach(button => { button.onclick = () => renderStudioProject(); });
   $("studioAddMilestone").onsubmit = event => { event.preventDefault(); const current = latestStudio(), text = $("studioMilestoneText").value.trim(); if (current.milestones.length >= 12) return toast("A Studio can hold up to 12 milestones"); if (text) updateStudioData({ ...current, milestones: [...current.milestones, { text, done: false }] }); };
-  project.querySelectorAll("[data-studio-action]").forEach(button => { button.onclick = () => {
-    const action = button.dataset.studioAction;
+  [...project.querySelectorAll("[data-studio-action]"), ...discussion.querySelectorAll("[data-studio-action]")].forEach(button => { button.onclick = () => {
+    const requestedAction = button.dataset.studioAction;
+    const action = requestedAction === "build-next" ? "build" : requestedAction;
     const phase = STUDIO_PHASES[action];
+    const targetMilestone = requestedAction === "build-next" ? (latestStudio().milestones || []).find(item => !item.done) : null;
     const prompt = action === "explain"
       ? "Explain this Studio project brief and each milestone in plain language. Say why each milestone matters, what a good completed result looks like, and how the milestones connect. Do not change the board."
+      : targetMilestone
+      ? 'Work on the next Studio milestone: "' + targetMilestone.text + '". Inspect the workspace first, then implement and verify this milestone. Update the Studio board only after confirming concrete progress. Project: ' + state.session.title + '. Goal: ' + (latestStudio().goal || "not written yet")
       : phase.prompt + " Project: " + state.session.title + ". Goal: " + (latestStudio().goal || "not written yet");
     setMode(phase?.mode || "ask"); $("input").value = prompt;
     autosize(); $("input").focus();
@@ -587,6 +633,429 @@ function renderStudioProject() {
       autosize(); $("input").focus();
     };
   }
+}
+function appendTradingAgentMessage(role, content, events = []) {
+  const list = $("tradeAgentMessages");
+  if (!list) return null;
+  const row = document.createElement("article"); row.className = "wallet-agent-message wallet-agent-" + role;
+  row.innerHTML = '<span class="wallet-agent-avatar">' + (role === "assistant" ? "S" : "You") + '</span><div class="wallet-agent-message-content"><span class="wallet-agent-speaker">' + (role === "assistant" ? "SONDERR AGENT" : "YOU") + '</span><div class="wallet-agent-text">' + (role === "assistant" ? renderMarkdown(content) : esc(content).replace(/\n/g, "<br>")) + '</div></div>';
+  if (role === "assistant" && events.length) {
+    const tools = document.createElement("div"); tools.className = "trade-ai-tools";
+    for (const event of events) {
+      let card = null;
+      if (event.type === "wallet_confirmation_expired") {
+        card = document.createElement("div"); card.className = "wallet-agent-expired-quote";
+        card.textContent = "A transaction review from an earlier app session is no longer active. Ask Agent to prepare a fresh quote before confirming.";
+      }
+      if (event.type === "wallet_confirmation") card = renderWalletConfirmation(event);
+      else if (event.type === "wallet_status") card = renderWalletStatus(event);
+      else if (event.type === "wallet_accounts") card = renderWalletAccounts(event);
+      else if (event.type === "wallet_market_snapshot") card = renderWalletMarketSnapshot(event);
+      else if (event.type === "wallet_portfolio") card = renderWalletPortfolio(event);
+      else if (event.type === "wallet_token_info") card = renderWalletTokenInfo(event);
+      else if (event.type === "wallet_activity") card = renderWalletActivity(event);
+      if (card) tools.appendChild(card);
+    }
+    if (tools.childElementCount) row.querySelector(".wallet-agent-message-content").appendChild(tools);
+  }
+  list.appendChild(row); list.scrollTop = list.scrollHeight;
+  return row;
+}
+function renderTradingAgentHistory() {
+  const list = $("tradeAgentMessages"); if (!list) return;
+  list.querySelectorAll(".wallet-agent-message").forEach(message => message.remove());
+  const history = state.tradingAgentHistory || [];
+  const welcome = $("tradeAgentWelcome"); if (welcome) welcome.hidden = history.length > 0;
+  if (!history.length) return;
+  for (const message of history) appendTradingAgentMessage(message.role, message.content, message.events || []);
+}
+async function restoreTradingAgent(root) {
+  if (state.tradingAgentHistory.length) { renderTradingAgentHistory(); return; }
+  let savedId = ""; try { savedId = sessionStorage.getItem("sonderr-trading-agent-session") || ""; } catch {}
+  if (!savedId) return;
+  try {
+    const data = await api("/api/sessions/" + encodeURIComponent(savedId)), session = data.session;
+    if (!session || session.surface !== "trading" || root !== $("tradeStudio")) return;
+    state.tradingAgentSession = session;
+    state.tradingAgentHistory = (session.messages || []).filter(message => ["user", "assistant"].includes(message.role) && message.content).slice(-60).map(message => ({ role: message.role, content: String(message.content), events: message.role === "assistant" ? (message.events || []).map(event => event.type === "wallet_confirmation" ? { type: "wallet_confirmation_expired" } : event) : [] }));
+    renderTradingAgentHistory();
+  } catch { try { sessionStorage.removeItem("sonderr-trading-agent-session"); } catch {} }
+}
+async function runTradingPrompt(prompt, agentMode = false) {
+  if (agentMode && state.tradingAgentRestorePromise) await state.tradingAgentRestorePromise;
+  const effectivePrompt = agentMode && $("tradeExecuteNetwork") ? String(prompt).replace(/\bselected network\b/gi, $("tradeExecuteNetwork").value === "base-mainnet" ? "Base Mainnet" : "Ethereum Mainnet") : prompt;
+  const output = $("tradeAiOutput"), result = $("tradeAiResult"), agentList = $("tradeAgentMessages");
+  if ((!agentMode && (!output || !result)) || (agentMode && !agentList) || state.sending) return;
+  let researchSession = agentMode ? state.tradingAgentSession : null, loadingRow = null;
+  state.sending = true; state.tradingAgentBusy = agentMode;
+  if (agentMode) {
+    const welcome = $("tradeAgentWelcome"); if (welcome) welcome.hidden = true;
+    state.tradingAgentHistory.push({ role: "user", content: effectivePrompt });
+    appendTradingAgentMessage("user", effectivePrompt);
+    loadingRow = document.createElement("article"); loadingRow.className = "wallet-agent-message wallet-agent-assistant wallet-agent-thinking";
+    loadingRow.innerHTML = '<span class="wallet-agent-avatar">S</span><div class="wallet-agent-message-content"><span class="wallet-agent-speaker">SONDERR AGENT</span><div class="wallet-agent-text"><span class="trade-ai-loading"><i></i> Thinking and checking your tools…</span></div></div>';
+    agentList.appendChild(loadingRow); agentList.scrollTop = agentList.scrollHeight;
+    $("tradeAgentInput").value = "";
+  } else {
+    output.hidden = false; result.innerHTML = '<div class="trade-ai-loading"><span></span> Researching with Sonderr…</div>';
+  }
+  try {
+    if (agentMode && !researchSession) {
+      let savedId = ""; try { savedId = sessionStorage.getItem("sonderr-trading-agent-session") || ""; } catch {}
+      if (savedId) { try { const prior = await api("/api/sessions/" + encodeURIComponent(savedId)); if (prior.session?.surface === "trading") researchSession = prior.session; } catch {} }
+    }
+    if (!researchSession) {
+      const created = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: agentMode ? "Sonderr Trading Agent" : "Trading research", surface: "trading" }) });
+      researchSession = created.session;
+      if (agentMode) { state.tradingAgentSession = researchSession; try { sessionStorage.setItem("sonderr-trading-agent-session", researchSession.id); } catch {} }
+    }
+    if (agentMode) state.tradingAgentSession = researchSession;
+    const response = await fetch("/api/sessions/" + encodeURIComponent(researchSession.id), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: effectivePrompt, mode: "ask", context: [], images: [], activePluginId: "", tradingAgent: agentMode })
+    });
+    if (!response.ok || !response.body) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Agent request failed (" + response.status + ")");
+    }
+    let buffer = "", finalMessage = "", finalEvents = [];
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let split;
+      while ((split = buffer.indexOf("\n\n")) >= 0) {
+        const raw = buffer.slice(0, split); buffer = buffer.slice(split + 2);
+        for (const line of raw.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          let event; try { event = JSON.parse(line.slice(6)); } catch { continue; }
+          if (event.event === "status" && event.text) {
+            if (agentMode && loadingRow) loadingRow.querySelector(".wallet-agent-text").textContent = event.text;
+            else result.innerHTML = '<div class="trade-ai-loading"><span></span>' + esc(event.text) + "</div>";
+          }
+          if (event.event === "tool_start") {
+            const labels = { web_search: "Checking current sources…", open_web_page: "Verifying a source…", web_research: "Cross-checking the research…", get_wallet_token_info: "Checking the exact token contract…", get_wallet_market_snapshot: "Checking live pool and liquidity data…", get_wallet_portfolio: "Reading your wallet portfolio…", get_wallet_accounts: "Reading your receive addresses…", prepare_wallet_swap: "Preparing the exact swap quote…", load_skill: "Loading the focused research guide…" };
+            if (agentMode && loadingRow) loadingRow.querySelector(".wallet-agent-text").textContent = labels[event.name] || "Sonderr is checking the evidence…";
+            else result.innerHTML = '<div class="trade-ai-loading"><span></span>' + esc(labels[event.name] || "Sonderr is checking the evidence…") + "</div>";
+          }
+          if (event.event === "final") { finalMessage = String(event.message || ""); finalEvents = Array.isArray(event.events) ? event.events : []; }
+          if (event.event === "error") throw new Error(event.error || "Agent request failed");
+        }
+      }
+    }
+    if (agentMode) {
+      loadingRow?.remove();
+      const answer = finalMessage || "Sonderr finished without a response.";
+      state.tradingAgentHistory.push({ role: "assistant", content: answer, events: finalEvents });
+      appendTradingAgentMessage("assistant", answer, finalEvents);
+    } else {
+      result.innerHTML = finalMessage ? '<div class="trade-ai-answer">' + renderMarkdown(finalMessage) + "</div>" : '<p class="trade-ai-empty">Sonderr finished without a research summary.</p>';
+      const tools = document.createElement("div"); tools.className = "trade-ai-tools";
+      for (const event of finalEvents) {
+        let card = null;
+        if (event.type === "wallet_confirmation") card = renderWalletConfirmation(event);
+        else if (event.type === "wallet_status") card = renderWalletStatus(event);
+        else if (event.type === "wallet_accounts") card = renderWalletAccounts(event);
+        else if (event.type === "wallet_market_snapshot") card = renderWalletMarketSnapshot(event);
+        else if (event.type === "wallet_portfolio") card = renderWalletPortfolio(event);
+        else if (event.type === "wallet_token_info") card = renderWalletTokenInfo(event);
+        else if (event.type === "wallet_activity") card = renderWalletActivity(event);
+        if (card) tools.appendChild(card);
+      }
+      if (tools.childElementCount) result.appendChild(tools);
+    }
+  } catch (error) {
+    if (agentMode) { loadingRow?.remove(); const text = error.message || "Could not complete that request."; state.tradingAgentHistory.push({ role: "assistant", content: text }); appendTradingAgentMessage("assistant", text); }
+    else result.innerHTML = '<div class="trade-ai-error">' + esc(error.message || "Research could not be completed.") + "</div>";
+  } finally {
+    if (!agentMode && researchSession?.id) await api("/api/trading/research-sessions/" + encodeURIComponent(researchSession.id), { method: "DELETE" }).catch(() => {});
+    state.sending = false; state.tradingAgentBusy = false;
+  }
+}
+function renderTradingPageLegacy() {
+  const root = $("tradeStudio");
+  root.hidden = false;
+  const title = state.session?.title || "Research desk";
+  root.innerHTML = '<header class="trade-studio-head"><div class="trade-studio-brand"><span class="trade-studio-mark">⌁</span><div><span>SONDERR <i>/</i> TRADING</span><h1>' + esc(title) + '</h1></div></div><div class="trade-live-badge"><i></i> Research desk <b>·</b> no auto-trading</div></header>' +
+    '<div class="trade-studio-grid"><main class="trade-studio-main">' +
+    '<section class="trade-intro-card"><div class="trade-intro-copy"><span class="trade-kicker">THINK CLEARLY. MOVE CAREFULLY.</span><h2>Turn market noise<br>into a <em>clear decision.</em></h2><p>Research, portfolio context, and downside scenarios in one focused workspace. Nothing trades from here automatically.</p></div><div class="trade-intro-orbit" aria-hidden="true"><span>◎</span><i></i><b></b><small></small></div></section>' +
+    '<section class="trade-research-card"><div class="trade-section-title"><div><span>01 / RESEARCH</span><h2>Start with a market question</h2></div><small>Current sources · clear timestamps</small></div><form class="trade-research-form" id="tradeResearchForm"><label>Asset or ticker<input id="tradeAsset" maxlength="48" required placeholder="e.g. SOL, ETH, or a contract address"></label><label>Network<select id="tradeNetwork"><option>Solana</option><option>Ethereum</option><option>Base</option><option>Network not sure</option></select></label><label>Horizon<select id="tradeHorizon"><option>24 hours</option><option selected>7 days</option><option>30 days</option><option>Long term</option></select></label><button type="submit"><span>⌕</span> Research</button></form><div class="trade-research-hint">You’ll get the evidence, what may change the picture, and what is still unknown—not a promised outcome.</div></section>' +
+    '<section class="trade-execute-card"><div class="trade-section-title"><div><span>02 / TRADE</span><h2>Trade with your Sonderr Wallet</h2></div><small>Base / Ethereum · exact contract required</small></div><p class="trade-trade-intro">Make a swap directly, or ask Sonderr to research the token first. Both paths use a live quote and an expiring transaction review.</p><form class="trade-execute-form" id="tradeExecuteForm"><label>Token contract<input id="tradeTokenAddress" required maxlength="80" placeholder="0x… exact token contract"></label><label>Network<select id="tradeExecuteNetwork"><option value="base-mainnet">Base Mainnet</option><option value="ethereum-mainnet">Ethereum Mainnet</option></select></label><label>Action<select id="tradeAction"><option value="buy">Buy with ETH</option><option value="sell">Sell memecoin</option></select></label><label>Amount<input id="tradeAmount" required inputmode="decimal" maxlength="80" placeholder="e.g. 0.01"></label><div class="trade-trade-buttons"><button type="submit" class="trade-manual-submit">Get live quote</button><button type="button" id="tradeAiTradeButton" class="trade-ai-submit">Research with AI first</button></div></form><p class="trade-research-hint">Manual quote is fetched directly from the selected network—no AI call. AI-first adds token, liquidity, and risk research. Neither path signs automatically: review the exact network, asset, amounts, route, slippage, and fees, then press Accept &amp; swap.</p><div id="tradeManualStatus" class="trade-manual-status" aria-live="polite"></div></section>' +
+    '<section class="trade-action-grid"><button type="button" class="trade-action-card" data-trade-prompt="Read my wallet portfolio across the configured supported networks. Show each network separately, estimated balances and values, data source and fetch time, what could be missing, and concentration risks. This is read-only; do not prepare any transaction."><span class="trade-action-icon wallet">◉</span><span class="trade-action-label">PORTFOLIO</span><strong>Understand my exposure</strong><small>Read-only wallet snapshot, asset mix, and valuation caveats.</small><b>Review portfolio <i>→</i></b></button><button type="button" class="trade-action-card" data-trade-prompt="Show my Sonderr Wallet receive addresses and current native balances across every configured network. Make clear which EVM networks share one address and that Solana uses a separate address. This is read-only; do not prepare a transaction. Do not expose private keys or backup data."><span class="trade-action-icon wallet">↙</span><span class="trade-action-label">RECEIVE</span><strong>Get my receive addresses</strong><small>Address and balance by network, shown in clear cards.</small><b>Show wallet addresses <i>→</i></b></button><button type="button" class="trade-action-card" data-trade-prompt="Compare two assets using current, cited evidence. Ask me which assets and time horizon if I have not provided them. Compare liquidity, volatility, catalysts, downside scenarios, and uncertainty. Do not recommend guaranteed returns or stage a trade."><span class="trade-action-icon compare">⇄</span><span class="trade-action-label">COMPARE</span><strong>Put two ideas side by side</strong><small>Evidence, trade-offs, and downside—not hype.</small><b>Compare assets <i>→</i></b></button><button type="button" class="trade-action-card" data-trade-prompt="Help me write a risk-aware thesis for a trade idea. Ask for the asset, network, time horizon, thesis, and maximum amount I can afford to lose. Separate facts from assumptions and include a clear invalidation condition. Do not stage a transaction."><span class="trade-action-icon thesis">⌁</span><span class="trade-action-label">THESIS</span><strong>Pressure-test an idea</strong><small>Thesis, counter-case, invalidation, and unknowns.</small><b>Build a decision brief <i>→</i></b></button></section>' +
+    '<section class="trade-ai-output" id="tradeAiOutput" hidden><div class="trade-section-title"><div><span>SONDERR RESEARCH</span><h2>Research result</h2></div><button type="button" id="tradeClearResult" class="trade-result-clear">Clear</button></div><div id="tradeAiResult" aria-live="polite"></div></section>' +
+    '<section class="trade-sizing-card"><div class="trade-section-title"><div><span>02 / POSITION PLANNER</span><h2>See the math before emotion</h2></div><small>Illustrative only · no order is created</small></div><form class="trade-sizing-form" id="tradeSizingForm"><label>Max loss budget ($)<input id="tradeRiskBudget" type="number" min="0" step="any" placeholder="e.g. 10"></label><label>Entry price ($)<input id="tradeEntry" type="number" min="0" step="any" placeholder="e.g. 100"></label><label>Invalidation price ($)<input id="tradeStop" type="number" min="0" step="any" placeholder="e.g. 95"></label><button type="submit">Calculate units</button></form><div class="trade-sizing-result" id="tradeSizingResult" aria-live="polite">Enter a risk budget and two prices to see the simple position-size math.</div><p class="trade-disclaimer">This arithmetic ignores fees, slippage, gaps, liquidity, taxes, and execution failures. An invalidation level is not a guaranteed stop or a maximum-loss guarantee.</p></section>' +
+    '</main><aside class="trade-studio-rail"><section class="trade-rail-card trade-guardrails"><span class="trade-rail-kicker">THE GUARDRAILS</span><h3>Decisions stay yours.</h3><ul><li><i>✓</i><span><b>Research first</b><small>Current sources and fetch times for claims that can change.</small></span></li><li><i>✓</i><span><b>Risk is visible</b><small>Downside and missing evidence belong in the same brief.</small></span></li><li><i>✓</i><span><b>No hidden execution</b><small>Every swap gets an exact review card and your separate confirmation.</small></span></li><li><i>✓</i><span><b>No profit promises</b><small>Scenarios are uncertain; estimates are labeled.</small></span></li></ul></section><section class="trade-rail-card trade-workflow"><span class="trade-rail-kicker">A BETTER PROCESS</span><div class="trade-workflow-step"><b>01</b><span><strong>Ask a precise question</strong><small>Asset · network · timeframe</small></span></div><div class="trade-workflow-step"><b>02</b><span><strong>Gather evidence</strong><small>Market · wallet · risk</small></span></div><div class="trade-workflow-step"><b>03</b><span><strong>Make your call</strong><small>Or decide to do nothing</small></span></div></section><div class="trade-risk-note"><span>ⓘ</span><p>Sonderr Wallet is experimental. Don’t use it as your primary wallet; keep only small amounts you can afford to lose.</p></div></aside></div>';
+  root.querySelector("#tradeResearchForm").onsubmit = event => {
+    event.preventDefault();
+    const asset = $("tradeAsset").value.trim(), network = $("tradeNetwork").value, horizon = $("tradeHorizon").value;
+    runTradingPrompt('Research the memecoin/token "' + asset + '" on ' + network + ' for a ' + horizon + ' horizon. Treat a ticker/name as unverified; if this is not an exact contract address, search for candidates and ask me to verify the exact contract before making token-specific on-chain claims. Use current cited sources and show fetch times. Cover liquidity, pool depth, volume, holder concentration when verifiable, contract/deployer risks, catalysts, volatility, downside cases, invalidation conditions, and unknowns. Separate facts from estimates. Do not promise returns, stage a swap, or execute a trade.');
+  };
+  const tradeInputs = () => ({ token: $("tradeTokenAddress").value.trim(), network: $("tradeExecuteNetwork").value, amount: $("tradeAmount").value.trim(), action: $("tradeAction").value });
+  root.querySelector("#tradeExecuteForm").onsubmit = async event => {
+    event.preventDefault();
+    const { token, network, amount, action } = tradeInputs(), button = root.querySelector(".trade-manual-submit"), status = $("tradeManualStatus");
+    if (!/^0x[\da-fA-F]{40}$/.test(token)) return toast("Enter the exact 0x token contract address");
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(amount) || Number(amount) <= 0) return toast("Enter a positive decimal amount");
+    button.disabled = true; button.textContent = "Fetching direct quote…"; status.classList.remove("error"); status.textContent = "Checking the exact token and direct pool on " + (network === "base-mainnet" ? "Base" : "Ethereum") + "…";
+    try {
+      const data = await api("/api/trading/manual-quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tokenAddress: token, network, action, amount }) });
+      const output = $("tradeAiOutput"), result = $("tradeAiResult"); output.hidden = false; result.replaceChildren();
+      const label = document.createElement("div"); label.className = "trade-manual-result-label"; label.textContent = "MANUAL WALLET QUOTE · NO AI CALL"; result.appendChild(label); result.appendChild(renderWalletConfirmation(data.draft));
+      status.textContent = "Live quote ready. Review the full transaction below.";
+      output.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) { status.textContent = error.message || "Could not prepare this quote."; status.classList.add("error"); }
+    finally { button.disabled = false; button.textContent = "Get live quote"; }
+  };
+  root.querySelector("#tradeAiTradeButton").onclick = () => {
+    const { token, network, amount, action } = tradeInputs();
+    if (!/^0x[\da-fA-F]{40}$/.test(token)) return toast("Enter the exact 0x token contract address");
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(amount) || Number(amount) <= 0) return toast("Enter a positive decimal amount");
+    const prompt = action === "buy"
+      ? `I explicitly request a live risk check and exact quote to buy memecoin contract ${token} on ${network} using ${amount} ETH. First inspect token details and metadata, direct-pool liquidity, available current market evidence, and downside risks. Do not claim that a token is safe or likely profitable. If a direct supported pool exists and all checks pass, use prepare_wallet_swap with the exact contract, network, and exact input amount to stage an expiring quote. Do not sign, approve, or broadcast; show the full confirmation card and wait for my separate click.`
+      : `I explicitly request a live risk check and exact quote to sell ${amount} units of memecoin contract ${token} on ${network} for ETH. First inspect token details, exact token decimals, wallet balance, direct-pool liquidity, current market evidence, and downside risks. Do not claim that a token is safe or likely profitable. If a direct supported pool exists and all checks pass, use prepare_wallet_swap with the exact amount converted to base units and selected network to stage an expiring quote. Do not sign, approve, or broadcast; show the full confirmation card and wait for my separate click.`;
+    runTradingPrompt("Trade memecoin: " + action.toUpperCase() + " token contract " + token + ". Fetch token details and liquidity first. " + prompt);
+  };
+  root.querySelectorAll("[data-trade-prompt]").forEach(button => button.onclick = () => runTradingPrompt(button.dataset.tradePrompt));
+  $("tradeClearResult").onclick = () => { $("tradeAiOutput").hidden = true; $("tradeAiResult").replaceChildren(); };
+  root.querySelector("#tradeSizingForm").onsubmit = event => {
+    event.preventDefault();
+    const risk = Number($("tradeRiskBudget").value), entry = Number($("tradeEntry").value), stop = Number($("tradeStop").value), delta = Math.abs(entry - stop);
+    const result = $("tradeSizingResult");
+    if (![risk, entry, stop].every(Number.isFinite) || risk <= 0 || entry <= 0 || stop <= 0 || delta <= 0) { result.textContent = "Enter positive values, with entry and invalidation at different prices."; result.classList.add("error"); return; }
+    const units = risk / delta, notional = units * entry;
+    if (!Number.isFinite(units) || !Number.isFinite(notional)) { result.textContent = "Those values are outside the calculator's supported range."; result.classList.add("error"); return; }
+    result.classList.remove("error");
+    result.innerHTML = '<span>Illustrative size</span><strong>' + units.toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' units</strong><small>About $' + notional.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' notional · before all fees and execution risk</small>';
+  };
+}
+function renderTradingPage() {
+  const root = $("tradeStudio");
+  root.hidden = false;
+  let network = "base-mainnet";
+  try { const stored = localStorage.getItem("sonderr-trading-network"); if (["base-mainnet", "ethereum-mainnet"].includes(stored)) network = stored; } catch {}
+  root.innerHTML = `
+    <div class="wallet-app-shell phantom-wallet-frame">
+      <section class="phantom-wallet-home" id="tradeWalletHome">
+        <header class="phantom-topbar"><button class="phantom-account" id="tradeReceiveBtn" type="button" aria-label="Show wallet address"><span class="phantom-account-icon">S</span><span><strong>Sonderr Wallet</strong><small id="tradeShortAddress">Loading wallet…</small></span><b>⌄</b></button><div class="phantom-top-actions"><label class="phantom-network"><span class="phantom-network-dot"></span><select id="tradeExecuteNetwork" aria-label="Select network"><option value="base-mainnet">Base</option><option value="ethereum-mainnet">Ethereum</option></select><i>⌄</i></label><button type="button" class="phantom-icon-button" id="tradeRefreshBtn" title="Refresh" aria-label="Refresh wallet">↻</button><button type="button" class="phantom-icon-button phantom-agent-button" id="tradeAgentOpen" aria-label="Open Sonderr Agent" title="Sonderr Agent">✦</button></div></header>
+        <main class="phantom-wallet-content">
+          <section class="phantom-balance"><div class="phantom-balance-label">TOTAL BALANCE <span class="wallet-live-dot"></span></div><h1 id="tradeTotalValue">Loading…</h1><p id="tradePortfolioChange">Fetching live balances and prices</p><div class="phantom-actions"><button id="tradeSendBtn" type="button"><i>↑</i><span>Send</span></button><button id="tradeReceiveAction" type="button"><i>↓</i><span>Receive</span></button><button id="tradeSwapFocus" type="button"><i>⇄</i><span>Swap</span></button><button type="button" id="tradeTokenSearchBtn"><i>⌕</i><span>Explore</span></button></div></section>
+          <div class="phantom-wallet-tabs"><button class="active" type="button" data-trade-tab="tokens">Tokens <span id="tradeAssetCount">—</span></button><button type="button" data-trade-tab="activity">Activity</button><button type="button" class="phantom-agent-tab" id="tradeAgentTab">Agent <span>AI</span></button></div>
+          <section class="phantom-token-panel" id="tradeTokensPanel"><div class="phantom-token-heading"><strong>Your assets</strong><button type="button" id="tradeRefreshSmall" aria-label="Refresh assets">↻</button></div><div id="tradeAssetList" class="wallet-asset-rows"><div class="wallet-empty-state"><i></i><span>Loading your wallet…</span></div></div><p class="wallet-data-footnote" id="tradePortfolioNote">USD values are estimates and may be incomplete.</p><small class="phantom-updated" id="tradeUpdatedAt">Waiting for wallet data</small></section>
+          <section class="phantom-activity-panel" id="tradeActivityPanel" hidden><div class="phantom-token-heading"><strong>Recent activity</strong><button type="button" id="tradeActivityRefresh" aria-label="Refresh activity">↻</button></div><div id="tradeActivityList" class="phantom-activity-list"><div class="wallet-empty-state">Recent transactions appear here.</div></div><small id="tradeActivityUpdated" class="phantom-updated">Activity is read from a public explorer index.</small></section>
+          <section class="wallet-research-panel phantom-discovery" id="tradeResearchPanel" hidden><div class="wallet-panel-heading"><div><span class="wallet-eyebrow">LIVE DEX LISTINGS</span><h2>Discover tokens</h2></div><button type="button" id="tradeDiscoveryRefresh" aria-label="Refresh token discovery">↻</button></div><form id="tradeDiscoveryForm" class="phantom-discovery-form"><input id="tradeDiscoverQuery" maxlength="100" placeholder="Search name, symbol, or contract" aria-label="Search live tokens"><button type="submit">Search</button></form><p class="phantom-discovery-note">Showing <span id="tradeDiscoveryNetwork">Base Mainnet</span> listings. Unvetted tokens can be scams or impossible to sell; confirm the exact contract. Only tokens with a supported direct swap route can be quoted.</p><div class="phantom-discovery-results" id="tradeDiscoveryList" aria-live="polite"><div class="wallet-empty-state">Search a token or load recently profiled listings.</div></div><details class="phantom-agent-research"><summary>Ask Agent for deeper research</summary><form id="tradeResearchForm" class="wallet-research-form"><input id="tradeAsset" required maxlength="48" placeholder="Token name, ticker, or exact contract" aria-label="Token or market question"><select id="tradeNetwork"><option>Base</option><option>Ethereum</option><option>Solana</option><option>Network not sure</option></select><select id="tradeHorizon" aria-label="Research horizon"><option>24 hours</option><option selected>7 days</option><option>30 days</option><option>Long term</option></select><button type="submit">Research <span>→</span></button></form></details></section>
+          <section class="trade-ai-output wallet-ai-output" id="tradeAiOutput" hidden><div class="wallet-panel-heading"><div><span class="wallet-eyebrow">SONDERR RESEARCH</span><h2>Research result</h2></div><button type="button" id="tradeClearResult" class="trade-result-clear">Clear</button></div><div id="tradeAiResult" aria-live="polite"></div></section>
+          <div class="phantom-safety-note">Experimental wallet · verify every network and transaction.</div>
+        </main>
+      </section>
+      <section class="phantom-swap-screen" id="tradeSwapPanel" hidden><header class="phantom-swap-header"><button type="button" id="tradeSwapClose" aria-label="Back to wallet">‹</button><strong>Swap</strong><button type="button" id="tradeSwapRefresh" aria-label="Refresh quote">↻</button></header><div class="phantom-swap-body"><label class="phantom-swap-network"><span class="phantom-network-dot"></span><select id="tradeSwapNetwork" aria-label="Swap network"><option value="base-mainnet">Base Mainnet</option><option value="ethereum-mainnet">Ethereum Mainnet</option></select><i>⌄</i></label><div class="wallet-swap-tabs"><button type="button" class="active" data-trade-action="buy">Buy</button><button type="button" data-trade-action="sell">Sell</button></div><form class="wallet-swap-form" id="tradeExecuteForm"><label class="wallet-token-input"><span id="tradeAmountLabel">You pay</span><div><input id="tradeAmount" required inputmode="decimal" maxlength="80" placeholder="0.00" aria-label="Trade amount"><select id="tradeAction" aria-label="Asset to trade"><option value="buy">ETH</option><option value="sell">TOKEN</option></select></div><small id="tradeAmountHint">ETH · on selected network</small></label><div class="wallet-swap-direction">↓</div><label class="wallet-token-input wallet-token-input-target"><span id="tradeReceiveLabel">You receive</span><div><input id="tradeTokenAddress" required maxlength="80" placeholder="Paste token contract" aria-label="Exact token contract"><span class="wallet-token-symbol" id="tradeTokenSymbol">TOKEN</span></div><small id="tradeTokenHint">Exact contract · no ticker guessing</small></label><button type="submit" class="trade-manual-submit wallet-swap-submit">Get live quote</button><button type="button" id="tradeAiTradeButton" class="trade-ai-submit wallet-swap-ai">Research token with AI first</button><div id="tradeManualStatus" class="trade-manual-status" aria-live="polite"></div></form><p class="wallet-swap-note"><span>ⓘ</span> Review the quote, route, slippage, amount, and fees before accepting. Sonderr does not sign or broadcast without your confirmation.</p><section class="wallet-swap-security"><span>⌑</span><div><strong>You stay in control</strong><small>Only your explicit confirmation can sign and broadcast.</small></div></section></div></section>
+      <div class="wallet-agent-backdrop" id="tradeAgentBackdrop" hidden></div><aside class="wallet-agent-drawer" id="tradeAgentDrawer" aria-label="Sonderr trading agent" hidden><header class="wallet-agent-header"><span class="wallet-agent-avatar">S</span><div><strong>Sonderr Agent</strong><small><i></i> Wallet-aware · research enabled</small></div><button type="button" id="tradeAgentNew" title="New conversation" aria-label="New conversation">＋</button><button type="button" id="tradeAgentClose" title="Close Agent" aria-label="Close Agent">×</button></header><div class="wallet-agent-messages" id="tradeAgentMessages"><div class="wallet-agent-welcome" id="tradeAgentWelcome"><span class="wallet-agent-welcome-mark">✦</span><h2>Your wallet’s<br>research partner.</h2><p>Ask about a token, your balance, market conditions, or a trade. I can research and prepare an exact swap quote for you to review.</p><div class="wallet-agent-suggestions"><button type="button" data-agent-prompt="Check my wallet balances on the selected network. Use live wallet data, show the source and fetch time, and tell me what could be missing.">Check my wallet</button><button type="button" data-agent-prompt="Help me research a token. Ask me for the exact contract and network if I have not supplied them. Verify live liquidity and risks; do not prepare a trade yet.">Research a token</button><button type="button" data-agent-prompt="Explain how swaps work here, what fees and slippage mean, and exactly what I will need to review before a transaction can be sent.">How swaps work</button></div></div></div><form class="wallet-agent-composer" id="tradeAgentForm"><textarea id="tradeAgentInput" rows="1" maxlength="8000" placeholder="Ask your trading agent…" aria-label="Message Sonderr Agent"></textarea><div class="wallet-agent-composer-bottom"><span>Agent can prepare trades · your confirmation is required</span><button type="submit" id="tradeAgentSend" aria-label="Send message">↑</button></div></form><div class="wallet-agent-disclaimer">AI can make mistakes. Verify token contracts, networks, and every transaction.</div></aside>
+      <dialog class="wallet-action-modal" id="tradeReceiveModal"><form method="dialog"><button class="wallet-modal-close" aria-label="Close">×</button><span class="wallet-modal-icon">↙</span><span class="wallet-eyebrow">RECEIVE ASSETS</span><h2>Your wallet address</h2><p>Only receive assets on the selected network. EVM networks share the same address.</p><div class="wallet-address-box" id="tradeReceiveAddress">Loading…</div><div class="wallet-address-network" id="tradeReceiveNetwork">—</div><button type="button" id="tradeCopyAddress" class="wallet-primary-action">Copy address</button></form></dialog>
+      <dialog class="wallet-action-modal" id="tradeSendModal"><form id="tradeSendForm"><button type="button" class="wallet-modal-close" id="tradeSendClose" aria-label="Close">×</button><span class="wallet-modal-icon">↗</span><span class="wallet-eyebrow">SEND FROM YOUR WALLET</span><h2>Send ETH</h2><p>Prepare a transaction on the selected network. Review and confirm it in the next step.</p><label class="wallet-modal-field">Recipient address<input id="tradeSendTo" required maxlength="100" placeholder="0x…"></label><label class="wallet-modal-field">Amount<input id="tradeSendAmount" required inputmode="decimal" maxlength="80" placeholder="0.00 ETH"></label><button type="submit" class="wallet-primary-action wallet-send-prepare">Review transaction</button><small class="wallet-modal-network" id="tradeSendNetwork">Base Mainnet · native ETH</small></form></dialog>
+    </div>`;
+
+  state.tradingAgentRestorePromise = restoreTradingAgent(root).finally(() => { state.tradingAgentRestorePromise = null; });
+  const networkSelect = $("tradeExecuteNetwork");
+  networkSelect.value = network;
+  let portfolioRequest = null;
+  const refresh = () => {
+    if (!portfolioRequest) portfolioRequest = refreshTradingPortfolio(root).finally(() => { portfolioRequest = null; });
+    return portfolioRequest;
+  };
+  networkSelect.onchange = () => { try { localStorage.setItem("sonderr-trading-network", networkSelect.value); } catch {} $("tradeSwapNetwork").value = networkSelect.value; refresh(); if (!$("tradeResearchPanel").hidden) loadDiscovery($("tradeDiscoverQuery").value.trim()); if (!$("tradeActivityPanel").hidden) loadActivity(); };
+  $("tradeSwapNetwork").value = networkSelect.value;
+  $("tradeSwapNetwork").onchange = () => { networkSelect.value = $("tradeSwapNetwork").value; refresh(); };
+  $("tradeRefreshBtn").onclick = refresh; $("tradeRefreshSmall").onclick = refresh;
+  if (state.tradingRefreshTimer) clearInterval(state.tradingRefreshTimer);
+  state.tradingRefreshTimer = setInterval(() => {
+    if (document.hidden || state.surface !== "trading" || !$('tradeSwapPanel').hidden) return;
+    refresh();
+  }, 60_000);
+  const openSwap = () => { $("tradeWalletHome").hidden = true; $("tradeSwapPanel").hidden = false; $("tradeSwapNetwork").value = networkSelect.value; };
+  const closeSwap = () => { $("tradeSwapPanel").hidden = true; $("tradeWalletHome").hidden = false; };
+  let discoverySequence = 0;
+  const loadDiscovery = async (query = "") => {
+    const sequence = ++discoverySequence, list = $("tradeDiscoveryList"), selectedNetwork = networkSelect.value;
+    $("tradeDiscoveryNetwork").textContent = selectedNetwork === "base-mainnet" ? "Base Mainnet" : "Ethereum Mainnet";
+    list.innerHTML = '<div class="wallet-empty-state"><i></i><span>' + (query ? "Searching live listings…" : "Loading recently profiled tokens…") + '</span></div>';
+    try {
+      const data = await api("/api/trading/discover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ network: selectedNetwork, query }) });
+      if (sequence !== discoverySequence || root.hidden || $("tradeResearchPanel").hidden) return;
+      const discovery = data.discovery, usd = value => { if (value == null || !Number.isFinite(Number(value))) return "Price unavailable"; const amount = Number(value); return amount > 0 && amount < 0.000001 ? "<$0.000001" : "$" + amount.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 }); }, compactUsd = value => value == null || !Number.isFinite(Number(value)) ? "unknown" : "$" + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      list.innerHTML = discovery.tokens.length ? discovery.tokens.map(token => {
+        const activity = token.swaps24h ? '24h buys/sells ' + (token.swaps24h.buys ?? '—') + '/' + (token.swaps24h.sells ?? '—') : '24h activity unknown';
+        const poolAge = token.pairCreatedAt ? 'pool since ' + new Date(token.pairCreatedAt).toLocaleDateString() : 'pool age unknown';
+        const signals = (token.riskSignals || []).map(signal => '<span class="phantom-risk-signal">' + esc(signal) + '</span>').join('');
+        const poolLink = token.pairUrl ? '<a href="' + esc(token.pairUrl) + '" target="_blank" rel="noopener noreferrer">Pool ↗</a>' : '';
+        return '<article class="phantom-discovery-token"><span class="phantom-discovery-icon">' + esc(String(token.symbol || "?").slice(0, 1).toUpperCase()) + '</span><span class="phantom-discovery-main"><strong>' + esc(token.name) + '</strong><small title="' + esc(token.address) + '">' + esc(token.symbol) + ' · ' + esc(token.address.slice(0, 6) + "…" + token.address.slice(-4)) + ' <button type="button" class="phantom-copy-contract" data-copy-contract="' + esc(token.address) + '">Copy contract</button></small><small>' + esc(token.dex) + ' · liquidity ' + esc(compactUsd(token.liquidityUsd)) + ' · 24h volume ' + esc(compactUsd(token.volume24hUsd)) + '</small><small>' + esc(activity) + ' · ' + esc(poolAge) + '</small>' + (signals ? '<span class="phantom-risk-signals">' + signals + '</span>' : '') + '</span><span class="phantom-discovery-value">' + esc(usd(token.priceUsd)) + '<button type="button" data-discover-add="' + esc(token.address) + '">Check route</button>' + poolLink + '</span></article>';
+      }).join("") : '<div class="wallet-empty-state">' + (query ? "No matching listed tokens found on this network." : "No recent profiles have pools indexed here yet. Search by token name, symbol, or contract.") + '</div>';
+      list.dataset.source = discovery.source + " · " + new Date(discovery.fetchedAt).toLocaleTimeString();
+    } catch (error) {
+      if (sequence !== discoverySequence) return;
+      list.innerHTML = '<div class="wallet-empty-state phantom-discovery-error">' + esc(error.message || "Token discovery is unavailable.") + '</div>';
+    }
+  };
+  $("tradeSwapFocus").onclick = openSwap;
+  $("tradeSwapClose").onclick = closeSwap;
+  $("tradeSwapRefresh").onclick = refresh;
+  $("tradeTokenSearchBtn").onclick = () => { $("tradeResearchPanel").hidden = !$("tradeResearchPanel").hidden; if (!$("tradeResearchPanel").hidden) { $("tradeDiscoverQuery").focus(); loadDiscovery($("tradeDiscoverQuery").value.trim()); } };
+  $("tradeDiscoveryForm").onsubmit = event => { event.preventDefault(); const query = $("tradeDiscoverQuery").value.trim(); if (query.length === 1) return toast("Type at least two characters, or paste a full contract address"); loadDiscovery(query); };
+  $("tradeDiscoveryRefresh").onclick = () => loadDiscovery($("tradeDiscoverQuery").value.trim());
+  $("tradeDiscoveryList").onclick = async event => {
+    const copy = event.target.closest("[data-copy-contract]");
+    if (copy) { try { await navigator.clipboard.writeText(copy.dataset.copyContract); toast("Exact contract address copied"); } catch { toast("Could not copy the contract address"); } return; }
+    const button = event.target.closest("[data-discover-add]"); if (!button) return;
+    $("tradeTokenAddress").value = button.dataset.discoverAdd; openSwap();
+  };
+  root.querySelectorAll("[data-trade-action]").forEach(button => button.onclick = () => {
+    const sell = button.dataset.tradeAction === "sell";
+    root.querySelectorAll("[data-trade-action]").forEach(item => item.classList.toggle("active", item === button));
+    $("tradeAction").value = sell ? "sell" : "buy";
+    $("tradeAmountLabel").textContent = sell ? "Amount to sell" : "You pay";
+    $("tradeReceiveLabel").textContent = sell ? "Token contract to sell" : "Token contract to buy";
+    $("tradeAmountHint").textContent = sell ? "Token quantity · set exact contract below" : "ETH · on selected network";
+    $("tradeTokenHint").textContent = sell ? "Output asset is ETH · selected network" : "Exact contract · no ticker guessing";
+    $("tradeTokenAddress").placeholder = sell ? "0x… token you own" : "Paste token contract";
+    $("tradeTokenSymbol").textContent = sell ? "ETH" : "TOKEN";
+  });
+  root.querySelectorAll("[data-trade-tab]").forEach(button => button.onclick = () => {
+    root.querySelectorAll("[data-trade-tab]").forEach(item => item.classList.toggle("active", item === button));
+    const tab = button.dataset.tradeTab;
+    $("tradeTokensPanel").hidden = tab !== "tokens";
+    $("tradeActivityPanel").hidden = tab !== "activity";
+    if (tab === "activity") loadActivity();
+  });
+  let activityRequest = null;
+  const loadActivity = () => {
+    if (activityRequest) return activityRequest;
+    const list = $("tradeActivityList"), selected = networkSelect.value;
+    list.innerHTML = '<div class="wallet-empty-state"><i></i><span>Loading recent activity…</span></div>';
+    activityRequest = api("/api/trading/activity", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ network: selected }) }).then(({ activity }) => {
+      if (networkSelect.value !== selected || $("tradeActivityPanel").hidden) return;
+      const rows = activity.transactions || [], address = String(activity.address || "").toLowerCase();
+      list.innerHTML = rows.length ? rows.map(tx => {
+        const outgoing = String(tx.from || "").toLowerCase() === address;
+        const value = Number(tx.valueNative);
+        const detail = value > 0 ? (outgoing ? "Sent" : "Received") + " " + value.toLocaleString(undefined, { maximumFractionDigits: 6 }) + " ETH" : "Onchain transaction";
+        const peer = outgoing ? tx.to : tx.from, peerLabel = peer ? (outgoing ? "To " : "From ") + peer.slice(0, 6) + "…" + peer.slice(-4) : (tx.method || "Wallet activity");
+        const time = tx.timestamp && Number.isFinite(Date.parse(tx.timestamp)) ? new Date(tx.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Time unavailable";
+        const hash = String(tx.hash || ""), failed = tx.status === "failed";
+        return '<article class="phantom-activity-row"><span class="phantom-activity-icon ' + (failed ? 'failed' : outgoing ? 'outgoing' : 'incoming') + '">' + (failed ? '!' : outgoing ? '↗' : '↙') + '</span><span class="phantom-activity-main"><strong>' + esc(detail) + '</strong><small>' + esc(peerLabel) + ' · ' + esc(time) + '</small></span><span class="phantom-activity-state ' + (failed ? 'failed' : '') + '">' + esc(failed ? "Failed" : "View") + (tx.explorerUrl && !failed ? '<a href="' + esc(tx.explorerUrl) + '" target="_blank" rel="noopener noreferrer" aria-label="View transaction in block explorer">↗</a>' : '') + '</span></article>';
+      }).join("") : '<div class="wallet-empty-state">No recent indexed activity on this network.</div>';
+      $("tradeActivityUpdated").textContent = (activity.source || "Public explorer index") + (activity.fetchedAt ? " · " + new Date(activity.fetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "") + ". Token-level details may be incomplete.";
+    }).catch(error => {
+      if (!$("tradeActivityPanel").hidden) list.innerHTML = '<div class="wallet-empty-state phantom-discovery-error">' + esc(error.message || "Could not load activity.") + '</div>';
+    }).finally(() => { activityRequest = null; });
+    return activityRequest;
+  };
+  $("tradeActivityRefresh").onclick = loadActivity;
+  $("tradeReceiveAction").onclick = openReceive;
+  $("tradeReceiveBtn").onclick = openReceive;
+  const showAgent = () => { $("tradeAgentBackdrop").hidden = false; $("tradeAgentDrawer").hidden = false; requestAnimationFrame(() => $("tradeAgentInput").focus()); };
+  const hideAgent = () => { $("tradeAgentBackdrop").hidden = true; $("tradeAgentDrawer").hidden = true; };
+  $("tradeAgentOpen").onclick = showAgent; $("tradeAgentTab").onclick = showAgent; $("tradeAgentClose").onclick = hideAgent; $("tradeAgentBackdrop").onclick = hideAgent;
+  $("tradeAgentNew").onclick = () => {
+    if (state.sending) return;
+    state.tradingAgentSession = null; state.tradingAgentHistory = [];
+    try { sessionStorage.removeItem("sonderr-trading-agent-session"); } catch {}
+    $("tradeAgentMessages").querySelectorAll(".wallet-agent-message").forEach(message => message.remove()); $("tradeAgentWelcome").hidden = false;
+    $("tradeAgentInput").focus();
+  };
+  $("tradeAgentForm").onsubmit = async event => {
+    event.preventDefault(); const text = $("tradeAgentInput").value.trim();
+    if (!text || state.sending) return;
+    $("tradeAgentSend").disabled = true;
+    await runTradingPrompt(text, true);
+    $("tradeAgentSend").disabled = false; $("tradeAgentInput").focus();
+  };
+  root.querySelectorAll("[data-agent-prompt]").forEach(button => button.onclick = () => { showAgent(); runTradingPrompt(button.dataset.agentPrompt, true); });
+  $("tradeAgentInput").addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("tradeAgentForm").requestSubmit(); } });
+  $("tradeSendBtn").onclick = () => { $("tradeSendNetwork").textContent = (networkSelect.value === "base-mainnet" ? "Base" : "Ethereum") + " Mainnet · native ETH"; $("tradeSendModal").showModal(); };
+  $("tradeSendClose").onclick = () => $("tradeSendModal").close();
+  $("tradeCopyAddress").onclick = async () => { try { await navigator.clipboard.writeText($("tradeReceiveAddress").dataset.address || ""); $("tradeCopyAddress").textContent = "Copied"; setTimeout(() => { $("tradeCopyAddress").textContent = "Copy address"; }, 1500); } catch { toast("Could not copy the address"); } };
+  async function openReceive() {
+    const dialog = $("tradeReceiveModal");
+    try {
+      const data = await api("/api/wallet"), selected = networkSelect.value, account = (data.wallet?.accounts || []).find(item => item.chain === "evm" && item.networkId === selected);
+      if (!account?.address) throw new Error("Create a local EVM wallet in Settings before receiving on this network.");
+      $("tradeReceiveAddress").textContent = account.address; $("tradeReceiveAddress").dataset.address = account.address;
+      $("tradeReceiveNetwork").textContent = selected === "base-mainnet" ? "Base Mainnet · ETH and ERC-20 tokens" : "Ethereum Mainnet · ETH and ERC-20 tokens";
+      dialog.showModal();
+    } catch (error) { toast(error.message || "Wallet address unavailable"); }
+  }
+  refresh();
+
+  root.querySelector("#tradeResearchForm").onsubmit = event => {
+    event.preventDefault();
+    const asset = $("tradeAsset").value.trim(), selectedNetwork = $("tradeNetwork").value, horizon = $("tradeHorizon").value;
+    runTradingPrompt('Research the memecoin/token "' + asset + '" on ' + selectedNetwork + ' for a ' + horizon + ' horizon. Treat a ticker/name as unverified; if this is not an exact contract address, search for candidates and ask me to verify the exact contract before making token-specific on-chain claims. Use current cited sources and show fetch times. Cover liquidity, pool depth, volume, holder concentration when verifiable, contract/deployer risks, catalysts, volatility, downside cases, invalidation conditions, and unknowns. Separate facts from estimates. Do not promise returns, stage a swap, or execute a trade.');
+  };
+  const tradeInputs = () => ({ token: $("tradeTokenAddress").value.trim(), network: networkSelect.value, amount: $("tradeAmount").value.trim(), action: $("tradeAction").value });
+  root.querySelector("#tradeExecuteForm").onsubmit = async event => {
+    event.preventDefault();
+    const { token, network, amount, action } = tradeInputs(), button = root.querySelector(".trade-manual-submit"), status = $("tradeManualStatus");
+    if (!/^0x[\da-fA-F]{40}$/.test(token)) return toast("Enter the exact 0x token contract address");
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(amount) || Number(amount) <= 0) return toast("Enter a positive decimal amount");
+    button.disabled = true; button.textContent = "Fetching direct quote…"; status.classList.remove("error"); status.textContent = "Checking the exact token and direct pool on " + (network === "base-mainnet" ? "Base" : "Ethereum") + "…";
+    try {
+      const data = await api("/api/trading/manual-quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tokenAddress: token, network, action, amount }) });
+      const output = $("tradeAiOutput"), result = $("tradeAiResult"); output.hidden = false; result.replaceChildren();
+      const label = document.createElement("div"); label.className = "trade-manual-result-label"; label.textContent = "MANUAL WALLET QUOTE · NO AI CALL"; result.appendChild(label); result.appendChild(renderWalletConfirmation(data.draft));
+      status.textContent = "Live quote ready. Review the full transaction below."; output.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) { status.textContent = error.message || "Could not prepare this quote."; status.classList.add("error"); }
+    finally { button.disabled = false; button.textContent = "Get live quote"; }
+  };
+  $("tradeAiTradeButton").onclick = () => {
+    const { token, network, amount, action } = tradeInputs();
+    if (!/^0x[\da-fA-F]{40}$/.test(token)) return toast("Enter the exact 0x token contract address");
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(amount) || Number(amount) <= 0) return toast("Enter a positive decimal amount");
+    const prompt = action === "buy"
+      ? `I explicitly request a live risk check and exact quote to buy memecoin contract ${token} on ${network} using ${amount} ETH. First inspect token details and metadata, direct-pool liquidity, available current market evidence, and downside risks. Do not claim that a token is safe or likely profitable. If a direct supported pool exists and all checks pass, use prepare_wallet_swap with the exact contract, network, and exact input amount to stage an expiring quote. Do not sign, approve, or broadcast; show the full confirmation card and wait for my separate click.`
+      : `I explicitly request a live risk check and exact quote to sell ${amount} units of memecoin contract ${token} on ${network} for ETH. First inspect token details, exact token decimals, wallet balance, direct-pool liquidity, current market evidence, and downside risks. Do not claim that a token is safe or likely profitable. If a direct supported pool exists and all checks pass, use prepare_wallet_swap with the exact amount converted to base units and selected network to stage an expiring quote. Do not sign, approve, or broadcast; show the full confirmation card and wait for my separate click.`;
+    showAgent(); runTradingPrompt("Trade memecoin: " + action.toUpperCase() + " token contract " + token + ". Fetch token details and liquidity first. " + prompt, true);
+  };
+  root.querySelectorAll("[data-trade-prompt]").forEach(button => button.onclick = () => runTradingPrompt(button.dataset.tradePrompt));
+  $("tradeClearResult").onclick = () => { $("tradeAiOutput").hidden = true; $("tradeAiResult").replaceChildren(); };
+  $("tradeSendForm").onsubmit = async event => {
+    event.preventDefault(); const button = root.querySelector(".wallet-send-prepare"), network = networkSelect.value, amount = $("tradeSendAmount").value.trim(), to = $("tradeSendTo").value.trim();
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(amount) || Number(amount) <= 0) return toast("Enter a positive ETH amount");
+    button.disabled = true; button.textContent = "Preparing review…";
+    try {
+      const data = await api("/api/trading/manual-send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ network, to, amount }) });
+      $("tradeSendModal").close(); $("tradeSendForm").reset(); const output = $("tradeAiOutput"), result = $("tradeAiResult"); output.hidden = false; result.replaceChildren(); result.appendChild(renderWalletConfirmation(data.draft)); output.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) { toast(error.message || "Could not prepare this transaction"); }
+    finally { button.disabled = false; button.textContent = "Review transaction"; }
+  };
+}
+async function refreshTradingPortfolio(root) {
+  const network = $("tradeExecuteNetwork").value, list = $("tradeAssetList");
+  $("tradeTotalValue").textContent = "Checking balance…"; $("tradePortfolioChange").textContent = "Reading this network’s wallet and token index";
+  if ($("tradeSwapNetwork") && $("tradeSwapNetwork").value !== network) $("tradeSwapNetwork").value = network;
+  list.innerHTML = '<div class="wallet-empty-state"><i></i><span>Reading the selected network…</span></div>';
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const data = await api("/api/trading/portfolio", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ network }) }), portfolio = data.portfolio;
+    if (root !== $("tradeStudio") || root.hidden) return;
+    const money = value => { const n = Number(value); return value == null || !Number.isFinite(n) ? "—" : n > 0 && n < 0.000001 ? "<$0.000001" : "$" + n.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 }); };
+    const quantity = value => { const n = Number(value); return value == null || !Number.isFinite(n) ? "—" : n > 0 && n < 0.000001 ? "<0.000001" : n.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 }); };
+    const nativeAsset = portfolio.assets?.find(asset => asset.kind === "native"), nativeAmount = Number(portfolio.nativeBalance ?? nativeAsset?.amount), nativeFormatted = Number.isFinite(nativeAmount) ? nativeAmount.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " " + (portfolio.nativeSymbol || nativeAsset?.symbol || "ETH") : "—";
+    $("tradeTotalValue").textContent = portfolio.totalUsd == null ? nativeFormatted : money(portfolio.totalUsd);
+    $("tradePortfolioChange").textContent = portfolio.totalUsd == null ? "Native balance · USD price unavailable" : portfolio.changeSinceLastUsd == null ? "Estimated USD value · six decimal places" : Number(portfolio.changeSinceLastUsd) === 0 ? "No change since last check · not a 24h return" : money(Math.abs(portfolio.changeSinceLastUsd)) + " " + (portfolio.changeSinceLastUsd > 0 ? "up" : "down") + " since last check · not a 24h return";
+    $("tradeAssetCount").textContent = String(portfolio.assetCount ?? portfolio.assets?.length ?? 0);
+    $("tradeShortAddress").textContent = portfolio.address ? portfolio.address.slice(0, 6) + "…" + portfolio.address.slice(-4) : "Wallet unavailable";
+    $("tradeUpdatedAt").textContent = portfolio.fetchedAt ? new Date(portfolio.fetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Unknown";
+    $("tradePortfolioNote").textContent = portfolio.note || "USD values are estimates from available price sources; unpriced holdings are excluded from the total.";
+    const assets = Array.isArray(portfolio.assets) ? portfolio.assets : [];
+    list.innerHTML = assets.length ? assets.map(asset => {
+      const symbol = asset.symbol || (asset.kind === "native" ? "ETH" : "Token"), isEth = String(symbol).toUpperCase() === "ETH";
+      const badge = isEth ? "Ξ" : String(symbol).slice(0, 1).toUpperCase();
+      return '<div class="wallet-asset-row"><span class="wallet-asset-identity"><i class="' + (isEth ? "wallet-asset-icon-eth" : "") + '">' + esc(badge) + '</i><span><strong class="' + (isEth ? "wallet-asset-label-eth" : "") + '">' + esc(symbol) + '</strong><small>' + esc(quantity(asset.amount) + " " + symbol) + '</small></span></span><span class="wallet-asset-meta"><strong class="wallet-asset-value">' + esc(money(asset.valueUsd)) + '</strong><small>' + esc(money(asset.priceUsd)) + ' each</small></span></div>';
+    }).join("") : '<div class="wallet-empty-state"><span>No assets returned for this network.</span></div>';
+  } catch (error) {
+    if (root !== $("tradeStudio") || root.hidden) return;
+    const message = error.name === "AbortError" ? "Wallet check timed out. Refresh or verify the selected network’s RPC." : error.message || "Could not read this wallet.";
+    $("tradeTotalValue").textContent = "Unavailable"; $("tradePortfolioChange").textContent = message; $("tradeAssetCount").textContent = "—"; $("tradeUpdatedAt").textContent = "—";
+    list.innerHTML = '<div class="wallet-empty-state"><span>' + esc(message) + '</span></div>';
+  } finally { clearTimeout(timeout); }
 }
 async function updateStudioData(studio) {
   if (!state.session || state.surface !== "studios") return;
@@ -624,11 +1093,27 @@ function openStudios(navigate = true) {
   renderPluginCatalog(); updateComposerForMode();
   $("messages").hidden = true; $("messages").innerHTML = "";
   $("welcome").hidden = true; $("studiosHome").hidden = false;
+  $("tradeStudio").hidden = true;
   $("studiosProject").hidden = true; $("studioDiscussionHead").hidden = true;
   $("topbarTitle").textContent = "Sonderr Studios";
   renderSurface(); markActiveSession(); closeMobileNav();
   $("chatScroll").scrollTop = 0;
   $("input").focus();
+}
+function openTrading(navigate = true) {
+  state.session = null;
+  state.surface = "trading";
+  setSurfacePath("trading", navigate);
+  state.activePluginId = "";
+  state.contextFiles = []; state.images = []; renderContext();
+  renderPluginCatalog(); updateComposerForMode();
+  $("messages").hidden = true; $("messages").innerHTML = "";
+  $("welcome").hidden = true; $("studiosHome").hidden = true;
+  $("studiosProject").hidden = true; $("studioDiscussionHead").hidden = true;
+  renderTradingPage();
+  $("topbarTitle").textContent = "Trading";
+  renderSurface(); markActiveSession(); closeMobileNav();
+  $("chatScroll").scrollTop = 0;
 }
 function setStudioPhase(id) {
   const phase = STUDIO_PHASES[id] || STUDIO_PHASES.idea;
@@ -1542,6 +2027,7 @@ async function send() {
   closeMentionMenu();
   $("welcome").hidden = true;
   $("studiosHome").hidden = true;
+  if (state.surface === "trading") $("tradeStudio").hidden = true;
   $("messages").hidden = false;
   const sentImages = state.images.slice();
   addUserMessage(value, sentImages);
@@ -1832,6 +2318,7 @@ function updateComposerForMode() {
   const input = $("input");
   input.placeholder = state.mode === "vision" ? "Ask about the image — or describe an edit…"
     : state.activePluginId === "sites" ? "Describe the site you want to make…"
+    : state.surface === "studios" && state.session?.studio?.track === "trading" ? "Ask about market evidence, your portfolio, risk, or a trade idea…"
     : state.surface === "studios" ? "Ask Sonderr Studios anything…"
     : state.mode === "build" ? "Describe what to build…"
     : state.mode === "plan" ? "What should we plan?"
@@ -2295,12 +2782,50 @@ function autosize() {
 function wire() {
   $("newTaskBtn").onclick = () => newTask();
   $("studiosBtn").onclick = () => openStudios();
+  $("tradingBtn").onclick = () => openTrading();
   $("studioBackBtn").onclick = () => newTask();
   $("studioNewBtn").onclick = () => openStudios();
   $("studiosTourBtn").onclick = () => { setStudioPhase("idea"); $("studiosWorkbench").scrollIntoView({ behavior: "smooth", block: "center" }); };
   document.querySelectorAll(".studios-phase").forEach(button => { button.onclick = () => setStudioPhase(button.dataset.phase); });
   setStudioPhase("idea");
   $("pluginHubBtn").onclick = openPluginHub;
+  $("announcementsBtn")?.addEventListener("click", openAnnouncementsArchive);
+  $("announcementsClose")?.addEventListener("click", () => { $("announcementsModal").hidden = true; window.pauseSonderrLaunch?.(); });
+  $("announcementsModal")?.addEventListener("click", e => { if (e.target === $("announcementsModal")) { $("announcementsModal").hidden = true; window.pauseSonderrLaunch?.(); } });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement");
+    if (archive && !archive.hidden) { archive.hidden = true; window.pauseSonderrLaunch?.(); }
+    if (intro && !intro.hidden) closeSonderrV1Announcement();
+  });
+  $("sonderrV1Close")?.addEventListener("click", closeSonderrV1Announcement);
+  $("sonderrV1Later")?.addEventListener("click", closeSonderrV1Announcement);
+  $("sonderrV1Explore")?.addEventListener("click", () => { closeSonderrV1Announcement(); openAnnouncementsArchive(); });
+  const activateSonderr = async () => {
+    try {
+      await api("/api/settings", { method: "POST", body: JSON.stringify({ provider: "sonderr", model: "sonderr-v1", baseURL: "http://127.0.0.1:4174/v1" }) });
+      location.reload();
+    } catch (error) { toast(error.message); }
+  };
+  $("announcementsUseModel")?.addEventListener("click", () => {
+    $("announcementsModal").hidden = true;
+    window.pauseSonderrLaunch?.();
+    $("modelBtn")?.click();
+  });
+  $("sonderrV1Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV1Announcement")) closeSonderrV1Announcement(); });
+  const bindFilmControls = (playId, seekId, timeId) => {
+    const play = $(playId), seek = $(seekId), time = $(timeId);
+    const update = () => {
+      const t = Number(seek?.value || 0), mm = String(Math.floor(t / 60)).padStart(2, "0"), ss = String(Math.floor(t % 60)).padStart(2, "0");
+      if (time) time.textContent = `${mm}:${ss} / 01:38`;
+      if (play) play.textContent = window.__sonderrFilmPlaying ? "Ⅱ" : "▶";
+    };
+    play?.addEventListener("click", () => { if (window.__sonderrFilmPlaying) window.pauseSonderrLaunch?.(); else window.playSonderrLaunch?.(); window.__sonderrFilmPlaying = !window.__sonderrFilmPlaying; update(); });
+    seek?.addEventListener("input", () => { window.pauseSonderrLaunch?.(); window.__sonderrFilmPlaying = false; window.seekSonderrLaunch?.(seek.value); update(); });
+    window.addEventListener("sonderr-film-frame", e => { if (seek && document.activeElement !== seek) seek.value = String(Math.floor(e.detail.time)); window.__sonderrFilmPlaying = e.detail.playing; update(); });
+  };
+  bindFilmControls("sonderrFilmPlay", "sonderrFilmSeek", "sonderrFilmTime");
+  bindFilmControls("announcementsFilmPlay", "announcementsFilmSeek", "announcementsFilmTime");
   $("pluginHubClose").onclick = closePluginHub;
   $("pluginHubModal").addEventListener("click", e => { if (e.target === $("pluginHubModal")) closePluginHub(); });
   $("settingsBtn").onclick = () => { openSettings("api"); closeMobileNav(); };
@@ -2314,7 +2839,6 @@ function wire() {
     const willOpen = menu.hidden;
     closePopovers();
     if (willOpen) {
-      if (!state.apiConfigured) { openSettings("api"); return; }
       menu.hidden = false; $("modelBtn").setAttribute("aria-expanded", "true");
       $("modelMenuList").querySelectorAll(".model-item").forEach(item => item.onclick = () => { chooseModel(item.dataset.id); closePopovers(); });
     }
@@ -2461,8 +2985,10 @@ function wire() {
 
 wire();
 if (location.pathname === "/studios" || location.pathname === "/studios/") openStudios(false);
+else if (location.pathname === "/trading" || location.pathname === "/trading/") openTrading(false);
 window.addEventListener("popstate", () => {
   if (location.pathname === "/studios" || location.pathname === "/studios/") openStudios(false);
+  else if (location.pathname === "/trading" || location.pathname === "/trading/") openTrading(false);
   else newTask(false);
 });
 boot();

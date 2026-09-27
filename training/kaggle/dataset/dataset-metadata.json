@@ -1,0 +1,13 @@
+{
+  "title": "Sonderr v1.5.2 Capability Training Seed",
+  "id": "danipostma/sonderr-v1-5-2-capability-seed",
+  "licenses": [
+    {
+      "name": "other"
+    }
+  ],
+  "isPrivate": true,
+  "subtitle": "Private data for Sonderr Qwen adapter training",
+  "description": "Private training seed sourced from the MIT-licensed Sonderr v1.5.2 repository. Dataset contents are for DXN1 / Sonderr team model development. The Kaggle dataset is kept private.",
+  "userSpecifiedSources": "Source repository: DXN1 / Sonderr team Sonderr v1.5.2, MIT license. The fine-tuned base model is separately licensed Apache-2.0 by Qwen."
+}

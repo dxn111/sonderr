@@ -2,15 +2,24 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const safety = require("./safety");
+const secrets = require("./secrets");
 const APP_VERSION = require("../package.json").version;
+const MAX_MCP_RESPONSE_BYTES = 2_000_000;
+const MAX_MCP_FRAME_BYTES = 2_000_000;
 
 const CONFIG_DIR = path.join(process.cwd(), ".sonderr");
 const CONFIG_FILE = path.join(CONFIG_DIR, "mcp.json");
 const runtimes = new Map();
 
 function ensureConfig() {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, JSON.stringify({ version: 1, servers: [] }, null, 2));
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const directoryInfo = fs.lstatSync(CONFIG_DIR);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw new Error("Sonderr's MCP config directory must be a real directory, not a symlink.");
+  try { fs.chmodSync(CONFIG_DIR, 0o700); } catch {}
+  if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, JSON.stringify({ version: 1, servers: [] }, null, 2), { mode: 0o600 });
+  const configInfo = fs.lstatSync(CONFIG_FILE);
+  if (!configInfo.isFile() || configInfo.isSymbolicLink()) throw new Error("Sonderr's MCP config must be a regular file, not a symlink.");
+  try { fs.chmodSync(CONFIG_FILE, 0o600); } catch {}
 }
 
 function readConfig() {
@@ -24,8 +33,11 @@ function readConfig() {
 function writeConfig(data) {
   ensureConfig();
   const temp = CONFIG_FILE + ".tmp";
-  fs.writeFileSync(temp, JSON.stringify(data, null, 2));
+  const fd = fs.openSync(temp, "w", 0o600);
+  try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, JSON.stringify(data, null, 2)); }
+  finally { fs.closeSync(fd); }
   fs.renameSync(temp, CONFIG_FILE);
+  try { fs.chmodSync(CONFIG_FILE, 0o600); } catch {}
   return data;
 }
 
@@ -40,9 +52,9 @@ function publicServer(server) {
     id: server.id,
     name: server.name,
     transport: server.transport || (server.url ? "http" : "stdio"),
-    url: server.url || "",
-    command: server.command,
-    args: server.args || [],
+    url: safety.redactText(server.url || ""),
+    command: safety.redactText(server.command || ""),
+    args: (server.args || []).map(arg => safety.redactText(arg)),
     tokenConfigured: Boolean(server.tokenEnv && process.env[server.tokenEnv]),
     connected,
     serverInfo: runtime?.serverInfo || null,
@@ -50,7 +62,7 @@ function publicServer(server) {
     tools: runtime?.tools || [],
     resources: runtime?.resources || [],
     prompts: runtime?.prompts || [],
-    error: runtime?.error || ""
+    error: safety.redactText(runtime?.error || "")
   };
 }
 
@@ -67,13 +79,22 @@ function addServer(input) {
     let parsed; try { parsed = new URL(url); } catch { throw new Error("MCP URL is invalid"); }
     if (!["https:", "http:"].includes(parsed.protocol) || (parsed.protocol === "http:" && !["127.0.0.1", "localhost"].includes(parsed.hostname))) throw new Error("Remote MCP URLs must use HTTPS");
     if (parsed.username || parsed.password || parsed.hash) throw new Error("MCP URLs cannot contain embedded credentials or fragments");
+    if ([...parsed.searchParams.keys()].some(key => /(?:api.?key|access.?token|refresh.?token|auth|secret|password|signature|(?:^|_)(?:token|key)$)/i.test(key))) throw new Error("MCP URLs cannot carry credentials in query parameters; use the credential setting instead");
   }
   const args = Array.isArray(input?.args) ? input.args.map(String).slice(0, 32) : [];
+  const commandLine = [command, ...args].join(" ");
+  if (/(?:^|\s)--?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|auth(?:orization)?|bearer|secret|password)(?:\s+|=)(?:bearer\s+)?[^\s]+/i.test(commandLine)
+    || safety.redactText(commandLine) !== commandLine) {
+    throw new Error("Do not put credentials in an MCP command or argument; store the value in Sonderr's local secret store and reference its environment-variable name.");
+  }
   const tokenEnv = String(input?.tokenEnv || "").trim();
   if (tokenEnv && !/^[A-Z_][A-Z0-9_]*$/.test(tokenEnv)) throw new Error("Token environment variable is invalid");
   const env = input?.env && typeof input.env === "object" && !Array.isArray(input.env)
     ? Object.fromEntries(Object.entries(input.env).filter(([key, value]) => /^[A-Z_][A-Z0-9_]*$/.test(key) && typeof value === "string").slice(0, 32))
     : {};
+  if (Object.entries(env).some(([key, value]) => safety.isSecretField(key) || /(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASS|API_KEY|PRIVATE_KEY)(?:_|$)/i.test(key) || safety.redactText(value) !== value)) {
+    throw new Error("Do not save credential values in MCP environment settings; use token_env to reference a value from Sonderr's local secret store.");
+  }
   const data = readConfig();
   const next = { id, name, command, url, transport: url ? "http" : "stdio", tokenEnv, args, env };
   const index = data.servers.findIndex(server => server.id === id);
@@ -108,11 +129,24 @@ function attachParser(runtime) {
     buffer = Buffer.concat([buffer, Buffer.from(chunk)]);
     while (true) {
       const marker = buffer.indexOf(Buffer.from("\r\n\r\n"));
-      if (marker < 0) return;
+      if (marker < 0) {
+        if (buffer.length > 16_384) {
+          runtime.error = "MCP server sent an invalid or oversized protocol header.";
+          buffer = Buffer.alloc(0);
+          runtime.child.kill();
+        }
+        return;
+      }
       const header = buffer.subarray(0, marker).toString("utf8");
       const match = header.match(/content-length:\s*(\d+)/i);
       if (!match) { buffer = buffer.subarray(marker + 4); continue; }
       const length = Number(match[1]);
+      if (!Number.isSafeInteger(length) || length < 0 || length > MAX_MCP_FRAME_BYTES) {
+        runtime.error = "MCP server response exceeded Sonderr's protocol frame limit.";
+        buffer = Buffer.alloc(0);
+        runtime.child.kill();
+        return;
+      }
       const start = marker + 4;
       if (buffer.length < start + length) return;
       const body = buffer.subarray(start, start + length).toString("utf8");
@@ -145,7 +179,7 @@ async function requestHttp(runtime, method, params, timeoutMs = 20000) {
   const id = runtime.nextId++;
   const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Mcp-Protocol-Version": "2024-11-05", "Mcp-Method": method, "Mcp-Name": "Sonderr" };
   if (runtime.sessionId) headers["Mcp-Session-Id"] = runtime.sessionId;
-  const token = runtime.server.tokenEnv ? process.env[runtime.server.tokenEnv] : "";
+  const token = runtime.server.tokenEnv ? secrets.get(runtime.server.tokenEnv) : "";
   if (token) headers.Authorization = "Bearer " + token;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -153,8 +187,30 @@ async function requestHttp(runtime, method, params, timeoutMs = 20000) {
     const response = await fetch(runtime.server.url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }), signal: controller.signal, redirect: "error" });
     const sessionId = response.headers.get("mcp-session-id");
     if (sessionId) runtime.sessionId = sessionId;
-    const raw = await response.text();
-    if (!response.ok) throw new Error("MCP server returned HTTP " + response.status + (raw ? ": " + raw.slice(0, 240) : ""));
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
+      await response.body?.cancel();
+      throw new Error("MCP response exceeded Sonderr's 2 MB safety limit.");
+    }
+    const reader = response.body?.getReader();
+    const chunks = [];
+    let size = 0;
+    if (reader) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > MAX_MCP_RESPONSE_BYTES) {
+            await reader.cancel().catch(() => {});
+            throw new Error("MCP response exceeded Sonderr's 2 MB safety limit.");
+          }
+          chunks.push(Buffer.from(value));
+        }
+      } finally { reader.releaseLock?.(); }
+    }
+    const raw = Buffer.concat(chunks, size).toString("utf8");
+    if (!response.ok) throw new Error("MCP server returned HTTP " + response.status + ". Check the server connection and authentication settings.");
     let payload;
     try { payload = JSON.parse(raw); } catch {
       const event = raw.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trim()).filter(Boolean).pop();
@@ -172,9 +228,10 @@ async function requestHttp(runtime, method, params, timeoutMs = 20000) {
 async function notifyHttp(runtime, method, params) {
   const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Mcp-Protocol-Version": "2024-11-05", "Mcp-Method": method, "Mcp-Name": "Sonderr" };
   if (runtime.sessionId) headers["Mcp-Session-Id"] = runtime.sessionId;
-  const token = runtime.server.tokenEnv ? process.env[runtime.server.tokenEnv] : "";
+  const token = runtime.server.tokenEnv ? secrets.get(runtime.server.tokenEnv) : "";
   if (token) headers.Authorization = "Bearer " + token;
-  await fetch(runtime.server.url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", method, params }), redirect: "error" });
+  const response = await fetch(runtime.server.url, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", method, params }), redirect: "error" });
+  try { await response.body?.cancel(); } catch {}
 }
 
 async function connectServer(id) {
@@ -204,12 +261,16 @@ async function connectServer(id) {
   fs.mkdirSync(isolatedHome, { recursive: true, mode: 0o700 });
   try { fs.chmodSync(isolatedHome, 0o700); } catch {}
   const safeEnv = { PATH: process.env.PATH || "", HOME: isolatedHome, LANG: process.env.LANG || "", ...server.env };
+  if (server.tokenEnv) {
+    const tokenValue = secrets.get(server.tokenEnv);
+    if (tokenValue) safeEnv[server.tokenEnv] = tokenValue;
+  }
   const child = spawn(server.command, server.args || [], { cwd: process.cwd(), env: safeEnv, stdio: ["pipe", "pipe", "pipe"] });
   const runtime = { child, nextId: 1, pending: new Map(), tools: [], error: "" };
   runtimes.set(server.id, runtime);
   attachParser(runtime);
-  child.stderr.on("data", chunk => { runtime.error = String(chunk).trim().slice(-1000); });
-  child.once("error", error => { runtime.error = error.message; });
+  child.stderr.on("data", chunk => { runtime.error = safety.redactText(String(chunk).trim()).slice(-1000); });
+  child.once("error", error => { runtime.error = safety.redactText(error.message); });
   child.once("exit", () => { for (const pending of runtime.pending.values()) pending.reject(new Error("MCP server exited")); runtime.pending.clear(); });
   try {
     const initialized = await request(runtime, "initialize", { protocolVersion: "2024-11-05", capabilities: { roots: { listChanged: false }, sampling: {} }, clientInfo: { name: "Sonderr", version: APP_VERSION } });

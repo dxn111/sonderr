@@ -16,6 +16,9 @@ Run this from a clean checkout before publishing a release.
 - [ ] Verify autonomous Build continues after browser disconnect, the Pause action stops after a safe boundary, process restart shows a resume prompt, and continuation re-checks workspace state without repeating verified milestones or bypassing tool-access gates.
 - [ ] Verify protected paths such as `.env` are refused and a hostile cross-origin `POST` is rejected.
 - [ ] Verify an email or wallet request produces a review card and cannot send/broadcast before the explicit confirmation click.
+- [ ] Run secret-redaction, legacy-transcript, provider-error, MCP file-permission/frame-size, and image-SSRF regression tests.
+- [ ] Verify the wallet's short-lived confirmation token is preserved only for its matching local card and is absent from the model's tool-result context.
+- [ ] Verify generated-image downloads pin public DNS, reject redirects/private hosts, enforce image content types, and obey the response-size limit.
 - [ ] Confirm no API keys, OAuth tokens, seed phrases, backup files, `.sonderr/`, or personal test data are staged.
 - [ ] Review `git diff --check`, `git status --short`, `SECURITY.md`, public docs, version labels, and release notes.
 

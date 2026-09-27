@@ -28,23 +28,57 @@ const initial = {
 
 function ensure() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+  const directoryInfo = fs.lstatSync(DATA_DIR);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw new Error("Sonderr's private data path must be a real directory, not a symlink.");
   try { fs.chmodSync(DATA_DIR, 0o700); } catch {}
+  for (const file of [DATA_FILE, CREDENTIALS_FILE]) {
+    if (fs.existsSync(file)) {
+      const info = fs.lstatSync(file);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error("Sonderr's private data files must be regular files, not symlinks.");
+    }
+  }
   if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
   if (!fs.existsSync(CREDENTIALS_FILE)) fs.writeFileSync(CREDENTIALS_FILE, "{}", { mode: 0o600 });
   try { fs.chmodSync(DATA_FILE, 0o600); } catch {}
   try { fs.chmodSync(CREDENTIALS_FILE, 0o600); } catch {}
 }
 
+function sanitizeStoredSession(session) {
+  if (!session || typeof session !== "object") return session;
+  if (typeof session.title === "string") session.title = safety.redactText(session.title).slice(0, 120);
+  if (Array.isArray(session.messages)) {
+    session.messages = session.messages.slice(-MAX_MESSAGES_PER_SESSION).map(message => {
+      if (!message || typeof message !== "object") return null;
+      const clean = safety.sanitizeValue(message);
+      clean.content = clean.role === "assistant"
+        ? safety.sanitizeAssistantOutput(clean.content || "")
+        : safety.redactText(clean.content || "");
+      if (Array.isArray(clean.events)) clean.events = safety.sanitizeValue(clean.events).slice(-160);
+      return clean;
+    }).filter(Boolean);
+  }
+  if (session.taskCheckpoint && typeof session.taskCheckpoint === "object") session.taskCheckpoint = safety.sanitizeValue(session.taskCheckpoint);
+  return session;
+}
+
 function read() {
   ensure();
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); }
+  try {
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    if (!data || typeof data !== "object" || Array.isArray(data)) return structuredClone(initial);
+    data.sessions = (Array.isArray(data.sessions) ? data.sessions : []).slice(-MAX_SESSIONS).map(sanitizeStoredSession).filter(Boolean);
+    return data;
+  }
   catch { return structuredClone(initial); }
 }
 
 function write(data) {
   ensure();
+  if (Array.isArray(data.sessions)) data.sessions = data.sessions.map(sanitizeStoredSession).filter(Boolean);
   const temp = DATA_FILE + ".tmp";
-  fs.writeFileSync(temp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
+  try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, JSON.stringify(data, null, 2)); }
+  finally { fs.closeSync(fd); }
   fs.renameSync(temp, DATA_FILE);
   try { fs.chmodSync(DATA_FILE, 0o600); } catch {}
   return data;
@@ -78,7 +112,7 @@ function createSession(title = "New task", surface = "chat", studio = null) {
   const session = {
     id: crypto.randomUUID(),
     title: String(title || "New task").replace(/[\r\n]+/g, " ").trim().slice(0, 120) || "New task",
-    surface: surface === "studios" ? "studios" : "chat",
+    surface: ["chat", "studios", "trading"].includes(surface) ? surface : "chat",
     ...(surface === "studios" ? { studio: cleanStudio(studio || {}) } : {}),
     createdAt: now,
     updatedAt: now,
@@ -105,6 +139,15 @@ function updateStudio(id, raw) {
 
 function getSession(id) {
   return read().sessions.find(s => s.id === id) || null;
+}
+
+function deleteTradingSession(id) {
+  const data = read();
+  const index = data.sessions.findIndex(session => session.id === id && session.surface === "trading");
+  if (index < 0) return false;
+  data.sessions.splice(index, 1);
+  write(data);
+  return true;
 }
 
 function setSessionPlugin(id, pluginId = "") {
@@ -324,11 +367,11 @@ function addMessage(id, role, content, meta = null) {
   const message = {
     id: crypto.randomUUID(),
     role,
-    content: String(content).slice(0, MAX_MESSAGE_CHARS),
+    content: (role === "assistant" ? safety.sanitizeAssistantOutput(content || "") : safety.redactText(content || "")).slice(0, MAX_MESSAGE_CHARS),
     createdAt: new Date().toISOString()
   };
   if (meta && typeof meta === "object") {
-    if (Array.isArray(meta.events) && meta.events.length) message.events = meta.events;
+    if (Array.isArray(meta.events) && meta.events.length) message.events = safety.sanitizeValue(meta.events).slice(-160);
     if (meta.mode) message.mode = meta.mode;
     if (meta.model) message.model = meta.model;
     if (Array.isArray(meta.images) && meta.images.length) message.images = meta.images.slice(0, 4).map(String);
@@ -545,4 +588,4 @@ function saveOnboarding(next = {}) {
   return { ...data.onboarding };
 }
 
-module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };
+module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, deleteTradingSession, setSessionPlugin, addMessage, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };

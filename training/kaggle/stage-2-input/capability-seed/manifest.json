@@ -1,0 +1,34 @@
+{
+  "dataset": "Sonderr capability fine-tuning seed",
+  "dataset_version": "0.1.0",
+  "product_version": "1.5.2",
+  "owner_and_maintainer": "DXN1 / Sonderr team",
+  "owner_attribution_source": "User-provided attribution; product behavior is sourced from the checked-in repository. This field does not assert a separate legal entity.",
+  "source_commit": "9334fedd53d1829c3bc46c58793591478f04327f",
+  "counts": {
+    "train_examples": 37,
+    "skills": 61,
+    "regular_tools": 45,
+    "vision_tools": 1,
+    "eval_scenarios": 12,
+    "validation_examples": 5,
+    "skill_comprehension_examples": 61
+  },
+  "files": [
+    "train.jsonl",
+    "skills.jsonl",
+    "tool_schemas.json",
+    "tool_index.json",
+    "eval.jsonl",
+    "README.md",
+    "validation.jsonl",
+    "skill_comprehension.jsonl"
+  ],
+  "language": "English",
+  "notes": [
+    "Illustrative SFT seed, not a complete training corpus or proof of model fluency.",
+    "Refresh schemas and skill records from canonical source whenever product version changes.",
+    "Keep train, validation, and evaluation data separate; avoid evaluating on training examples.",
+    "Runtime remains authoritative for access control, schemas, path boundaries, and confirmations."
+  ]
+}

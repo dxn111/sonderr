@@ -1,0 +1,9 @@
+{
+  "title": "Sonderr-v1 Identity Continuation Inputs",
+  "id": "danipostma/sonderr-v1-identity-stage-2-input",
+  "licenses": [{"name": "other"}],
+  "isPrivate": true,
+  "subtitle": "Private continuation training inputs for Sonderr-v1",
+  "description": "Continued training inputs for DXN1 / Sonderr team. Contains the completed stage-one Sonderr adapter plus curated identity, personality, voice, and validation conversations. Not a public model release.",
+  "userSpecifiedSources": "Private continuation inputs from DXN1 / Sonderr team. Base model Qwen/Qwen2.5-0.5B-Instruct is separately licensed by Qwen."
+}

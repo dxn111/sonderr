@@ -71,14 +71,14 @@ function isPublicAddress(address) {
   return !(/^(?:::|::1|::ffff:|64:ff9b:|fc|fd|fe[89ab]|ff|2001:db8:)/i.test(value));
 }
 
-async function resolvePublicHttps(input) {
+async function resolvePublicHttps(input, { allowCredentialQuery = false } = {}) {
   let url;
   try { url = new URL(String(input || "")); }
   catch { throw new Error("Web page URL is invalid."); }
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) {
     throw new Error("Web research only opens public HTTPS pages on the standard secure port.");
   }
-  if ([...url.searchParams.keys()].some(key => /(?:token|secret|password|api.?key|authorization|session|oauth.?code)/i.test(key))) {
+  if (!allowCredentialQuery && [...url.searchParams.keys()].some(key => /(?:token|secret|password|api.?key|authorization|session|oauth.?code)/i.test(key))) {
     throw new Error("Web research will not send a URL containing credential-like query parameters.");
   }
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -92,6 +92,43 @@ async function resolvePublicHttps(input) {
   }
   url.hash = "";
   return { url, addresses };
+}
+
+async function fetchPublicImage(input, { maxBytes = 16_000_000, timeoutMs = 20_000 } = {}) {
+  const target = await resolvePublicHttps(input, { allowCredentialQuery: true });
+  return new Promise((resolve, reject) => {
+    const url = target.url;
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    const firstAddress = target.addresses.find(item => item.family === 4) || target.addresses[0];
+    const req = https.request({
+      hostname, port: 443, method: "GET", path: url.pathname + url.search,
+      servername: net.isIP(hostname) ? undefined : hostname,
+      agent: false, maxHeaderSize: 16_384,
+      lookup: (_host, options, callback) => options?.all
+        ? callback(null, target.addresses)
+        : callback(null, firstAddress.address, firstAddress.family),
+      headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/jpeg,image/webp,image/gif", "Accept-Encoding": "identity" }
+    }, response => {
+      const status = Number(response.statusCode) || 0;
+      if (status < 200 || status >= 300) { response.resume(); reject(new Error("Image host returned HTTP " + status + ".")); return; }
+      const mime = String(response.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+      if (!/^image\/(?:png|jpeg|webp|gif)$/.test(mime)) { response.resume(); reject(new Error("Image host returned an unsupported content type.")); return; }
+      const announced = Number(response.headers["content-length"]);
+      if (Number.isFinite(announced) && announced > maxBytes) { response.destroy(new Error("Image response exceeded Sonderr's size limit.")); return; }
+      const chunks = [];
+      let total = 0;
+      response.on("data", chunk => {
+        total += chunk.length;
+        if (total > maxBytes) { response.destroy(new Error("Image response exceeded Sonderr's size limit.")); return; }
+        chunks.push(chunk);
+      });
+      response.once("error", reject);
+      response.once("end", () => resolve({ buffer: Buffer.concat(chunks, total), mime, url: url.origin + url.pathname }));
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("Image fetch timed out.")));
+    req.once("error", error => reject(new Error(safety.redactText(error.message || "Image fetch failed.").slice(0, 200))));
+    req.end();
+  });
 }
 
 async function assertPublicHttps(input) {
@@ -387,4 +424,4 @@ async function researchWeb({ query, site, focus = "", pageLimit = 2 } = {}, depe
   });
 }
 
-module.exports = { searchWeb, openWebPage, researchWeb, boundedExcerptBudget, parseSearchResults, htmlToText, relevantExcerpt, normalizeSearchDomain, matchesSearchDomain, isPublicAddress, assertPublicHttps };
+module.exports = { searchWeb, openWebPage, researchWeb, fetchPublicImage, boundedExcerptBudget, parseSearchResults, htmlToText, relevantExcerpt, normalizeSearchDomain, matchesSearchDomain, isPublicAddress, assertPublicHttps };

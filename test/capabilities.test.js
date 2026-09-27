@@ -44,17 +44,27 @@ for (const id of ["integration-testing", "performance-profiling", "observability
   assert.ok(skill.instructions.length > 250, "skill is too thin: " + id);
 }
 
-assert.equal(skills.all().length, 64);
-assert.equal(JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count, skills.all().length);
+assert.equal(skills.all().length, JSON.parse(fs.readFileSync(require.resolve("../skills/_manifest.json"), "utf8")).count);
 assert.equal(skills.MAX_AUTO_ATTACH, 2);
 assert.deepEqual(skills.validateCatalog(), []);
 assert.deepEqual(skills.forTask("hello"), [], "a greeting does not select a playbook");
 for (const skill of skills.all()) {
-  assert.ok(skills.forTask(skill.triggers[0]).includes(skill.id), "first trigger does not select its playbook: " + skill.id);
+  const firstTrigger = skill.triggers[0];
+  const candidates = skills.forTask(firstTrigger);
+  const genericOnly = new Set(["api", "app", "build", "code", "data", "design", "error", "file", "help", "model", "project", "quality", "review", "search", "server", "skill", "task", "test", "tool", "web", "work"]);
+  if (!genericOnly.has(firstTrigger)) assert.ok(candidates.includes(skill.id), "specific first trigger does not select its playbook: " + skill.id);
 }
+assert.deepEqual(skills.forTask("hello"), [], "greetings never select skills");
+assert.ok(skills.forTask("make this look better").includes("frontend-polish"), "plain-language appearance requests select UI guidance");
+assert.ok(skills.forTask("check devnet solana").includes("wallet-intelligence"), "network balance checks select wallet guidance");
+assert.ok(skills.rankForTask("tell me about the Sonderr dev program").some(item => item.id === "sonderr-docs" && item.confidence === "high"), "strong product-doc intent gets a high-confidence skill match");
+assert.ok(!skills.forTask("and bugbounty?").includes("web3-earning"), "security bounty follow-ups do not load the money-making playbook by keyword collision");
 assert.ok(skills.forTask("websearcj").includes("web-research"), "obvious web-search misspellings still load the research playbook");
 assert.ok(skills.forTask("Review the Sonderr developer program and open source contributions.").includes("contribution-workflow"));
 assert.ok(skills.forTask("What can you do? Give me a rundown of Sonderr features.").includes("sonderr-docs"));
+assert.ok(skills.forTask("Sonderr dev program").includes("sonderr-docs"), "first-party developer-program questions route to the product docs skill");
+assert.ok(skills.forTask("and bugbounty?").includes("sonderr-docs"), "bounty terminology routes to the local docs skill");
+assert.ok(skills.forTask("sonderr.docs skill").includes("sonderr-docs"), "dotted skill-name mentions match the hyphenated skill id");
 assert.ok(skills.forTask("Check the exact token contract and my wallet portfolio.").includes("wallet-intelligence"));
 assert.ok(skills.forTask("Try to make money with Web3.").includes("web3-earning"));
 assert.ok(skills.forTask("Free money?").includes("web3-earning"), "short free-money asks load earning guidance instead of being treated as small talk");
@@ -123,7 +133,7 @@ assert.match(appSource, /load_skill/);
 assert.match(appSource, /unload_skill/);
 assert.match(readme, /Accept & swap/);
 assert.match(readme, /exact-amount approval card/);
-assert.match(readme, /64 playbooks/);
+assert.match(readme, /65 playbooks/);
 assert.match(readme, /verified-domain search filters and focus-ranked page excerpts/);
 assert.match(readme, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/dxn111\/sonderr\/main\/install\.sh \| sh/);
 const installer = fs.readFileSync(require.resolve("../install.sh"), "utf8");

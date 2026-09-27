@@ -9,6 +9,25 @@ const path = require("node:path");
 const REDACTION = "[redacted by Sonderr safety]";
 const MAX_DEPTH = 10;
 const MAX_KEYS = 250;
+const SECRET_FIELD_NAMES = new Set([
+  "apikey", "accesstoken", "refreshtoken", "idtoken", "authtoken", "sessiontoken",
+  "clientsecret", "secret", "password", "passwd", "passphrase", "authorization",
+  "proxyauthorization", "bearertoken", "token", "privatekey", "mnemonic", "seed", "seedphrase",
+  "credential", "credentials", "walletsecret", "walletprivatekey", "accesskeyid"
+]);
+
+function normalizedFieldName(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function isSecretField(value) {
+  const key = normalizedFieldName(value);
+  return SECRET_FIELD_NAMES.has(key)
+    || /^(?:api|access|refresh|id|auth|session|bearer|oauth)token(?:secret|value)?$/.test(key)
+    || /^(?:secret|private|signing|wallet)(?:key|seed|mnemonic)(?:hex|bytes|phrase|words|value)?$/.test(key)
+    || /^(?:aws)?secretaccesskey$/.test(key)
+    || /^(?:client|consumer)secret$/.test(key);
+}
 
 function normalPath(value) {
   return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "").toLowerCase();
@@ -40,35 +59,65 @@ function assertSafeWorkspacePath(value) {
 
 function redactText(value) {
   let text = String(value ?? "");
-  // Common provider and service credential formats.
+  // Context-labelled values are removed before format-specific tokens. Existing
+  // markers are skipped, so repeated scrubbing is stable and cannot expose a suffix.
+  text = text.replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1[redacted]@");
+  text = text.replace(/([?&](?:api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|oauth[_-]?token|bearer[_-]?token|token|key|client[_-]?secret|secret|password|passphrase|signature|sig)=)(?!\[redacted by Sonderr safety\])[^&#\s"'<>]+/gi, "$1" + REDACTION);
+  text = text.replace(/\b((?:proxy-)?authorization\s*:\s*(?:bearer\s+)?)(?!\[redacted by Sonderr safety\])[^\s,;"']+/gi, "$1" + REDACTION);
+  text = text.replace(/\b(bearer\s+)(?!\[redacted by Sonderr safety\])[A-Za-z0-9._~+/-]{12,}={0,2}/gi, "$1" + REDACTION);
+  text = text.replace(/(?<![?&])(["']?(?:api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|oauth[_-]?token|bearer[_-]?token|token|client[_-]?secret|secret|password|passwd|passphrase|authorization|private[_-]?key|signing[_-]?key|mnemonic|seed(?:[_ -]?phrase)?)["']?\s*[:=]\s*)(?!\[redacted by Sonderr safety\])(?:"([^"]*)"|'([^']*)'|([^\s,;}&\]]+))/gi, (match, prefix, doubleQuoted, singleQuoted, bare) => prefix + (doubleQuoted !== undefined || singleQuoted !== undefined ? `"${REDACTION}"` : REDACTION));
+  text = text.replace(/(--(?:api[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password)(?:\s+|=))(?!\[redacted by Sonderr safety\])(?:bearer\s+)?[^\s,;"']+/gi, "$1" + REDACTION);
+  text = text.replace(/\b((?:mnemonic|seed phrase|recovery phrase)\s*(?:=|:|is)\s*)(?!\[redacted by Sonderr safety\])[^\r\n]+/gi, "$1" + REDACTION);
+  // Known provider/service credential formats intentionally exclude public
+  // wallet/token addresses and ordinary hashes.
   text = text.replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, REDACTION);
+  text = text.replace(/\bAIza[0-9A-Za-z_-]{30,}\b/g, REDACTION);
+  text = text.replace(/\b(?:gsk_|hf_|xai-|pplx-|r8_)[A-Za-z0-9_-]{20,}\b/gi, REDACTION);
   text = text.replace(/\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}\b/gi, REDACTION);
   text = text.replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi, REDACTION);
   text = text.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, REDACTION);
   text = text.replace(/\b(?:eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,})\b/g, REDACTION);
   text = text.replace(/-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----/g, REDACTION);
-  // Only redact values when they are explicitly labelled as credentials. This
-  // avoids damaging normal source code, hashes, and public wallet addresses.
-  text = text.replace(/\b(authorization\s*:\s*bearer\s+)[^\s,;"']+/gi, "$1" + REDACTION);
-  text = text.replace(/\b((?:api[_ -]?key|access[_ -]?token|secret|password|private[_ -]?key)\s*(?:=|:|is)\s*["']?)[^\s,;"']+/gi, "$1" + REDACTION);
-  text = text.replace(/\b(mnemonic|seed phrase)\s*(?:=|:|is)\s*["']?[^\n"']+/gi, "$1: " + REDACTION);
   return text;
 }
 
-function sanitizeValue(value, depth = 0) {
+function sanitizeValueInner(value, depth, allowWalletConfirmationToken = false) {
   if (depth > MAX_DEPTH) return "[truncated by Sonderr safety]";
   if (typeof value === "string") return redactText(value);
   if (typeof value === "number" || typeof value === "boolean" || value === null || value === undefined) return value;
-  if (Array.isArray(value)) return value.slice(0, MAX_KEYS).map(item => sanitizeValue(item, depth + 1));
+  if (Array.isArray(value)) return value.slice(0, MAX_KEYS).map(item => sanitizeValueInner(item, depth + 1));
   if (typeof value === "object") {
     const output = {};
+    const walletEvent = value.type === "tool_end"
+      && ["prepare_wallet_transaction", "prepare_wallet_swap"].includes(value.name);
     for (const [key, item] of Object.entries(value).slice(0, MAX_KEYS)) {
-      if (/(password|secret|token|api.?key|private.?key|mnemonic|seed)/i.test(key)) output[key] = REDACTION;
-      else output[key] = sanitizeValue(item, depth + 1);
+      const walletOutput = walletEvent && key === "output";
+      const safeConfirmationToken = allowWalletConfirmationToken && key === "token"
+        && typeof item === "string" && /^[a-f0-9]{48}$/i.test(item)
+        && Number.isFinite(Number(value.expiresAt));
+      const clean = isSecretField(key) && !safeConfirmationToken
+        ? REDACTION
+        : sanitizeValueInner(item, depth + 1, walletOutput);
+      Object.defineProperty(output, key, { value: clean, enumerable: true, configurable: true, writable: true });
     }
     return output;
   }
   return String(value);
+}
+
+function sanitizeValue(value, depth = 0) {
+  return sanitizeValueInner(value, depth, false);
+}
+
+function sanitizeToolOutput(name, output) {
+  const clean = sanitizeValue(output);
+  if (["prepare_wallet_transaction", "prepare_wallet_swap"].includes(String(name))
+    && clean && typeof clean === "object" && output && typeof output === "object"
+    && typeof output.token === "string" && /^[a-f0-9]{48}$/i.test(output.token)
+    && Number.isFinite(Number(output.expiresAt))) {
+    clean.token = output.token;
+  }
+  return clean;
 }
 
 function normalizeForComparison(value) {
@@ -100,9 +149,11 @@ function hasPseudoToolMarkup(output) {
     .replace(/`[^`\n]*`/g, "")
     .replace(/\\([\\_*<>])/g, "$1")
     .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">");
-  const markup = /<\s*\/?\s*(?:tool\s*_?\s*call\b|function\s*=|parameter\s*=|arguments\s*=)/i;
-  const serializedCall = /"(?:tool_call|tool_calls|function_call)"\s*:/i;
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;|&#0*34;|&#x0*22;/gi, '"')
+    .replace(/&#0*39;|&#x0*27;/gi, "'");
+  const markup = /<\s*\/?\s*(?:tool\s*_?\s*call\b|function\s*(?:=|\b)|parameter\s*=|arguments\s*=)/i;
+  const serializedCall = /["'](?:tool_call|tool_calls|function_call|tool_call_id)["']\s*:|["']function["']\s*:\s*\{\s*["']name["']\s*:/i;
   return markup.test(visible) || serializedCall.test(visible);
 }
 
@@ -207,6 +258,8 @@ module.exports = {
   assertSafeWorkspacePath,
   redactText,
   sanitizeValue,
+  sanitizeToolOutput,
+  isSecretField,
   hasPseudoToolMarkup,
   sanitizeAssistantOutput,
   assessUserMessage,

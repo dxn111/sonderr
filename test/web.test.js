@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { parseSearchResults, htmlToText, relevantExcerpt, normalizeSearchDomain, matchesSearchDomain, isPublicAddress, assertPublicHttps, searchWeb, researchWeb, boundedExcerptBudget } = require("../server/web");
+const { parseSearchResults, htmlToText, relevantExcerpt, normalizeSearchDomain, matchesSearchDomain, isPublicAddress, assertPublicHttps, fetchPublicImage, searchWeb, researchWeb, boundedExcerptBudget } = require("../server/web");
 
 const html = `<!doctype html><html><body>
   <div class="result results_links">
@@ -92,6 +92,7 @@ assert.equal(boundedExcerptBudget(100), 1_000, "page excerpt budgets retain a us
   await assert.rejects(assertPublicHttps("http://example.com"), /HTTPS/);
   await assert.rejects(assertPublicHttps("https://127.0.0.1/"), /private, reserved/);
   await assert.rejects(assertPublicHttps("https://localhost/"), /Local or reserved/);
+  await assert.rejects(fetchPublicImage("https://127.0.0.1/private.png"), /private, reserved/);
   await assert.rejects(searchWeb({ query: "search user@example.com" }), /private credentials or contact details/);
   await assert.rejects(searchWeb({ query: "faucet terms", site: "https://solana.com/path" }), /public DNS hostname/);
 })().catch(error => {

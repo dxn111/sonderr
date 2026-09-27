@@ -14,7 +14,7 @@
     @media(max-width:680px){.page{padding:20px 0 40px}h1{font-size:35px}.banner{max-height:150px}.grid,.tracks{grid-template-columns:1fr}}
   </style>
 </head>
-<body>
+<body data-program-assistant="developer">
   <main class="page">
     <img class="banner" src="/assets/sonderr-banner.svg" alt="Sonderr banner">
     <div class="brand">05 · Contributions</div>
@@ -35,6 +35,18 @@
       <article class="track"><h3>Privacy and safety</h3><p>Permission boundaries, safe diagnostics, secret handling, prompt-injection resistance, and transparent external actions.</p></article>
     </div></section>
 
+    <section class="grid" aria-label="Choose a contribution path">
+      <article class="card"><h2>Pick a first contribution</h2><p>Start with a small change that can be reviewed independently. Good first steps include reproducing a bug, improving one confusing screen, adding a regression test for a real failure, correcting a doc that contradicts the current code, or improving one skill’s verification checklist.</p><ul><li><strong>New to the repository?</strong> Read the README and this page, install with the documented steps, then run the checks before editing.</li><li><strong>Found a bug?</strong> Write exact steps, what you expected, what happened, and the version/build. Remove personal data and secrets.</li><li><strong>Have a large feature idea?</strong> Share a short proposal first so the scope and finish line can be discussed before substantial implementation.</li></ul></article>
+      <article class="card"><h2>What maintainers look for</h2><ul><li>A clear user problem and a narrow change that solves it.</li><li>Evidence from the current codebase instead of assumptions about planned behavior.</li><li>Tests for the changed behavior, including an important failure/denied path for security-sensitive work.</li><li>Accessible states, useful error messages, and reasonable behavior at small screen sizes.</li><li>A brief handoff that names files changed, checks run, known limitations, and anything that needs follow-up.</li></ul><p>Review is best-effort: maintainers may ask for changes, defer a contribution, or decline it to protect reliability, scope, compatibility, or safety.</p></article>
+    </section>
+
+    <section class="card callout"><h2>Proposal template for bigger work</h2><p>For a multi-file feature, tool, integration, or security-sensitive change, send a compact proposal before spending days on it:</p><ol><li><strong>Problem:</strong> who is blocked and what currently happens?</li><li><strong>Outcome:</strong> what should a user be able to do when it is finished?</li><li><strong>Scope:</strong> what is included—and explicitly not included?</li><li><strong>Trust boundary:</strong> what files, credentials, external services, or permissions are involved?</li><li><strong>Verification:</strong> what test or observable result will prove it works?</li><li><strong>Open questions:</strong> which decisions need maintainer input?</li></ol><p>This is a planning aid, not an application form or promise that the proposal will be accepted.</p></section>
+
+    <section class="grid">
+      <article class="card"><h2>Responsible engineering rules</h2><ul><li>Never put live keys, passwords, wallet seeds, user exports, or private reports in Git history, screenshots, test logs, or an AI prompt.</li><li>Use synthetic fixtures and mocks; use disposable testnet accounts when a chain is part of the test.</li><li>Do not add telemetry, network calls, or broader permissions silently. Explain the user benefit and keep access narrow.</li><li>Do not make claims such as “fully secure,” “unbreakable,” or “guaranteed private.” Describe the actual control and its limits.</li><li>Keep generated/build output out of a change unless the project requires it; review dependency and lockfile changes deliberately.</li></ul></article>
+      <article class="card"><h2>Communication and recognition</h2><p>Ask a focused question with enough context for someone to answer. For ordinary contribution discussion, use the project’s published community contact. For an undisclosed vulnerability, do not post in a public channel—use the private process on the <a href="/docs/bounty">Bounty Program</a> page.</p><p>Accepted contributions may be credited in project history. There is no guaranteed response time, review slot, role, access to private previews, payment, or future benefit. This is a volunteer contribution program, not a job or contract.</p></article>
+    </section>
+
     <section class="grid">
       <article class="card"><h2>How to contribute</h2><ol class="steps"><li>Choose one user problem or a focused improvement.</li><li>Check the current code and docs, then agree on a small finish line.</li><li>Make the change in a branch and include tests or a reproducible explanation.</li><li>Run the checks that apply and inspect the final diff for unrelated changes or sensitive data.</li><li>Open a pull request when repository access is available, or ask in Discord where to start.</li></ol></article>
       <article class="card"><h2>Local setup and checks</h2><p>Use Node.js 20 or newer. From the repository root:</p><code class="command">npm ci</code><code class="command">npm run check</code><code class="command">npm test</code><p>In your handoff, say exactly which checks passed, failed, or could not run. Do not claim a manual check you did not perform.</p></article>
@@ -48,5 +60,7 @@
     <p class="fine">Contributions are reviewed on a best-effort basis. Access to private preview builds, maintainer time, or future program benefits is not guaranteed.</p>
     <a class="back" href="/docs">← Back to handbook</a>
   </main>
+  <link rel="stylesheet" href="/docs-help.css">
+  <script src="/docs-help.js" defer></script>
 </body>
 </html>

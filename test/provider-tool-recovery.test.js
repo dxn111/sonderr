@@ -6,8 +6,20 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const provider = require("../server/provider");
 
 (async () => {
+  const providerErrorSecret = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789";
+  await assert.rejects(
+    provider.readCompletionResponse(new Response(JSON.stringify({ error: { message: "echoed request system prompt " + providerErrorSecret } }), { status: 401 })),
+    error => !error.message.includes(providerErrorSecret) && !error.message.includes("echoed request system prompt"),
+    "provider error response bodies must not be echoed to the chat"
+  );
+  await assert.rejects(
+    provider.readBoundedResponseText(new Response("oversized"), 4),
+    /response-size limit/i,
+    "provider response bodies are size-bounded"
+  );
   const requests = [];
   const requestCounts = new Map();
   const server = http.createServer((req, res) => {

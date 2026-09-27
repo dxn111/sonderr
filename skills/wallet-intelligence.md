@@ -3,7 +3,7 @@ id: wallet-intelligence
 name: Wallet research and portfolio
 category: Web3
 icon: ◉
-triggers: wallet portfolio, token details, token contract, wallet activity, token supply, wallet value, wallet balance, wallet price, wallet addresses, receive address, wallet watch, incoming funds, wallet transfer, swap quote
+triggers: wallet portfolio, token details, token contract, wallet activity, token supply, wallet value, wallet balance, wallet price, wallet addresses, receive address, wallet watch, incoming funds, wallet transfer, swap quote, solana devnet balance, solana mainnet balance, check devnet wallet, check solana balance, wallet status, network balance
 summary: Investigate local wallet balances, exact token metadata, recent activity, and market data without overstating what public chain data proves.
 ---
 ## Workflow

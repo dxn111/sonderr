@@ -152,7 +152,7 @@ async function createWallet(input = {}) {
   store.updateWalletConfig({ chain, rpcUrl, network, address }); return { chain, networkId: builtIn.id, network: builtIn.label, testnet: builtIn.testnet, address, generated: true, secretConfigured: true, backupRequired: true, warning: "The private key is stored locally and is never returned. Back up the protected local secret before funding this wallet." };
 }
 function exportBackup(password, chainOverride) { const chain = chainOf(chainOverride || config().chain), c = config(chain), secret = chain === "solana" ? secrets.get(SOLANA_SECRET_ENV) : secrets.get(PRIVATE_KEY_ENV); if (!secret) throw new Error("Only a generated local wallet can be exported"); const pass = String(password || ""); if (pass.length < 12) throw new Error("Backup password must be at least 12 characters"); const salt = crypto.randomBytes(16), iv = crypto.randomBytes(12), key = crypto.scryptSync(pass, salt, 32, { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }), cipher = crypto.createCipheriv("aes-256-gcm", key, iv), ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]); return { format: "sonderr-wallet-backup-v1", chain, network: c.network, address: c.address, createdAt: new Date().toISOString(), kdf: "scrypt", salt: salt.toString("base64url"), iv: iv.toString("base64url"), tag: cipher.getAuthTag().toString("base64url"), ciphertext: ciphertext.toString("base64url") }; }
-async function evmProvider(c = config()) { if (c.chain !== "evm" || !c.rpcUrl || !c.address) throw new Error("Create the local EVM wallet first; Sonderr supplies the network connection"); const privateKey = secrets.get(PRIVATE_KEY_ENV); if (privateKey && new ethers.Wallet(privateKey).address.toLowerCase() !== c.address.toLowerCase()) throw new Error("The protected EVM key does not match this wallet address"); const provider = new ethers.JsonRpcProvider(c.rpcUrl); await assertEvmNetwork(provider, c); return provider; }
+async function evmProvider(c = config()) { if (c.chain !== "evm" || !c.rpcUrl || !c.address) throw new Error("Create the local EVM wallet first; Sonderr supplies the network connection"); const privateKey = secrets.get(PRIVATE_KEY_ENV); if (privateKey && new ethers.Wallet(privateKey).address.toLowerCase() !== c.address.toLowerCase()) throw new Error("The protected EVM key does not match this wallet address"); const request = new ethers.FetchRequest(c.rpcUrl); request.timeout = 8_000; const provider = new ethers.JsonRpcProvider(request); await assertEvmNetwork(provider, c); return provider; }
 function solanaRpc(c = config()) { if (c.chain !== "solana" || !c.rpcUrl || !c.address) throw new Error("Create the local Solana wallet first; Sonderr supplies the network connection"); return solana.createSolanaRpc(c.rpcUrl); }
 async function solanaSigner() { const secret = secrets.get(SOLANA_SECRET_ENV); if (!secret) throw new Error("No protected Solana signing secret is configured"); const signer = await solana.createKeyPairSignerFromBytes(new Uint8Array(Buffer.from(secret, "base64url"))), expected = config("solana").address; if (expected && signer.address !== expected) throw new Error("The protected Solana key does not match this wallet address"); return signer; }
 async function assertEvmNetwork(provider, c) { const network = await provider.getNetwork(), expected = BigInt(c.chainId); if (network.chainId !== expected) throw new Error("The selected wallet network does not match its RPC chain; nothing was prepared"); return network; }
@@ -171,6 +171,25 @@ async function latestPrice(input = {}) {
   const network = priceNetwork(c), url = native ? "https://api.coingecko.com/api/v3/simple/price?ids=" + (c.chain === "solana" ? "solana" : "ethereum") + "&vs_currencies=usd&include_24hr_change=true" : "https://api.coingecko.com/api/v3/simple/token_price/" + network + "?contract_addresses=" + encodeURIComponent(tokenAddress) + "&vs_currencies=usd&include_24hr_change=true";
   let data = {}; try { data = await fetchJson(url); } catch (error) { return { chain: c.chain, network: c.network, tokenAddress: tokenAddress || null, symbol: input.symbol || (c.chain === "solana" ? "SOL" : "ETH"), priceUsd: null, change24h: null, source: "CoinGecko", fetchedAt: new Date().toISOString(), unavailableReason: error.message }; }
   const row = native ? data[c.chain === "solana" ? "solana" : "ethereum"] : data[tokenAddress]; const value = { chain: c.chain, network: c.network, tokenAddress: tokenAddress || null, symbol: String(input.symbol || (native ? (c.chain === "solana" ? "SOL" : "ETH") : "token")).slice(0, 32), priceUsd: row?.usd == null ? null : Number(row.usd), change24h: row?.usd_24h_change == null ? null : Number(row.usd_24h_change), source: "CoinGecko", fetchedAt: new Date().toISOString(), unavailableReason: row ? null : "No price was returned for this exact contract/mint" }; priceCache.set(cacheKey, { value, expiresAt: Date.now() + PRICE_TTL_MS }); return value;
+}
+async function latestPrices(input = {}) {
+  const c = config(input.chain, input.network), assets = Array.isArray(input.assets) ? input.assets : [];
+  const addresses = [...new Set(assets.map(asset => asset.tokenAddress ? String(asset.tokenAddress).toLowerCase() : "").filter(Boolean))].slice(0, 20);
+  const nativePromise = latestPrice({ chain: c.chain, network: c.network, symbol: c.chain === "solana" ? "SOL" : "ETH" });
+  if (!addresses.length || c.testnet) return { native: await nativePromise, tokens: new Map() };
+  const network = priceNetwork(c), cached = new Map(), missing = [];
+  for (const address of addresses) { const key = c.chain + ":" + c.network + ":" + address, row = priceCache.get(key); if (row && row.expiresAt > Date.now()) cached.set(address, row.value); else missing.push(address); }
+  let rows = {};
+  if (missing.length) {
+    const url = "https://api.coingecko.com/api/v3/simple/token_price/" + network + "?contract_addresses=" + encodeURIComponent(missing.join(",")) + "&vs_currencies=usd&include_24hr_change=true";
+    try { rows = await fetchJson(url); } catch {}
+    for (const address of missing) {
+      const row = rows[address] || rows[address.toLowerCase()], value = { chain: c.chain, network: c.network, tokenAddress: address, symbol: "token", priceUsd: row?.usd == null ? null : Number(row.usd), change24h: row?.usd_24h_change == null ? null : Number(row.usd_24h_change), source: "CoinGecko", fetchedAt: new Date().toISOString(), unavailableReason: row ? null : "No price was returned for this exact contract" };
+      if (row) priceCache.set(c.chain + ":" + c.network + ":" + address, { value, expiresAt: Date.now() + PRICE_TTL_MS });
+      cached.set(address, value);
+    }
+  }
+  return { native: await nativePromise, tokens: cached };
 }
 function marketNumber(value) { const number = Number(value); return Number.isFinite(number) && number >= 0 ? number : null; }
 async function marketSnapshot(input = {}) {
@@ -207,6 +226,53 @@ async function marketSnapshot(input = {}) {
   marketCache.set(key, { value, expiresAt: Date.now() + PRICE_TTL_MS });
   return value;
 }
+async function discoverTokens(input = {}) {
+  const c = config("evm", input.network);
+  if (c.testnet) throw new Error("Live token discovery is only available on Base and Ethereum mainnet.");
+  const query = String(input.query || "").trim().slice(0, 100), chainId = c.market;
+  let pairs = [];
+  if (query) {
+    const data = await fetchJson("https://api.dexscreener.com/latest/dex/search?q=" + encodeURIComponent(query));
+    pairs = Array.isArray(data?.pairs) ? data.pairs : [];
+  } else {
+    const profiles = await fetchJson("https://api.dexscreener.com/token-profiles/latest/v1");
+    const addresses = [...new Set((Array.isArray(profiles) ? profiles : []).filter(item => item.chainId === chainId && item.tokenAddress).map(item => String(item.tokenAddress)))].slice(0, 30);
+    if (addresses.length) pairs = await fetchJson("https://api.dexscreener.com/tokens/v1/" + encodeURIComponent(chainId) + "/" + addresses.map(encodeURIComponent).join(","));
+  }
+  if (!Array.isArray(pairs)) throw new Error("Token listing service returned an invalid result.");
+  const needle = query.toLowerCase(), best = new Map();
+  for (const pair of pairs) {
+    if (String(pair?.chainId || "").toLowerCase() !== chainId) continue;
+    for (const token of [pair.baseToken, pair.quoteToken]) {
+      const address = String(token?.address || ""); if (!ethers.isAddress(address)) continue;
+      if (needle && ![token.name, token.symbol, address].some(value => String(value || "").toLowerCase().includes(needle))) continue;
+      const key = ethers.getAddress(address), liquidityUsd = marketNumber(pair.liquidity?.usd), volume24hUsd = marketNumber(pair.volume?.h24), createdAt = Number(pair.pairCreatedAt), pairCreatedAt = Number.isFinite(createdAt) && createdAt > 0 && createdAt <= 8.64e15 ? new Date(createdAt).toISOString() : null;
+      let pairUrl = null;
+      try { const parsed = new URL(String(pair.url || "")); if (parsed.protocol === "https:" && parsed.hostname === "dexscreener.com") pairUrl = parsed.href.slice(0, 300); } catch {}
+      const item = {
+        address: key,
+        name: String(token.name || "Unknown token").slice(0, 80),
+        symbol: String(token.symbol || "TOKEN").slice(0, 24),
+        priceUsd: String(pair.baseToken?.address || "").toLowerCase() === key.toLowerCase() ? marketNumber(pair.priceUsd) : null,
+        liquidityUsd,
+        volume24hUsd,
+        swaps24h: { buys: marketNumber(pair.txns?.h24?.buys), sells: marketNumber(pair.txns?.h24?.sells) },
+        pairCreatedAt,
+        dex: String(pair.dexId || "DEX").slice(0, 40),
+        pairUrl,
+        // These are transparent screening heuristics, not a contract/security audit.
+        riskSignals: [
+          liquidityUsd != null && liquidityUsd < 10_000 ? "Reported pool liquidity below $10,000" : null,
+          marketNumber(pair.txns?.h24?.sells) === 0 && marketNumber(pair.txns?.h24?.buys) > 0 ? "Buys but no sells reported in the last 24h" : null,
+          pairCreatedAt && Date.now() - Date.parse(pairCreatedAt) < 24 * 60 * 60 * 1000 ? "Pool is less than 24 hours old" : null
+        ].filter(Boolean)
+      };
+      const previous = best.get(key.toLowerCase()); if (!previous || (item.liquidityUsd || 0) > (previous.liquidityUsd || 0)) best.set(key.toLowerCase(), item);
+    }
+  }
+  const tokens = [...best.values()].sort((a, b) => (b.liquidityUsd || 0) - (a.liquidityUsd || 0)).slice(0, 30);
+  return { network: c.network, chainId, query: query || null, tokens, fetchedAt: new Date().toISOString(), source: "DEX Screener", note: query ? "Live DEX search results, filtered to the selected network. Liquidity, activity, pool age and screening signals are third-party snapshots, not a contract audit or proof a token is safe/sellable. A result does not guarantee an executable trade." : "Recently profiled tokens with indexed pools on the selected network. This is not a complete list or safety review. Liquidity/activity are third-party snapshots and do not guarantee executable depth or sellability." };
+}
 async function tokenAllowance(input = {}) {
   const c = config(input.chain || "evm", input.network);
   if (c.chain !== "evm") throw new Error("Token allowance inspection currently supports EVM networks only");
@@ -240,12 +306,13 @@ async function balanceSnapshot(input = {}) {
 }
 async function portfolio(input = {}) {
   const c = config(input.chain, input.network), wallet = await status(input), assets = [{ kind: "native", symbol: wallet.nativeSymbol, amount: wallet.balanceNative, amountBaseUnits: c.chain === "solana" ? wallet.balanceBaseUnits : wallet.balanceWei }], requested = Array.isArray(input.assets) ? input.assets.slice(0, 20) : [];
-  if (c.chain === "evm" && !requested.length) assets.push(...await discoverEvmTokens(c));
+  let tokenBalancesAvailable = true;
+  if (c.chain === "evm" && !requested.length) { try { assets.push(...await discoverEvmTokens(c, true)); } catch { tokenBalancesAvailable = false; } }
   if (c.chain === "evm" && requested.length) { const provider = await evmProvider(c), abi = ["function balanceOf(address) view returns (uint256)", "function decimals() view returns (uint8)", "function symbol() view returns (string)"]; for (const item of requested) { const tokenAddress = validateAddress(item.tokenAddress, "Token contract", "evm"), contract = new ethers.Contract(tokenAddress, abi, provider); try { const [raw, decimals, symbol] = await Promise.all([contract.balanceOf(c.address), contract.decimals(), contract.symbol()]); assets.push({ kind: "erc20", tokenAddress, symbol: String(item.symbol || symbol).slice(0, 32), decimals: Number(decimals), amountBaseUnits: raw.toString(), amount: ethers.formatUnits(raw, Number(decimals)) }); } catch (error) { assets.push({ kind: "erc20", tokenAddress, symbol: String(item.symbol || "token").slice(0, 32), unavailableReason: "Token balance could not be read: " + error.message }); } } }
   if (c.chain === "solana") { try { const response = await solanaRpc(c).getTokenAccountsByOwner(solana.address(c.address), { programId: tokenProgram.TOKEN_PROGRAM_ADDRESS }, { encoding: "jsonParsed" }).send(); for (const entry of response.value || []) { const parsed = entry.account?.data?.parsed?.info, amount = parsed?.tokenAmount; if (parsed?.mint && amount) assets.push({ kind: "spl-token", tokenAddress: parsed.mint, tokenAccount: entry.pubkey, symbol: "SPL token", decimals: Number(amount.decimals), amountBaseUnits: String(amount.amount), amount: String(amount.uiAmountString ?? amount.uiAmount ?? "0") }); } } catch (error) { assets.push({ kind: "spl-token", unavailableReason: "SPL token accounts unavailable: " + error.message }); } }
-  let totalUsd = 0, pricedAssets = 0; for (const asset of assets) { const price = await latestPrice({ chain: c.chain, network: c.network, tokenAddress: asset.tokenAddress, symbol: asset.symbol }); asset.priceUsd = price.priceUsd; asset.change24h = price.change24h; asset.priceSource = price.source; if (asset.priceUsd != null && asset.amount != null) { asset.valueUsd = Number(asset.amount) * asset.priceUsd; if (Number.isFinite(asset.valueUsd)) { totalUsd += asset.valueUsd; pricedAssets++; } } }
+  let totalUsd = 0, pricedAssets = 0; const prices = await latestPrices({ chain: c.chain, network: c.network, assets }); for (const asset of assets) { const price = asset.tokenAddress ? prices.tokens.get(String(asset.tokenAddress).toLowerCase()) : prices.native; asset.priceUsd = price?.priceUsd ?? null; asset.change24h = price?.change24h ?? null; asset.priceSource = price?.source ?? "unavailable"; if (asset.priceUsd != null && asset.amount != null) { asset.valueUsd = Number(asset.amount) * asset.priceUsd; if (Number.isFinite(asset.valueUsd)) { totalUsd += asset.valueUsd; pricedAssets++; } } }
   const snapshotKey = c.chain + ":" + c.network + ":" + c.address, previous = store.walletPortfolioSnapshot(snapshotKey), comparable = previous && previous.chain === c.chain && previous.network === c.network && previous.address === c.address, previousTotalUsd = comparable ? Number(previous.totalUsd) : NaN, deltaUsd = Number.isFinite(previousTotalUsd) ? totalUsd - previousTotalUsd : null, snapshot = { chain: c.chain, network: c.network, address: c.address, totalUsd, pricedAssets, assetCount: assets.length }; store.saveWalletPortfolioSnapshot(snapshot, snapshotKey);
-  return { chain: c.chain, network: c.network, address: c.address, assets, totalUsd: pricedAssets ? Number(totalUsd.toFixed(2)) : null, previousTotalUsd: Number.isFinite(previousTotalUsd) ? Number(previousTotalUsd.toFixed(2)) : null, changeSinceLastUsd: deltaUsd == null ? null : Number(deltaUsd.toFixed(2)), changeSinceLastPercent: deltaUsd == null || !previousTotalUsd ? null : Number(((deltaUsd / previousTotalUsd) * 100).toFixed(2)), pricedAssets, assetCount: assets.length, fetchedAt: new Date().toISOString(), note: requested.length ? "Balances and prices are based on the exact contracts/mints supplied or discovered. USD total includes only assets with available prices; compare pricedAssets with assetCount." : "Native and discovered token balances are included when the chain's read-only index supports enumeration. USD total includes only assets with available prices; compare pricedAssets with assetCount." };
+  return { chain: c.chain, network: c.network, address: c.address, assets, nativeBalance: wallet.balanceNative, nativeSymbol: wallet.nativeSymbol, totalUsd: pricedAssets ? Number(totalUsd.toFixed(6)) : null, previousTotalUsd: Number.isFinite(previousTotalUsd) ? Number(previousTotalUsd.toFixed(6)) : null, changeSinceLastUsd: deltaUsd == null ? null : Number(deltaUsd.toFixed(6)), changeSinceLastPercent: deltaUsd == null || !previousTotalUsd ? null : Number(((deltaUsd / previousTotalUsd) * 100).toFixed(2)), tokenBalancesAvailable, pricedAssets, assetCount: assets.length, fetchedAt: new Date().toISOString(), note: requested.length ? "Balances and prices are based on the exact contracts/mints supplied or discovered. USD total includes only assets with available prices; compare pricedAssets with assetCount." : tokenBalancesAvailable ? "Native and indexed token balances are included. Token indexing may be incomplete. USD total includes only assets with available prices; compare pricedAssets with assetCount." : "Native balance was checked, but the public token index is temporarily unavailable; token holdings may be missing. USD total includes only assets with available prices." };
 }
 async function tokenInfo(input = {}) {
   const c = config(input.chain, input.network), tokenAddress = validateAddress(input?.tokenAddress, "Token contract/mint", c.chain);
@@ -271,7 +338,7 @@ async function activity(input = {}) {
   }
   if (c.testnet) return { chain: c.chain, network: c.network, networkId: c.networkId, address: c.address, transactions: [], fetchedAt: new Date().toISOString(), source: "configured EVM RPC", unavailableReason: "A public testnet explorer index is not configured; inspect transactions using the selected network's explorer." };
   const host = priceNetwork(c) === "ethereum" ? "https://eth.blockscout.com" : "https://base.blockscout.com", data = await fetchJson(host + "/api/v2/addresses/" + encodeURIComponent(c.address) + "/transactions?limit=" + limit), rows = Array.isArray(data.items) ? data.items : [];
-  return { chain: c.chain, network: c.network, address: c.address, transactions: rows.slice(0, limit).map(row => ({ hash: String(row.hash || ""), from: row.from?.hash || null, to: row.to?.hash || null, valueWei: String(row.value || "0"), valueNative: (() => { try { return ethers.formatEther(BigInt(row.value || "0")); } catch { return null; } })(), blockNumber: row.block_number == null ? null : Number(row.block_number), timestamp: row.timestamp || null, status: row.status === "error" ? "failed" : "reported", method: String(row.method || "").slice(0, 48) || null, explorerUrl: (priceNetwork(c) === "ethereum" ? "https://etherscan.io/tx/" : "https://basescan.org/tx/") + encodeURIComponent(String(row.hash || "")) })), fetchedAt: new Date().toISOString(), source: "Blockscout public index", note: "Recent indexed transactions; indexer labels may lag and are not a transaction simulation." };
+  return { chain: c.chain, network: c.network, networkId: c.networkId, address: c.address, transactions: rows.slice(0, limit).map(row => ({ hash: String(row.hash || ""), from: row.from?.hash || null, to: row.to?.hash || null, valueWei: String(row.value || "0"), valueNative: (() => { try { return ethers.formatEther(BigInt(row.value || "0")); } catch { return null; } })(), blockNumber: row.block_number == null ? null : Number(row.block_number), timestamp: row.timestamp || null, status: row.status === "error" ? "failed" : "reported", method: String(row.method || "").slice(0, 48) || null, explorerUrl: (priceNetwork(c) === "ethereum" ? "https://etherscan.io/tx/" : "https://basescan.org/tx/") + encodeURIComponent(String(row.hash || "")) })), fetchedAt: new Date().toISOString(), source: "Blockscout public index", note: "Recent indexed transactions; indexer labels may lag and are not a transaction simulation." };
 }
 function baseAmount(input, label = "Amount") { const value = String(input || "").trim(); if (!/^[1-9][0-9]*$/.test(value) || value.length > 78) throw new Error(label + " must be a positive integer in base units"); return value; }
 async function prepareEvm(input, c) {
@@ -445,4 +512,4 @@ async function confirmSwap(token) {
   return { accepted: true, provider: "evm", transactionHash: sent.hash, network: c.network, chainId: prepared.chainId, action: item.type === "approval" ? "approval" : "swap", status: "broadcast" };
 }
 
-module.exports = { PRIVATE_KEY_ENV, SEED_ENV, SOLANA_SECRET_ENV, saveConfig, publicConfig, networkCatalog, inferNetworkFromText, resolveExplicitToolNetwork, setNetwork, builtInNetwork, isSupportedSwapRouter, createWallet, exportBackup, status, balanceSnapshot, latestPrice, marketSnapshot, tokenAllowance, portfolio, tokenInfo, activity, prepareTransaction, confirmTransaction, declineTransaction, prepareSwap, confirmSwap, keccak256 };
+module.exports = { PRIVATE_KEY_ENV, SEED_ENV, SOLANA_SECRET_ENV, saveConfig, publicConfig, networkCatalog, inferNetworkFromText, resolveExplicitToolNetwork, setNetwork, builtInNetwork, isSupportedSwapRouter, createWallet, exportBackup, accounts, status, balanceSnapshot, latestPrice, latestPrices, marketSnapshot, discoverTokens, tokenAllowance, portfolio, tokenInfo, activity, prepareTransaction, confirmTransaction, declineTransaction, prepareSwap, confirmSwap, keccak256 };

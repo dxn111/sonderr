@@ -12,6 +12,12 @@ function includesRedaction(value) {
 assert.ok(includesRedaction(safety.redactText("token=sk-abcdefghijklmnopqrstuvwxyz0123456789")));
 assert.ok(includesRedaction(safety.redactText("Authorization: Bearer secret-value")));
 assert.ok(includesRedaction(safety.redactText("-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----")));
+assert.ok(includesRedaction(safety.redactText("AIzaSy123456789012345678901234567890123")), "Google API keys are scrubbed too");
+assert.ok(includesRedaction(safety.redactText('request {"access_token":"sensitive-value","api_key":"another-sensitive-value"}')));
+assert.ok(includesRedaction(safety.redactText("https://example.invalid/path?access_token=private-value&ok=1")), "credential query parameters are removed");
+assert.ok(includesRedaction(safety.redactText("--api-key private-cli-value")), "credential-bearing command arguments are removed");
+const redactedOnce = safety.redactText('token=sk-abcdefghijklmnopqrstuvwxyz0123456789');
+assert.equal(safety.redactText(redactedOnce), redactedOnce, "secret redaction is stable when it crosses multiple safety boundaries");
 assert.equal(safety.redactText("public address 0xb1921aa22e87048d9a1dd63c22a16e1184a7efda"), "public address 0xb1921aa22e87048d9a1dd63c22a16e1184a7efda");
 
 // Agent tools cannot inspect or overwrite credential/control-plane material.
@@ -53,7 +59,24 @@ assert.equal(safety.hasPseudoToolMarkup(escapedStudioCall), true, "escaped pseud
 assert.match(safety.sanitizeAssistantOutput(escapedStudioCall), /tool-call-shaped text/i, "the reported Studio dump is replaced instead of shown as a completed action");
 assert.equal(safety.hasPseudoToolMarkup("Use the literal syntax `<tool_call>` in your parser test."), false, "inline code examples remain explainable");
 assert.equal(safety.hasPseudoToolMarkup('The model printed {"tool_calls":[{"function":{"name":"update_studio_board"}}]}'), true, "JSON-serialized pseudo tool calls are also detected");
+assert.equal(safety.hasPseudoToolMarkup('The model printed {"function":{"name":"update_studio_board","arguments":{}}}'), true, "serialized function envelopes are detected");
+assert.match(safety.sanitizeAssistantOutput('Completed. {"tool_calls":[{"function":{"name":"write_file"}}]}'), /tool-call-shaped text/i);
 assert.ok(includesRedaction(safety.sanitizeValue({ password: "not-for-chat" }).password));
+assert.ok(includesRedaction(safety.sanitizeValue({ access_token: "private" }).access_token));
+assert.ok(includesRedaction(safety.sanitizeValue({ privateKeyHex: "private" }).privateKeyHex));
+assert.equal(safety.sanitizeValue({ tokenAddress: "public-mint", tokenAccount: "public-account" }).tokenAddress, "public-mint", "public token addresses are not mistaken for credentials");
+assert.ok(includesRedaction(safety.sanitizeValue({ token: "generic-private-token" }).token));
+const protoPayload = JSON.parse('{"__proto__":{"polluted":true},"secret":"private"}');
+const sanitizedProto = safety.sanitizeValue(protoPayload);
+assert.equal({}.polluted, undefined, "sanitizing JSON must not mutate object prototypes");
+assert.equal(Object.hasOwn(sanitizedProto, "__proto__"), true, "special keys remain inert data");
+const confirmationToken = "a".repeat(48);
+const walletEvent = safety.sanitizeValue({ type: "tool_end", name: "prepare_wallet_transaction", output: { token: confirmationToken, expiresAt: Date.now() + 30_000, privateKey: "never-show" } });
+assert.equal(walletEvent.output.token, confirmationToken, "the scoped, short-lived local confirmation token survives only in its wallet card event");
+assert.equal(safety.sanitizeValue([walletEvent])[0].output.token, confirmationToken, "session history and final SSE sanitization retain the safe confirmation capability only in its card");
+assert.ok(includesRedaction(walletEvent.output.privateKey));
+assert.ok(includesRedaction(safety.sanitizeValue({ type: "tool_end", name: "other_tool", output: { token: confirmationToken, expiresAt: Date.now() + 30_000 } }).output.token), "the same token field is redacted outside wallet confirmation cards");
+assert.equal(safety.sanitizeToolOutput("prepare_wallet_transaction", { token: confirmationToken, expiresAt: Date.now() + 30_000, apiKey: "secret" }).token, confirmationToken);
 
 // Full PC access is still bounded against credential dumping and broad deletion.
 assert.equal(safety.terminalPolicy("npm test").allowed, true);

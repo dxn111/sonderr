@@ -26,6 +26,12 @@
     <li>If the check cannot reach GitHub, the managed app stays locked and offers retry. Development source checkouts are exempt and are never overwritten.</li>
     <li>The updater fetches source and dependencies from GitHub over HTTPS. Release tags are not cryptographically signed by the updater; review source if your threat model requires signed artifacts.</li>
   </ul></section>
+  <section class="card"><h2>Output and credential safeguards (v1.5.11)</h2><ul>
+    <li>Credential-like values are scrubbed at chat, event, saved-history, and JSON API output boundaries, including common provider token formats, credential-labeled fields, and sensitive URL parameters. Public token addresses remain visible where wallet features need them.</li>
+    <li>Provider error bodies are not copied into chat. Provider and MCP responses are bounded; MCP protocol frames are limited. Call-shaped text is not treated as a tool action.</li>
+    <li>Provider keys, secret files, and MCP configuration stay in owner-only local directories. Inline MCP command credentials and secret environment values are rejected; use the local secret store instead.</li>
+    <li>Automated detection is not a promise that every credential or unsafe output will always be recognized. Keep secrets out of prompts and rotate any credential that may have been exposed.</li>
+  </ul></section>
   <section class="card"><h2>Safety boundaries</h2><ul>
     <li>Sonderr must not help create, obtain, or distribute child sexual abuse material.</li>
     <li>It must not help build weapons or explosives, enable violence, or facilitate serious wrongdoing.</li>
