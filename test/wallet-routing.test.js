@@ -98,8 +98,20 @@ async function chat(port, sessionId, content, options = {}) {
     const beforeApprovalCheck = observed.statusRequests.length;
     const approvalTurn = await chat(port, approvalSession.id, "check devnet solana");
     assert.equal(observed.statusRequests.length, beforeApprovalCheck, "deterministic reads never bypass the Ask approval setting");
-    assert.ok(observed.calls.at(-1).tools.some(tool => tool.function.name === "get_wallet_status"), "with Ask enabled, the normal tool/approval flow remains available");
+    assert.ok(!observed.calls.at(-1).tools.some(tool => tool.function.name === "get_wallet_status"), "Ask before tools does not advertise sensitive wallet reads");
+    assert.match(observed.calls.at(-1).system, /Ask before tools/, "the model receives the exact wallet access boundary");
     assert.ok(approvalTurn.some(event => event.event === "final"));
+
+    const askBoardSession = store.createSession("Ask mode board boundary", "studios", {
+      track: "developer",
+      goal: "Leave this read-only brief alone",
+      milestones: [{ id: "current", text: "Keep the current plan", done: false }]
+    });
+    const boardRequest = "Update my Studio brief and milestones to focus on exploring the codebase, reviewing feedback, and proposing a scoped improvement.";
+    const askBoardTurn = await chat(port, askBoardSession.id, boardRequest);
+    assert.equal(store.getSession(askBoardSession.id).studio.goal, "Leave this read-only brief alone", "Ask cannot update the Studio board");
+    assert.ok(!observed.calls.at(-1).tools.some(tool => tool.function.name === "update_studio_board"), "Ask does not receive the Studio mutation schema");
+    assert.ok(askBoardTurn.some(event => event.event === "final"));
 
     const boardSession = store.createSession("Developer improvement ideas", "studios", {
       track: "developer",
@@ -110,7 +122,7 @@ async function chat(port, sessionId, content, options = {}) {
       ]
     });
     store.updateSettings({ ...store.settings(), approvalMode: "auto" });
-    const boardTurn = await chat(port, boardSession.id, "Update my Studio brief and milestones to focus on exploring the codebase, reviewing feedback, and proposing a scoped improvement.");
+    const boardTurn = await chat(port, boardSession.id, boardRequest, { mode: "build" });
     const updatedBoard = store.getSession(boardSession.id).studio;
     assert.equal(updatedBoard.goal, "Find practical ways to improve Sonderr");
     assert.equal(new Set(updatedBoard.milestones.map(item => item.id)).size, updatedBoard.milestones.length, "the real board update repairs repeated model-supplied IDs");

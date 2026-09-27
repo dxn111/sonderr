@@ -1,4 +1,4 @@
-# SONDERR v1.5.16
+# SONDERR v1.5.17
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.16 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.5.17 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
 
 The terminal is only the launcher.
 
@@ -73,9 +73,11 @@ Choose **Install update & restart** to download the exact release tag, install i
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
 
-### v1.5.16 security and team collaboration
+### v1.5.17 security, teamwork, and tool accuracy
 
-Workspace tools now reject symlinks that resolve outside the workspace or into protected paths, including `.env`, `.sonderr`, and Git internals. Static UI and documentation routes are constrained to canonical files inside `web/`. Sonderr collaboration rooms add up to three read-only workers, bounded shared findings/help/risk signals, peer review, separate AI and human poll votes, and saved-room recovery. Worker identities are labeled as fictional AI personas, and their assessments remain unverified evidence.
+Workspace tools reject symlinks that resolve outside the workspace or into protected paths, including `.env`, `.sonderr`, and Git internals. Static UI and documentation routes are constrained to canonical files inside `web/`. Task mode and Tools & Access are separate: Ask stays read-only, Build handles changes, and project checks or shell commands require Full PC access. Sonderr explains the actual missing boundary instead of claiming it can switch modes for you.
+
+Collaboration rooms keep the lead and up to three read-only workers inside the same chat, with a live Alt+5 room, shared findings/help/risk signals, peer review, separate AI and human poll votes, and saved-room recovery. Worker identities are labeled as fictional AI personas, and their assessments remain unverified evidence. Tool execution also checks the user's present message, so a stale call, negated instruction, or how-to question cannot silently authorize supported local actions.
 
 ### Security hardening in v1.5.11
 
@@ -244,7 +246,7 @@ npm run check
 
 ## Current scope
 
-Sonderr v1.5.11 provides a localhost engineering workspace with these capabilities:
+Sonderr v1.5.17 provides a localhost engineering workspace with these capabilities:
 
 - local installation and one-command launch
 - localhost serving with automatic browser opening
@@ -254,12 +256,15 @@ Sonderr v1.5.11 provides a localhost engineering workspace with these capabiliti
 - present_file artifact cards with the Claude-style side preview panel (markdown / code / JSON / CSV / images)
 - device uploads (20 MB, sandboxed) plus clipboard paste and drag & drop
 - Vision mode: image Q&A over vision-capable models + edit_image generation/editing
-- 64 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
+- 65 handwritten backend skill playbooks; Sonderr sends small candidate hints, loads full instructions only through visible `load_skill` tool calls, and unloads them when finished
 - persistent task lists and resumable active-work quality budgets for multi-stage tasks
 - workspace analysis, bounded source reading, exact file patching, and controlled project checks
 - a long-running task workflow that checkpoints progress and resumes from verified workspace state
 - system prompt with explicit tool contracts, untrusted-content handling, privacy boundaries, and honest verification rules
-- token-aware Ask mode: short standalone questions use a compact prompt, no tool catalog, and no unrelated chat history; workspace, wallet, web research, MCP, and other tool-backed requests receive only relevant Ask tools
+- Build is the default for new chats and direct API requests; simple Q&A stays concise, while implementation work gets workspace inspection, scoped task tracking, approval-aware tools, and verification
+- Task-shaped tool routing across Ask, Plan, Build, and Vision; short follow-ups can use the preceding user topic to find relevant tools, while runtime authorization checks still inspect the current message
+- Ask task mode: short standalone questions use a compact prompt; substantive Ask requests use relevant read-only schemas, including workspace reads and bounded public web search. Ask is read-only and never changes the user's selected mode. Build is needed for edits and project checks; project checks and terminal commands also require Full PC access. Tools & Access separately gates wallet and remote MCP reads/actions. The local model receives explicit Ask/Plan/Build/Vision rules, and capability questions are routed through those rules instead of the casual-answer shortcut
+- Build and Plan modes restore from the latest assistant turn when a conversation is reopened; every new chat returns to Build
 - provider TPM recovery: compact long context when needed, reduce output budgets, and honor a provider's timed token-rate cooldowns before retrying
 - mandatory official-release checking and update gating for standard managed installs, with source-checkout protection, one-click POSIX updates, rollback, and an honest fail-closed path when release status cannot be verified
 - Sonderr branding, clean AI-harness-style UI

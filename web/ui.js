@@ -4,6 +4,15 @@
 /* ---------- tiny helpers ---------- */
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeExternalHref = (value) => {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:" || url.username || url.password || url.href.length > 2048
+      || [...url.searchParams.keys()].some(key => /(?:api.?key|token|secret|password|authorization|session|oauth|signature|(?:^|_)key$)/i.test(key))) return "";
+    url.hash = "";
+    return url.href;
+  } catch { return ""; }
+};
 const rel = (iso) => {
   const d = Date.now() - new Date(iso).getTime(), m = Math.floor(d / 60000);
   if (m < 1) return "just now"; if (m < 60) return m + "m ago";
@@ -30,12 +39,31 @@ function toast(msg) {
 /* ---------- state ---------- */
 const state = {
   settings: null, providers: {}, models: [], modelsLoading: false, modelsError: "",
-  sessions: [], session: null, mode: "ask", contextFiles: [], files: [], images: [], lastGeneralModel: "",
+  sessions: [], session: null, mode: "build", contextFiles: [], files: [], images: [], lastGeneralModel: "",
   sending: false, apiConfigured: false, anonymousFreeModels: false, workspace: "", nodeVersion: "", appVersion: "", onboarding: null,
   plugins: [], activePluginId: "", surface: "chat", updateCheck: null,
   tradingAgentSession: null, tradingAgentHistory: [], tradingAgentBusy: false, tradingAgentRestorePromise: null, tradingRefreshTimer: null,
   agentRooms: new Map(), activeAgentRoomId: "", agentRoomSending: false, agentRoomSendingTarget: "The team", unavailableAgentRooms: new Set(), sonderrQuantizedSupported: false
 };
+let chatViewGeneration = 0;
+const locallyBusyChatSessions = new Set();
+const locallyPreparingChatViews = new Set();
+const failedChatTurns = new Map();
+function rememberFailedChatTurn(sessionId, failure) {
+  failedChatTurns.delete(sessionId);
+  failedChatTurns.set(sessionId, failure);
+  while (failedChatTurns.size > 100) failedChatTurns.delete(failedChatTurns.keys().next().value);
+}
+let sessionsRequestGeneration = 0;
+let agentRoomRequestGeneration = 0;
+let taskProgressRequestGeneration = 0;
+function refreshSendingState() {
+  const busy = state.surface === "trading" ? Boolean(state.tradingAgentBusy) : locallyPreparingChatViews.has(chatViewGeneration) || Boolean(state.session?.id && locallyBusyChatSessions.has(state.session.id));
+  if (state.surface !== "trading") state.sending = busy;
+  $("sendBtn").disabled = busy;
+  $("sendBtn").classList.toggle("pending", busy);
+  $("input").disabled = busy;
+}
 const STUDIO_PHASES = {
   idea: { title: "Give the idea a shape", text: "Describe the user, problem, and smallest useful result. Studios turns a vague idea into a first milestone.", mode: "ask", prompt: "I have a project idea. Help me define who it is for, the core problem, and the smallest useful first milestone." },
   plan: { title: "Make a buildable plan", text: "Map the files, decisions, risks, and checks before spending time on implementation.", mode: "plan", prompt: "Plan this project into small milestones. Start by inspecting the current workspace, then identify the first files, risks, and verification steps." },
@@ -467,8 +495,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
 /* ---------- sessions ---------- */
 async function loadSessions() {
+  const requestGeneration = ++sessionsRequestGeneration;
+  const requestedForSession = state.session?.id || "";
+  const requestedView = chatViewGeneration;
   try {
     const data = await api("/api/sessions");
+    if (requestGeneration !== sessionsRequestGeneration || requestedView !== chatViewGeneration || (state.session?.id || "") !== requestedForSession) return;
     state.sessions = (data.sessions || []).filter(session => session.surface !== "trading");
     const list = $("sessionList");
     list.innerHTML = state.sessions.length ? "" : '<div class="empty-side">Your recent tasks will appear here.</div>';
@@ -510,18 +542,25 @@ function showInterruptedTaskPrompt(session) {
   document.body.appendChild(overlay);
 }
 async function openSession(id) {
+  if (state.session?.id === id && locallyBusyChatSessions.has(id)) return true;
+  const viewId = ++chatViewGeneration;
+  refreshSendingState();
   try {
     const data = await api("/api/sessions/" + id);
-    if (data.session.surface === "trading") { state.session = null; openTrading(); return true; }
+    if (viewId !== chatViewGeneration) return false;
+    if (data.session.surface === "trading") { state.session = null; refreshSendingState(); openTrading(); return true; }
     state.session = data.session;
+    refreshSendingState();
     restoreAgentRooms(state.session);
     state.surface = state.session.surface === "studios" ? "studios" : "chat";
+    refreshSendingState();
     setSurfacePath(state.surface);
     renderSurface();
     state.activePluginId = state.session.activePluginId || "";
     state.contextFiles = []; state.images = []; renderContext();
+    const savedMode = [...(state.session.messages || [])].reverse().find(message => ["user", "assistant"].includes(message.role) && ["ask", "plan", "build", "vision"].includes(message.mode))?.mode;
     if (state.activePluginId) setMode(state.activePluginId === "code-review" ? "ask" : "build");
-    else updateComposerForMode();
+    else setMode(savedMode || "build");
     renderPluginCatalog();
     $("welcome").hidden = true;
     $("studiosHome").hidden = true;
@@ -531,6 +570,22 @@ async function openSession(id) {
     for (const m of state.session.messages) {
       if (m.role === "user") addUserMessage(m.content, (m.images || []).map(p => ({ path: p, name: String(p).split("/").pop() })));
       else addAgentMessage(m.content, m.events || []);
+    }
+    const failedTurn = failedChatTurns.get(id);
+    if (failedTurn && state.session.messages.at(-1)?.id === failedTurn.userMessageId) {
+      const failedRow = createAgentRow();
+      failedTurn.row = failedRow;
+      failedRow.fail(failedTurn.message, failedTurn.retryAvailable ? () => {
+        failedRow.el.remove();
+        failedChatTurns.delete(id);
+        send(failedTurn.retryOptions);
+      } : null);
+    }
+    if (locallyBusyChatSessions.has(id) && state.session.messages.at(-1)?.role === "user") {
+      const pending = document.createElement("div");
+      pending.className = "msg-agent chat-background-status";
+      pending.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span><div class="body"><div class="agent-status" role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span>Still working on this conversation in the background…</span></div></div>';
+      box.appendChild(pending);
     }
     const latestCheckpoint = state.session.taskCheckpoint;
     if (latestCheckpoint) {
@@ -549,7 +604,7 @@ async function openSession(id) {
     $("topbarTitle").textContent = state.session.title;
     markActiveSession(); scrollBottom(true);
     return true;
-  } catch { toast("Could not open this session"); return false; }
+  } catch { if (viewId === chatViewGeneration) toast("Could not open this session"); return false; }
 }
 function markActiveSession() {
   document.querySelectorAll(".session").forEach(el => el.classList.remove("active"));
@@ -561,12 +616,17 @@ function setSurfacePath(surface, navigate = true) {
   if (navigate && location.pathname !== target) history.pushState({ surface }, "", target);
 }
 function newTask(navigate = true) {
+  chatViewGeneration++;
+  state.tradingAgentBusy = false;
+  refreshSendingState();
   closeAgentRoom();
   state.session = null;
+  refreshSendingState();
   state.agentRooms = new Map(); state.activeAgentRoomId = ""; syncAgentRoomUI();
   state.surface = "chat";
   setSurfacePath("chat", navigate);
   state.activePluginId = "";
+  setMode("build");
   state.contextFiles = []; state.images = []; renderContext();
   renderPluginCatalog();
   updateComposerForMode();
@@ -589,7 +649,7 @@ function renderSurface() {
   $("studiosBtn").setAttribute("aria-current", studios ? "page" : "false");
   $("tradingBtn").setAttribute("aria-current", trading ? "page" : "false");
   $("tradingBtn").classList.toggle("active", trading);
-  $("input").placeholder = studios ? "Ask Sonderr Studios anything…" : trading ? "Ask Sonderr about markets, risk, or your portfolio…" : "How can Sonderr help you today? Type / for commands.";
+  $("input").placeholder = studios ? "Ask Sonderr Studios anything…" : trading ? "Ask Sonderr about markets, risk, or your portfolio…" : state.mode === "build" ? "Describe what to build or improve… Type / for commands." : "How can Sonderr help you today? Type / for commands.";
   $("studioBackBtn").hidden = !studios;
   $("studioNewBtn").hidden = !studios;
   document.body.classList.toggle("in-studios", studios);
@@ -776,9 +836,10 @@ async function runTradingPrompt(prompt, agentMode = false) {
   if (agentMode && state.tradingAgentRestorePromise) await state.tradingAgentRestorePromise;
   const effectivePrompt = agentMode && $("tradeExecuteNetwork") ? String(prompt).replace(/\bselected network\b/gi, $("tradeExecuteNetwork").value === "base-mainnet" ? "Base Mainnet" : "Ethereum Mainnet") : prompt;
   const output = $("tradeAiOutput"), result = $("tradeAiResult"), agentList = $("tradeAgentMessages");
-  if ((!agentMode && (!output || !result)) || (agentMode && !agentList) || state.sending) return;
+  if ((!agentMode && (!output || !result)) || (agentMode && !agentList) || state.tradingAgentBusy) return;
   let researchSession = agentMode ? state.tradingAgentSession : null, loadingRow = null;
-  state.sending = true; state.tradingAgentBusy = agentMode;
+  state.tradingAgentBusy = true;
+  refreshSendingState();
   if (agentMode) {
     const welcome = $("tradeAgentWelcome"); if (welcome) welcome.hidden = true;
     state.tradingAgentHistory.push({ role: "user", content: effectivePrompt });
@@ -860,7 +921,8 @@ async function runTradingPrompt(prompt, agentMode = false) {
     else result.innerHTML = '<div class="trade-ai-error">' + esc(error.message || "Research could not be completed.") + "</div>";
   } finally {
     if (!agentMode && researchSession?.id) await api("/api/trading/research-sessions/" + encodeURIComponent(researchSession.id), { method: "DELETE" }).catch(() => {});
-    state.sending = false; state.tradingAgentBusy = false;
+    state.tradingAgentBusy = false;
+    refreshSendingState();
   }
 }
 function renderTradingPageLegacy() {
@@ -976,7 +1038,8 @@ function renderTradingPage() {
         const activity = token.swaps24h ? '24h buys/sells ' + (token.swaps24h.buys ?? '—') + '/' + (token.swaps24h.sells ?? '—') : '24h activity unknown';
         const poolAge = token.pairCreatedAt ? 'pool since ' + new Date(token.pairCreatedAt).toLocaleDateString() : 'pool age unknown';
         const signals = (token.riskSignals || []).map(signal => '<span class="phantom-risk-signal">' + esc(signal) + '</span>').join('');
-        const poolLink = token.pairUrl ? '<a href="' + esc(token.pairUrl) + '" target="_blank" rel="noopener noreferrer">Pool ↗</a>' : '';
+        const safePoolHref = safeExternalHref(token.pairUrl);
+        const poolLink = safePoolHref ? '<a href="' + esc(safePoolHref) + '" target="_blank" rel="noopener noreferrer">Pool ↗</a>' : '';
         return '<article class="phantom-discovery-token"><span class="phantom-discovery-icon">' + esc(String(token.symbol || "?").slice(0, 1).toUpperCase()) + '</span><span class="phantom-discovery-main"><strong>' + esc(token.name) + '</strong><small title="' + esc(token.address) + '">' + esc(token.symbol) + ' · ' + esc(token.address.slice(0, 6) + "…" + token.address.slice(-4)) + ' <button type="button" class="phantom-copy-contract" data-copy-contract="' + esc(token.address) + '">Copy contract</button></small><small>' + esc(token.dex) + ' · liquidity ' + esc(compactUsd(token.liquidityUsd)) + ' · 24h volume ' + esc(compactUsd(token.volume24hUsd)) + '</small><small>' + esc(activity) + ' · ' + esc(poolAge) + '</small>' + (signals ? '<span class="phantom-risk-signals">' + signals + '</span>' : '') + '</span><span class="phantom-discovery-value">' + esc(usd(token.priceUsd)) + '<button type="button" data-discover-add="' + esc(token.address) + '">Check route</button>' + poolLink + '</span></article>';
       }).join("") : '<div class="wallet-empty-state">' + (query ? "No matching listed tokens found on this network." : "No recent profiles have pools indexed here yet. Search by token name, symbol, or contract.") + '</div>';
       list.dataset.source = discovery.source + " · " + new Date(discovery.fetchedAt).toLocaleTimeString();
@@ -1030,7 +1093,8 @@ function renderTradingPage() {
         const peer = outgoing ? tx.to : tx.from, peerLabel = peer ? (outgoing ? "To " : "From ") + peer.slice(0, 6) + "…" + peer.slice(-4) : (tx.method || "Wallet activity");
         const time = tx.timestamp && Number.isFinite(Date.parse(tx.timestamp)) ? new Date(tx.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Time unavailable";
         const hash = String(tx.hash || ""), failed = tx.status === "failed";
-        return '<article class="phantom-activity-row"><span class="phantom-activity-icon ' + (failed ? 'failed' : outgoing ? 'outgoing' : 'incoming') + '">' + (failed ? '!' : outgoing ? '↗' : '↙') + '</span><span class="phantom-activity-main"><strong>' + esc(detail) + '</strong><small>' + esc(peerLabel) + ' · ' + esc(time) + '</small></span><span class="phantom-activity-state ' + (failed ? 'failed' : '') + '">' + esc(failed ? "Failed" : "View") + (tx.explorerUrl && !failed ? '<a href="' + esc(tx.explorerUrl) + '" target="_blank" rel="noopener noreferrer" aria-label="View transaction in block explorer">↗</a>' : '') + '</span></article>';
+        const safeExplorerHref = safeExternalHref(tx.explorerUrl);
+        return '<article class="phantom-activity-row"><span class="phantom-activity-icon ' + (failed ? 'failed' : outgoing ? 'outgoing' : 'incoming') + '">' + (failed ? '!' : outgoing ? '↗' : '↙') + '</span><span class="phantom-activity-main"><strong>' + esc(detail) + '</strong><small>' + esc(peerLabel) + ' · ' + esc(time) + '</small></span><span class="phantom-activity-state ' + (failed ? 'failed' : '') + '">' + esc(failed ? "Failed" : "View") + (safeExplorerHref && !failed ? '<a href="' + esc(safeExplorerHref) + '" target="_blank" rel="noopener noreferrer" aria-label="View transaction in block explorer">↗</a>' : '') + '</span></article>';
       }).join("") : '<div class="wallet-empty-state">No recent indexed activity on this network.</div>';
       $("tradeActivityUpdated").textContent = (activity.source || "Public explorer index") + (activity.fetchedAt ? " · " + new Date(activity.fetchedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "") + ". Token-level details may be incomplete.";
     }).catch(error => {
@@ -1045,7 +1109,7 @@ function renderTradingPage() {
   const hideAgent = () => { $("tradeAgentBackdrop").hidden = true; $("tradeAgentDrawer").hidden = true; };
   $("tradeAgentOpen").onclick = showAgent; $("tradeAgentTab").onclick = showAgent; $("tradeAgentClose").onclick = hideAgent; $("tradeAgentBackdrop").onclick = hideAgent;
   $("tradeAgentNew").onclick = () => {
-    if (state.sending) return;
+    if (state.tradingAgentBusy) return;
     state.tradingAgentSession = null; state.tradingAgentHistory = [];
     try { sessionStorage.removeItem("sonderr-trading-agent-session"); } catch {}
     $("tradeAgentMessages").querySelectorAll(".wallet-agent-message").forEach(message => message.remove()); $("tradeAgentWelcome").hidden = false;
@@ -1053,7 +1117,7 @@ function renderTradingPage() {
   };
   $("tradeAgentForm").onsubmit = async event => {
     event.preventDefault(); const text = $("tradeAgentInput").value.trim();
-    if (!text || state.sending) return;
+    if (!text || state.tradingAgentBusy) return;
     $("tradeAgentSend").disabled = true;
     await runTradingPrompt(text, true);
     $("tradeAgentSend").disabled = false; $("tradeAgentInput").focus();
@@ -1151,6 +1215,7 @@ async function refreshTradingPortfolio(root) {
 async function updateStudioData(studio) {
   if (!state.session || state.surface !== "studios") return;
   const sessionId = state.session.id;
+  if ($("studiosProject").dataset.studioSessionId !== sessionId) return;
   const snapshot = JSON.parse(JSON.stringify(studio));
   const revision = (studioSaveRevision.get(sessionId) || 0) + 1;
   studioSaveRevision.set(sessionId, revision);
@@ -1176,7 +1241,11 @@ async function updateStudioData(studio) {
   return studioSaveChain;
 }
 function openStudios(navigate = true) {
+  chatViewGeneration++;
+  state.tradingAgentBusy = false;
+  refreshSendingState();
   state.session = null;
+  refreshSendingState();
   state.surface = "studios";
   setSurfacePath("studios", navigate);
   state.activePluginId = "";
@@ -1192,7 +1261,10 @@ function openStudios(navigate = true) {
   $("input").focus();
 }
 function openTrading(navigate = true) {
+  chatViewGeneration++;
+  refreshSendingState();
   state.session = null;
+  refreshSendingState();
   state.surface = "trading";
   setSurfacePath("trading", navigate);
   state.activePluginId = "";
@@ -1231,6 +1303,18 @@ function mergeAgentUpdate(event, render = true) {
   if (!event?.room?.id) return null;
   const previous = state.agentRooms.get(event.room.id) || { room: null, entries: [] };
   previous.room = event.room;
+  // Older saved rooms can finish while retaining an open poll snapshot. Treat
+  // completed rooms as closed and synthesize a result entry for their archive.
+  if (previous.room.status !== "active" && previous.room.poll?.status === "open") {
+    previous.room.poll.status = "closed";
+    const poll = previous.room.poll;
+    const votes = Array.isArray(poll.votes) ? poll.votes : [];
+    const counts = Object.fromEntries((poll.options || []).map(option => [option.id, votes.filter(vote => vote.optionId === option.id).length]));
+    const max = Math.max(0, ...Object.values(counts));
+    const leaders = max ? (poll.options || []).filter(option => counts[option.id] === max).map(option => option.label) : [];
+    const id = `legacy-poll-result-${event.room.id}`;
+    if (!previous.entries.some(entry => entry.id === id)) previous.entries.push({ id, at: new Date().toISOString(), senderId: "lead", name: previous.room.leader?.name || "AI lead", role: "Lead", kind: "AI", type: "poll_results", text: leaders.length ? `Vote ended · workers selected ${leaders.join(" and ")} (${max} vote${max === 1 ? "" : "s"}).` : "Vote ended · no worker votes were recorded.", poll: { counts, leaders } });
+  }
   if (event.entry?.id && !previous.entries.some(entry => entry.id === event.entry.id)) {
     let pendingIndex = -1;
     if (event.entry.type === "user_message") {
@@ -1243,6 +1327,8 @@ function mergeAgentUpdate(event, render = true) {
   }
   if (previous.entries.length > 400) previous.entries.splice(0, previous.entries.length - 400);
   state.agentRooms.set(event.room.id, previous);
+  const eventSessionId = String(event.sessionId || event.room.sessionId || state.session?.id || "");
+  if (eventSessionId && eventSessionId !== (state.session?.id || "")) return previous;
   state.activeAgentRoomId = event.room.id;
   if (render) {
     syncAgentRoomUI();
@@ -1254,6 +1340,8 @@ function restoreAgentRooms(session) {
   state.agentRooms = new Map();
   state.activeAgentRoomId = "";
   state.unavailableAgentRooms = new Set();
+  state.agentRoomSending = false;
+  agentRoomRequestGeneration++;
   for (const message of session?.messages || []) {
     for (const event of message?.events || []) if (event?.type === "agent_update") mergeAgentUpdate(event, false);
   }
@@ -1308,7 +1396,7 @@ function renderAgentPollEntry(room, entry) {
     const selected = ownVote === option.id;
     return '<button type="button" class="agent-chat-poll-choice' + (selected ? ' is-selected' : '') + '" data-agent-vote="' + esc(option.id) + '"' + (state.session ? '' : ' disabled') + '><span>' + esc(option.label) + '</span><b>' + count + ' AI</b>' + (selected ? '<i>Your vote</i>' : '') + '</button>';
   }).join("");
-  return '<article class="agent-room-poll-post"><div class="agent-poll-post-author">' + agentAvatarMarkup(leader || { id: "lead", name: "AI lead", role: "Lead", status: "coordinating" }) + '<span><strong>' + esc(leader?.name || "AI Lead") + '</strong><small>LEAD POLL · ' + (poll.status === "closed" ? "AI VOTES CLOSED" : "VOTE IN CHAT") + '</small></span></div><h3>' + esc(poll.question || entry.text || "Team poll") + '</h3><div class="agent-chat-poll-choices">' + options + '</div><p class="agent-poll-post-foot">' + (ownVote ? 'Your vote: <b>' + esc(poll.userVote.option) + '</b> · You can change it.' : 'Choose an option to add your vote to the room.') + ' AI votes stay separate from your vote.</p></article>';
+  return '<article class="agent-room-poll-post"><div class="agent-poll-post-author">' + agentAvatarMarkup(leader || { id: "lead", name: "AI lead", role: "Lead", status: "coordinating" }) + '<span><strong>' + esc(leader?.name || "AI Lead") + '</strong><small>LEAD POLL · ' + (poll.status === "closed" ? "VOTE ENDED · RESULTS" : "VOTE IN CHAT") + '</small></span></div><h3>' + esc(poll.question || entry.text || "Team poll") + '</h3><div class="agent-chat-poll-choices">' + options + '</div><p class="agent-poll-post-foot">' + (poll.status === "closed" ? 'AI vote is complete. ' : '') + (ownVote ? 'Your vote: <b>' + esc(poll.userVote.option) + '</b> · You can change it.' : 'Choose an option to add your vote to the room.') + ' AI votes stay separate from your vote.</p></article>';
 }
 function renderAgentRoomChatCard(roomId) {
   const data = state.agentRooms.get(roomId);
@@ -1319,8 +1407,19 @@ function renderAgentRoomChatCard(roomId) {
   const workers = (room.agents || []).filter(agent => agent.role !== "Lead");
   const running = workers.filter(agent => ["queued", "researching", "reviewing"].includes(agent.status)).length;
   const initials = workers.slice(0, 3).map(agent => '<span title="' + esc(agent.name + " · AI " + agent.role) + '">' + esc(agent.name.split(/\s+/).map(word => word[0]).join("").slice(0, 2)) + '</span>').join("");
-  card.innerHTML = '<div class="agent-room-card-mark">✳</div><div class="agent-room-card-copy"><strong>' + (running ? 'Agents are communicating' : 'Agent collaboration complete') + '</strong><small>' + esc(room.leader?.name || "AI lead") + ' leads ' + workers.length + ' AI workers · ' + esc(room.provider || "selected provider") + '</small></div><div class="agent-room-card-avatars">' + initials + '</div><button type="button" class="agent-room-card-open">' + (running ? 'View live room' : 'View room') + ' <kbd>Alt+5</kbd></button>';
+  const taskRows = workers.slice(0, 5).map((agent, index) => '<div class="agent-room-task-row"><i class="agent-room-task-dot status-' + esc(agent.status || "queued") + '"></i><span><b>Worker spawned · x' + (index + 1) + ' <em>' + esc(agent.name || "AI worker") + '</em></b><small>' + esc(agent.activity || agentStatusLabel(agent.status)) + (agent.task ? ' · ' + esc(agent.task) : '') + '</small></span></div>').join("");
+  const helperSpawn = (data.entries || []).filter(entry => entry.type === "activity" && entry.text?.startsWith("Anonymous helper spawned")).at(-1);
+  const helperRow = helperSpawn ? '<div class="agent-room-task-row helper-spawn-row"><i class="agent-room-task-dot status-researching"></i><span><b>Anonymous helper spawned</b><small>Reviewing a blocker in this room</small></span></div>' : "";
+  const poll = room.poll || {};
+  const pollVotes = Array.isArray(poll.votes) ? poll.votes : [];
+  const pollCounts = (poll.options || []).map(option => ({ ...option, count: pollVotes.filter(vote => vote.optionId === option.id).length }));
+  const maxVotes = Math.max(0, ...pollCounts.map(option => option.count));
+  const pollWinners = pollCounts.filter(option => maxVotes > 0 && option.count === maxVotes).map(option => option.label);
+  const pollText = poll.status === "closed" ? (pollWinners.length ? pollWinners.join(" / ") + ' · ' + maxVotes + ' vote' + (maxVotes === 1 ? '' : 's') : 'No votes recorded') : (poll.question || 'Poll is open');
+  const pollSummary = '<button type="button" class="agent-room-card-poll ' + (poll.status === "closed" ? 'is-closed' : 'is-open') + '"><span class="agent-room-poll-indicator"></span><span><b>' + (poll.status === "closed" ? 'Vote ended' : 'Team poll · open') + '</b><small>' + esc(pollText) + '</small></span><i>Alt+5 ↗</i></button>';
+  card.innerHTML = '<div class="agent-room-card-top"><div class="agent-room-card-mark">✳</div><div class="agent-room-card-copy"><strong>' + (running ? 'Agents are communicating' : 'Agent collaboration complete') + '</strong><small>' + esc(room.leader?.name || "AI lead") + ' leads ' + workers.length + ' AI workers · ' + esc(room.provider || "selected provider") + '</small></div><div class="agent-room-card-avatars">' + initials + '</div><button type="button" class="agent-room-card-open">' + (running ? 'Open team' : 'View team') + ' <kbd>Alt+5</kbd></button></div>' + (taskRows || helperRow ? '<div class="agent-room-task-list" aria-label="Background workers">' + taskRows + helperRow + '</div>' : '') + pollSummary;
   card.querySelector(".agent-room-card-open").addEventListener("click", () => openAgentRoom(roomId));
+  card.querySelector(".agent-room-card-poll").addEventListener("click", () => openAgentRoom(roomId));
   return card;
 }
 function syncAgentRoomUI() {
@@ -1343,7 +1442,7 @@ function renderAgentRoomPanel() {
   const restoreVoteFocus = active?.dataset?.agentVote || "";
   const restoreJumpFocus = active?.dataset?.agentJump || "";
   const restoreProfileFocus = active?.dataset?.agentProfile || "";
-  const data = state.agentRooms.get(state.activeAgentRoomId) || [...state.agentRooms.values()].at(-1);
+  const data = state.agentRooms.get(state.activeAgentRoomId);
   if (!data?.room) return;
   const room = data.room;
   const workers = (room.agents || []).filter(agent => agent.role !== "Lead");
@@ -1372,7 +1471,11 @@ function renderAgentRoomPanel() {
   const votes = Array.isArray(poll.votes) ? poll.votes : [];
   const total = votes.length;
   const pollOptions = Array.isArray(poll.options) ? poll.options : [];
-  $("agentRoomPoll").innerHTML = '<h3 class="agent-poll-question">' + esc(poll.question || "No poll was created") + '</h3>' + (pollOptions.length ? pollOptions.map(option => {
+  const pollCounts = pollOptions.map(option => ({ ...option, count: votes.filter(vote => vote.optionId === option.id).length }));
+  const maxPollVotes = Math.max(0, ...pollCounts.map(option => option.count));
+  const pollWinners = pollCounts.filter(option => maxPollVotes > 0 && option.count === maxPollVotes).map(option => option.label);
+  const closedSummary = poll.status === "closed" ? '<div class="agent-poll-result"><span>✓</span><div><b>Vote ended</b><small>' + esc(pollWinners.length ? pollWinners.join(" / ") + ' leads with ' + maxPollVotes + ' vote' + (maxPollVotes === 1 ? '' : 's') : 'No worker votes were recorded') + '</small></div></div>' : '';
+  $("agentRoomPoll").innerHTML = closedSummary + '<h3 class="agent-poll-question">' + esc(poll.question || "No poll was created") + '</h3>' + (pollOptions.length ? pollOptions.map(option => {
     const selected = votes.filter(vote => vote.optionId === option.id);
     const ratio = total ? Math.round(selected.length / total * 100) : 0;
     return '<div class="agent-poll-option"><div class="agent-poll-option-top"><strong>' + esc(option.label) + '</strong><span>' + selected.length + '</span></div><div class="agent-poll-bar"><i style="width:' + ratio + '%"></i></div>' + (selected.length ? '<div class="agent-poll-voters">' + selected.map(vote => '<div><b>' + esc(vote.name) + '</b><small>' + esc(vote.reason || 'Voted for this direction') + '</small></div>').join("") + '</div>' : '') + '</div>';
@@ -1395,7 +1498,7 @@ function renderAgentRoomPanel() {
     const type = entry.type || "message";
     const system = ["activity", "assignment", "poll", "poll_results"].includes(type);
     const initials = String(entry.name || "AI").split(/\s+/).map(word => word[0]).join("").slice(0, 2);
-    const label = ({ message: "MESSAGE", user_message: "YOUR MESSAGE", assignment: "ASSIGNMENT", finding: "FINDINGS", risk: "RISK FLAG", review: "CROSS-REVIEW", vote: "POLL VOTE", vote_update: "VOTE UPDATED", user_vote: "YOUR VOTE", help_request: "ASKING FOR HELP", help_answer: "TEAM HELP", anonymous_helper: "ANONYMOUS HELPER", poll: "LEAD POLL", poll_results: "RESULT", activity: entry.tool ? "TOOL ACTIVITY" : "STATUS" })[type] || type.toUpperCase();
+    const label = ({ message: "MESSAGE", user_message: "YOUR MESSAGE", assignment: "ASSIGNMENT", finding: "FINDINGS", risk: "RISK FLAG", review: "CROSS-REVIEW", vote: "POLL VOTE", vote_update: "VOTE UPDATED", user_vote: "YOUR VOTE", help_request: "ASKING FOR HELP", help_answer: "TEAM HELP", anonymous_helper: "ANONYMOUS HELPER", poll: "LEAD POLL", poll_results: "RESULT", activity: entry.text?.startsWith("Background agent spawned") ? "WORKER SPAWNED" : entry.text?.startsWith("Anonymous helper spawned") ? "HELPER SPAWNED" : entry.tool ? "TOOL ACTIVITY" : "STATUS" })[type] || type.toUpperCase();
     const recipientLabel = entry.recipient || (type === "user_message" ? entry.task : "");
     const time = entry.at ? new Date(entry.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
     const avatar = !system && entry.senderId === "user" ? '<span class="agent-entry-user-avatar" aria-hidden="true">Y</span>' : !system ? agentAvatarMarkup(agentById.get(entry.senderId) || { id: entry.senderId, name: entry.name, role: entry.role, status: "complete" }, "agent-entry-avatar", entry.senderId !== "anonymous-helper") : "";
@@ -1437,16 +1540,18 @@ function closeAgentRoom() {
 async function castAgentRoomVote(optionId, button) {
   const roomId = state.activeAgentRoomId;
   const sessionId = state.session?.id;
+  const requestViewId = chatViewGeneration;
+  const requestGeneration = ++agentRoomRequestGeneration;
   if (!roomId || !sessionId || !optionId) return;
   if (button) button.disabled = true;
   try {
     const result = await api('/api/sessions/' + encodeURIComponent(sessionId) + '/agent-rooms/' + encodeURIComponent(roomId) + '/vote', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ optionId })
     });
-    if (result.event) mergeAgentUpdate(result.event, true);
-    toast('Your vote was added to the agent room.');
+    if (requestGeneration === agentRoomRequestGeneration && (state.session?.id || "") === sessionId && state.activeAgentRoomId === roomId && result.event) mergeAgentUpdate(result.event, true);
+    if (requestViewId === chatViewGeneration) toast('Your vote was added to the agent room.');
   } catch (error) {
-    toast(error.message || 'Could not save your vote.');
+    if (requestViewId === chatViewGeneration) toast(error.message || 'Could not save your vote.');
   } finally { if (button?.isConnected) button.disabled = false; }
 }
 async function sendAgentRoomMessage(event) {
@@ -1454,6 +1559,8 @@ async function sendAgentRoomMessage(event) {
   const message = $("agentRoomMessage")?.value.trim();
   const roomId = state.activeAgentRoomId;
   const sessionId = state.session?.id;
+  const requestViewId = chatViewGeneration;
+  const requestGeneration = ++agentRoomRequestGeneration;
   if (!message || !roomId || !sessionId || state.agentRoomSending) return;
   const targetId = $("agentRoomTarget")?.value || "team";
   const pendingId = "pending-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
@@ -1466,18 +1573,18 @@ async function sendAgentRoomMessage(event) {
     const result = await api('/api/sessions/' + encodeURIComponent(sessionId) + '/agent-rooms/' + encodeURIComponent(roomId) + '/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message, targetId })
     });
-    for (const update of result.events || []) mergeAgentUpdate(update, false);
-    if (result.accepted && $("agentRoomMessage")) { $("agentRoomMessage").value = ""; $("agentRoomMessage").style.height = ""; }
+    if (requestGeneration === agentRoomRequestGeneration && (state.session?.id || "") === sessionId && state.activeAgentRoomId === roomId) for (const update of result.events || []) mergeAgentUpdate(update, false);
+    if (requestViewId === chatViewGeneration && result.accepted && $("agentRoomMessage")) { $("agentRoomMessage").value = ""; $("agentRoomMessage").style.height = ""; }
     if (!result.ok) toast(result.error || "Your message was added, but the team couldn’t answer this time.");
-    renderAgentRoomPanel();
+    if ((state.session?.id || "") === sessionId && state.activeAgentRoomId === roomId) renderAgentRoomPanel();
   } catch (error) {
     if (roomData) roomData.entries = roomData.entries.filter(entry => entry.id !== pendingId);
     if (/expired|after a restart|not accepting chat/i.test(error.message || "")) state.unavailableAgentRooms.add(roomId);
-    toast(error.message || 'The team could not reply.');
+    if (requestViewId === chatViewGeneration) toast(error.message || 'The team could not reply.');
   } finally {
-    state.agentRoomSending = false;
-    renderAgentRoomPanel();
-    $("agentRoomMessage")?.focus();
+    if (requestGeneration === agentRoomRequestGeneration) state.agentRoomSending = false;
+    if ((state.session?.id || "") === sessionId && state.activeAgentRoomId === roomId) renderAgentRoomPanel();
+    if (requestViewId === chatViewGeneration) $("agentRoomMessage")?.focus();
   }
 }
 function addAgentMessage(content, events) {
@@ -1991,10 +2098,14 @@ function renderTaskCheckpointCard(checkpoint, opts = {}) {
 }
 async function refreshOpenTaskProgress() {
   if (!state.session?.id || state.sending) return;
+  const requestGeneration = ++taskProgressRequestGeneration;
+  const sessionId = state.session.id;
   await loadSessions();
+  if (requestGeneration !== taskProgressRequestGeneration || state.session?.id !== sessionId || state.sending) return;
   if (state.session.taskCheckpoint && state.session.taskCheckpoint.status !== "active") return;
   try {
-    const data = await api("/api/sessions/" + encodeURIComponent(state.session.id));
+    const data = await api("/api/sessions/" + encodeURIComponent(sessionId));
+    if (requestGeneration !== taskProgressRequestGeneration || state.session?.id !== sessionId || state.sending) return;
     const nextSession = data.session;
     const nextCheckpoint = nextSession?.taskCheckpoint;
     if (!nextCheckpoint || nextCheckpoint.updatedAt === state.session.taskCheckpoint?.updatedAt) return;
@@ -2177,7 +2288,8 @@ function renderWalletMarketSnapshot(market) {
   const usd = value => value == null ? "Unavailable" : "$" + Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 });
   const pairs = (market.pairs || []).map(pair => {
     const base = pair.baseToken || {}, quote = pair.quoteToken || {}, change = pair.priceChangePct?.h24;
-    return '<div class="wallet-asset-row"><span><b>' + esc((base.symbol || "Token") + " / " + (quote.symbol || "quote") + " · " + (pair.dex || "DEX")) + '</b><small>Liquidity ' + esc(usd(pair.liquidityUsd)) + ' · 24h volume ' + esc(usd(pair.volume24hUsd)) + '</small><small>Market cap ' + esc(usd(pair.marketCapUsd)) + ' · FDV ' + esc(usd(pair.fdvUsd)) + '</small><small>Spot ' + esc(pair.assetPriceUsd == null ? "Not safely inferred for this pool" : usd(pair.assetPriceUsd)) + (change == null ? "" : " · 24h " + (change >= 0 ? "+" : "") + esc(Number(change).toFixed(2)) + "%") + '</small></span>' + (pair.url ? '<a href="' + esc(pair.url) + '" target="_blank" rel="noopener noreferrer">Pool</a>' : '') + '</div>';
+    const safePoolHref = safeExternalHref(pair.url);
+    return '<div class="wallet-asset-row"><span><b>' + esc((base.symbol || "Token") + " / " + (quote.symbol || "quote") + " · " + (pair.dex || "DEX")) + '</b><small>Liquidity ' + esc(usd(pair.liquidityUsd)) + ' · 24h volume ' + esc(usd(pair.volume24hUsd)) + '</small><small>Market cap ' + esc(usd(pair.marketCapUsd)) + ' · FDV ' + esc(usd(pair.fdvUsd)) + '</small><small>Spot ' + esc(pair.assetPriceUsd == null ? "Not safely inferred for this pool" : usd(pair.assetPriceUsd)) + (change == null ? "" : " · 24h " + (change >= 0 ? "+" : "") + esc(Number(change).toFixed(2)) + "%") + '</small></span>' + (safePoolHref ? '<a href="' + esc(safePoolHref) + '" target="_blank" rel="noopener noreferrer">Pool</a>' : '') + '</div>';
   }).join("");
   el.innerHTML = '<div class="email-confirm-head"><span class="email-icon">◈</span><div><strong>Token market snapshot</strong><small>' + esc(market.network || "Unknown network") + ' · ' + esc(market.source || "public market data") + ' · ' + esc(market.fetchedAt || "") + '</small></div></div><div class="email-confirm-meta"><div><b>Exact token</b><span class="wallet-address-value">' + esc(market.tokenAddress || "") + '</span></div><div><b>Pools</b><span>' + esc(String(market.pairCount ?? market.pairs?.length ?? 0)) + ' matching pool(s)</span></div></div><div class="wallet-asset-list">' + (pairs || '<div class="wallet-asset-row"><span>No matching mainnet pools returned.</span></div>') + '</div><div class="email-confirm-warning">' + esc(market.unavailableReason || market.note || "Public DEX data can be stale or manipulated; it is not a trade recommendation or proof of liquidity.") + '</div>';
   return el;
@@ -2217,7 +2329,7 @@ function renderWalletTokenInfo(info) {
 }
 function renderWalletActivity(activity) {
   const el = document.createElement("div"); el.className = "email-confirmation wallet-status-card wallet-portfolio-card";
-  const rows = (activity.transactions || []).map(item => '<div class="wallet-asset-row"><span><b>' + esc(item.status || "reported") + ' · ' + esc((item.hash || item.signature || "").slice(0, 18)) + '…</b><small>' + esc(item.timestamp || item.blockTime || (item.slot != null ? "slot " + item.slot : "")) + ' · ' + esc((item.from || "").slice(0, 10)) + (item.to ? ' → ' + esc(item.to.slice(0, 10)) : "") + '</small></span><a href="' + esc(item.explorerUrl || "#") + '" target="_blank" rel="noopener noreferrer">Explorer</a></div>').join("");
+  const rows = (activity.transactions || []).map(item => { const href = safeExternalHref(item.explorerUrl); return '<div class="wallet-asset-row"><span><b>' + esc(item.status || "reported") + ' · ' + esc((item.hash || item.signature || "").slice(0, 18)) + '…</b><small>' + esc(item.timestamp || item.blockTime || (item.slot != null ? "slot " + item.slot : "")) + ' · ' + esc((item.from || "").slice(0, 10)) + (item.to ? ' → ' + esc(item.to.slice(0, 10)) : "") + '</small></span>' + (href ? '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">Explorer</a>' : '') + '</div>'; }).join("");
   el.innerHTML = '<div class="email-confirm-head"><span class="email-icon">◈</span><div><strong>Recent wallet activity</strong><small>' + esc(activity.source || "Public chain data") + ' · ' + esc(activity.network || "Unknown") + '</small></div></div><div class="wallet-asset-list">' + (rows || '<div class="wallet-asset-row"><span>No recent transactions returned</span></div>') + '</div><div class="email-confirm-warning">' + esc(activity.note || "Explorer data can lag.") + '</div>';
   return el;
 }
@@ -2247,18 +2359,20 @@ function renderStudioBoardUpdateCard(result) {
 }
 
 /* ---------- live agent row (SSE streaming) ---------- */
-function createAgentRow() {
+function createAgentRow(sessionId = state.session?.id || "") {
   const el = document.createElement("div");
   el.className = "msg-agent";
   el.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span>' +
-    '<div class="body"><div class="agent-status"><span class="spin"></span><span class="agent-status-text">Thinking…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
-  $("messages").appendChild(el); scrollBottom(true);
+    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="spin" aria-hidden="true"></span><span class="agent-status-text">Thinking…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
+  $("messages").appendChild(el);
+  const scrollRow = () => { if (el.isConnected && $("messages").contains(el)) scrollBottom(); };
+  scrollRow();
   const live = new Map();
   let todoCard = null;
   const statusText = () => el.querySelector(".agent-status-text");
   return {
     el,
-    setStatus(text) { const s = statusText(); if (s && text) { s.textContent = text; scrollBottom(); } },
+    setStatus(text) { const s = statusText(); if (s && text) { s.textContent = text; scrollRow(); } },
     hideStatus() { el.querySelector(".agent-status")?.remove(); },
     updateTodos(todos) {
       if (!Array.isArray(todos) || !todos.length) return;
@@ -2269,27 +2383,27 @@ function createAgentRow() {
       const prog = todoProgress(todos);
       const current = todos.find(t => t.status === "in_progress");
       this.setStatus(prog.done < prog.total && current ? "Working on: " + current.content : (prog.done === prog.total ? "Task list complete" : "Working…"));
-      scrollBottom();
+      scrollRow();
     },
     updateCheckpoint(checkpoint) {
       const slot = el.querySelector(".checkpoint-slot");
       slot.replaceChildren(renderTaskCheckpointCard(checkpoint, { actionable: true }));
       const status = checkpoint?.status === "completed" ? "Task checkpoint complete" : checkpoint?.status === "paused" ? "Resume point saved" : "Task progress saved";
       this.setStatus(status);
-      scrollBottom();
+      scrollRow();
     },
     addTool(ev) {
       if (ev.name === "present_file") {
         live.set(ev.id, null); // no tool row — the present card is the UI
         this.setStatus("Presenting " + (ev.input?.path || "file") + "…");
-        scrollBottom();
+        scrollRow();
         return null;
       }
       const block = createToolBlock(ev.name, ev.input);
       live.set(ev.id, block);
       el.querySelector(".tools").appendChild(block);
       this.setStatus(toolTitle(ev.name) + (toolSummary(ev.name, ev.input) ? " · " + toolSummary(ev.name, ev.input) : "") + "…");
-      scrollBottom();
+      scrollRow();
       return block;
     },
     addAgentUpdate(event) {
@@ -2297,45 +2411,49 @@ function createAgentRow() {
       if (!data) return;
       let card = el.querySelector(".agent-room-chat-card");
       const next = renderAgentRoomChatCard(data.room.id);
-      if (card) card.replaceWith(next); else el.querySelector(".tools").appendChild(next);
+      if (card) {
+        const restoreOpenFocus = card.querySelector(".agent-room-card-open") === document.activeElement;
+        card.replaceChildren(...next.childNodes);
+        if (restoreOpenFocus) card.querySelector(".agent-room-card-open")?.focus({ preventScroll: true });
+      } else el.querySelector(".tools").appendChild(next);
       const busy = (data.room.agents || []).filter(agent => ["queued", "researching", "reviewing"].includes(agent.status)).length;
       this.setStatus(busy ? 'Agents communicating · ' + busy + ' AI workers' : 'Agent room ready · Alt+5 to view');
-      scrollBottom();
+      scrollRow();
     },
     addPresent(p) {
       el.querySelector(".tools").appendChild(renderPresentCard(p));
       this.setStatus("Presented " + (p.name || "file"));
-      scrollBottom();
+      scrollRow();
     },
     addEmailConfirmation(draft) {
       el.querySelector(".tools").appendChild(renderEmailConfirmation(draft));
       this.setStatus("Waiting for email confirmation");
-      scrollBottom();
+      scrollRow();
     },
     addWalletConfirmation(draft) {
       el.querySelector(".tools").appendChild(renderWalletConfirmation(draft));
       this.setStatus("Wallet transaction ready for review");
-      scrollBottom();
+      scrollRow();
     },
     addWalletStatus(status) {
       el.querySelector(".tools").appendChild(renderWalletStatus(status));
       this.setStatus("Wallet balance checked");
-      scrollBottom();
+      scrollRow();
     },
     addWalletPrice(price) {
       el.querySelector(".tools").appendChild(renderWalletPrice(price));
       this.setStatus("Wallet price checked");
-      scrollBottom();
+      scrollRow();
     },
     addWalletPortfolio(portfolio) {
       el.querySelector(".tools").appendChild(renderWalletPortfolio(portfolio));
       this.setStatus("Wallet portfolio checked");
-      scrollBottom();
+      scrollRow();
     },
     completeTool(ev) {
       const block = live.get(ev.id);
       if (block && block.querySelector(".tool-state")?.classList.contains("wait")) completeToolBlock(block, ev);
-      if (ev.name === "update_studio_board" && !ev.failed && ev.output?.studio && state.surface === "studios") {
+      if (ev.name === "update_studio_board" && !ev.failed && ev.output?.studio && state.surface === "studios" && state.session?.id === sessionId) {
         state.session = { ...state.session, title: ev.output.title || state.session?.title, studio: ev.output.studio };
         studioLastSaved.set(state.session.id, JSON.parse(JSON.stringify(ev.output.studio)));
         renderStudioProject();
@@ -2349,63 +2467,120 @@ function createAgentRow() {
       this.hideStatus();
       el.querySelector(".md").innerHTML = renderMarkdown(message || "");
       if (connector) el.querySelector(".body").appendChild(renderConnectorCard(connector));
-      scrollBottom();
+      scrollRow();
     },
-    fail(message) {
+    fail(message, retry = null) {
       this.hideStatus();
       for (const block of live.values()) {
         const s = block.querySelector(".tool-state");
         if (s?.classList.contains("wait")) { s.className = "tool-state err"; s.textContent = "Interrupted"; }
       }
       el.querySelector(".body").insertAdjacentHTML("beforeend",
-        '<div class="tool" style="border-color:#f3cfcf;background:#fff7f7"><div class="tool-head" style="cursor:default"><span class="tool-ico" style="color:var(--bad);border-color:#f3cfcf">!</span><span class="tool-name">Request failed</span><span class="tool-state err">✕</span></div><div class="tool-body" style="display:block"><div class="tool-section"><pre>' + esc(message) + "</pre></div></div></div>");
-      scrollBottom();
+        '<div class="tool" role="alert" style="border-color:#f3cfcf;background:#fff7f7"><div class="tool-head" style="cursor:default"><span class="tool-ico" style="color:var(--bad);border-color:#f3cfcf">!</span><span class="tool-name">Request failed</span><span class="tool-state err">✕</span></div><div class="tool-body" style="display:block"><div class="tool-section"><pre>' + esc(message) + "</pre></div></div></div>");
+      if (typeof retry === "function") {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "chat-retry-button"; button.textContent = "Retry this request";
+        button.addEventListener("click", () => { button.disabled = true; retry(); });
+        el.querySelector(".body").appendChild(button);
+      }
+      scrollRow();
     }
   };
 }
 
 /* ---------- send ---------- */
-function setSending(on) {
-  state.sending = on;
-  $("sendBtn").disabled = on;
-  $("sendBtn").classList.toggle("pending", on);
-  $("input").disabled = on;
+function setSending(on, viewId = chatViewGeneration, sessionId = state.session?.id || "") {
+  if (on) {
+    if (sessionId) locallyBusyChatSessions.add(sessionId);
+    else locallyPreparingChatViews.add(viewId);
+  } else if (sessionId) locallyBusyChatSessions.delete(sessionId);
+  else locallyPreparingChatViews.delete(viewId);
+  refreshSendingState();
 }
-async function send() {
+async function send(options = {}) {
+  const requestViewId = chatViewGeneration;
   const input = $("input");
-  const value = input.value.trim();
-  if ((!value && !state.images.length) || state.sending) return;
-  if (state.mode === "vision" && !state.images.length && !state.session) {
+  let requestSessionId = state.session?.id || "";
+  const requestSurface = state.surface;
+  const retrying = Boolean(options.retryMessageId);
+  const sentImages = retrying && Array.isArray(options.retryImages) ? options.retryImages : state.images.slice();
+  const value = retrying && typeof options.retryText === "string" ? options.retryText : input.value.trim();
+  if ((!value && !sentImages.length) || state.sending) return;
+  let requestMode = retrying ? options.retryMode : state.mode;
+  const requestPluginId = retrying ? options.retryPluginId : state.activePluginId;
+  const startingContext = retrying && Array.isArray(options.retryContext) ? options.retryContext : state.contextFiles.slice();
+  let requestContext = startingContext;
+  const composerDraft = input.value;
+  const explicitTeamRequest = /\b(?:make|create|start|spin\s+up|spawn|launch|build|assemble)\b.{0,56}\b(?:(?:a\s+)?(?:swarm|agent team|worker team|team of agents|agent room)|(?:(?:\d{1,2}|two|three|four|five|several|multiple)\s+)?(?:sub)?agents?)\b|\b(?:swarm|agent team|worker team|team of agents|agent room)\b.{0,56}\b(?:make|create|start|spin\s+up|spawn|launch|build|assemble)\b|\b(?:with|using)\s+(?:(?:\d{1,2}|two|three|four|five|several|multiple)\s+)?(?:sub)?agents?\b/i.test(value);
+  const explicitBuildTask = /\b(?:implement|edit|patch|write|change|fix|refactor|debug|repair|modify)\b.{0,50}\b(?:code|file|bug|app|ui|interface|repo|repository|project|feature|workspace)\b|\b(?:code|file|bug|app|ui|interface|repo|repository|project|feature|workspace)\b.{0,50}\b(?:implement|edit|patch|write|change|fix|refactor|debug|repair|modify)\b|\b(?:make|build|create|develop)\b.{0,50}\b(?:app|application|website|site|page|feature|component|tool|ui|interface|frontend|backend|button|form|screen|file)\b/i.test(value);
+  if (!retrying && explicitTeamRequest && state.mode === "build" && !explicitBuildTask) { setMode("ask"); requestMode = "ask"; }
+  if (!retrying && requestSessionId) failedChatTurns.delete(requestSessionId);
+  if (requestMode === "vision" && !sentImages.length && !state.session) {
     toast("Attach an image with + to start Vision mode");
   }
-  setSending(true);
-  input.value = ""; autosize();
-  await attachMentionedFiles(value);
-  closeMentionMenu();
-  $("welcome").hidden = true;
-  $("studiosHome").hidden = true;
-  if (state.surface === "trading") $("tradeStudio").hidden = true;
-  $("messages").hidden = false;
-  const sentImages = state.images.slice();
-  addUserMessage(value, sentImages);
-  const context = state.contextFiles.slice();
-  let row = null, finished = false;
-  try {
-    if (!state.session) {
-      const created = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: (value || sentImages[0]?.name || "New task").slice(0, 120), surface: state.surface }) });
-      state.session = created.session;
+  setSending(true, requestViewId, requestSessionId);
+  if (!retrying) input.value = "";
+  autosize();
+  try { if (!retrying) await attachMentionedFiles(value, requestViewId); }
+  catch (error) {
+    if (requestViewId === chatViewGeneration) {
+      input.value = retrying ? composerDraft : value; autosize();
+      toast(error.message || "Could not attach the mentioned workspace file");
     }
-    row = createAgentRow();
-    const res = await fetch("/api/sessions/" + state.session.id, {
+    setSending(false, requestViewId, requestSessionId);
+    return;
+  }
+  if (!retrying) requestContext = requestViewId === chatViewGeneration ? state.contextFiles.slice() : startingContext;
+  if (requestViewId === chatViewGeneration) {
+    closeMentionMenu();
+    $("welcome").hidden = true;
+    $("studiosHome").hidden = true;
+    if (requestSurface === "trading") $("tradeStudio").hidden = true;
+    $("messages").hidden = false;
+    if (!retrying) addUserMessage(value, sentImages);
+  }
+  const context = requestContext;
+  let row = null, finished = false, userMessageId = "", toolActivityStarted = false;
+  try {
+    if (!requestSessionId) {
+      const created = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: (value || sentImages[0]?.name || "New task").slice(0, 120), surface: requestSurface }) });
+      requestSessionId = created.session.id;
+      setSending(false, requestViewId, "");
+      setSending(true, requestViewId, requestSessionId);
+      if (requestViewId === chatViewGeneration && !state.session) { state.session = created.session; refreshSendingState(); }
+    }
+    if (requestViewId === chatViewGeneration && state.session?.id === requestSessionId) row = createAgentRow(requestSessionId);
+    const requestStartedAt = Date.now();
+    const res = await fetch("/api/sessions/" + encodeURIComponent(requestSessionId), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: value, mode: state.mode, context, images: sentImages.map(i => i.path), activePluginId: state.activePluginId })
+      body: JSON.stringify({ content: value, mode: requestMode, context, images: sentImages.map(i => i.path), activePluginId: requestPluginId, ...(options.retryMessageId ? { retryMessageId: options.retryMessageId } : {}) })
     });
     const isStream = res.body && (res.headers.get("content-type") || "").includes("text/event-stream");
     if (!res.ok || !isStream) {
       const data = await res.json().catch(() => ({}));
+      if (data.userMessageId) userMessageId = String(data.userMessageId);
       throw new Error(data.error || "Request failed (" + res.status + ")");
     }
     const handle = (evt) => {
+      if (evt.event === "start") {
+        userMessageId = String(evt.userMessageId || "");
+        if (row?.el.isConnected && evt.model) row.setStatus("Using " + String(evt.model).slice(0, 80) + " · working…");
+        return;
+      }
+      if (evt.event === "tool_start") toolActivityStarted = true;
+      if (!row?.el.isConnected) {
+        if (evt.event === "final") {
+          finished = true;
+          if (state.session?.id === requestSessionId) {
+            state.session = evt.session || state.session;
+            $("topbarTitle").textContent = state.session?.title || "New task";
+          }
+          loadSessions();
+          return;
+        }
+        if (evt.event === "error") throw new Error(evt.error || "Provider request failed");
+        return;
+      }
       switch (evt.event) {
         case "tool_start": row.addTool(evt); break;
         case "tool_end": row.completeTool(evt); break;
@@ -2430,8 +2605,11 @@ async function send() {
         case "status": if (evt.text) row.setStatus(evt.text); break;
         case "final":
           finished = true;
-          state.session = evt.session || state.session;
-          $("topbarTitle").textContent = state.session?.title || "New task";
+          if (requestSessionId) failedChatTurns.delete(requestSessionId);
+          if (state.session?.id === requestSessionId) {
+            state.session = evt.session || state.session;
+            $("topbarTitle").textContent = state.session?.title || "New task";
+          }
           row.finish(evt.message || "", evt.connectorRequired || null);
           loadSessions();
           break;
@@ -2441,30 +2619,63 @@ async function send() {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
+    const consumeEvent = raw => {
+      const data = raw.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).replace(/^ /, ""));
+      if (!data.length) return;
+      let evt;
+      try { evt = JSON.parse(data.join("\n")); } catch { return; }
+      handle(evt);
+    };
+    const consumeFrames = () => {
+      let boundary;
+      while ((boundary = /\r?\n\r?\n/.exec(buf))) {
+        const raw = buf.slice(0, boundary.index);
+        buf = buf.slice(boundary.index + boundary[0].length);
+        consumeEvent(raw);
+      }
+    };
     while (true) {
       const { done, value: chunk } = await reader.read();
       if (done) break;
       buf += decoder.decode(chunk, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf("\n\n")) >= 0) {
-        const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        for (const line of raw.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          let evt; try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-          handle(evt);
-        }
-      }
+      consumeFrames();
     }
+    buf += decoder.decode();
+    consumeFrames();
+    if (buf.trim()) consumeEvent(buf);
     if (!finished) throw new Error("Connection closed before Sonderr finished responding.");
   } catch (e) {
-    if (row && !finished) row.fail(e.message);
-    else addErrorCard(e.message);
-    if (state.session) loadSessions();
+    if (!userMessageId && requestSessionId && !toolActivityStarted) {
+      try {
+        const saved = await api("/api/sessions/" + encodeURIComponent(requestSessionId));
+        const last = saved.session?.messages?.at(-1);
+        const expectedImages = sentImages.map(image => image.path).filter(Boolean);
+        const savedImages = Array.isArray(last?.images) ? last.images : [];
+        const imagesMatch = expectedImages.length === savedImages.length && expectedImages.every((path, index) => path === savedImages[index]);
+        const savedAt = Date.parse(last?.createdAt || "");
+        if (last?.role === "user" && Number.isFinite(savedAt) && savedAt > requestStartedAt
+          && last.content === (value || "(image)") && (!last.mode || last.mode === requestMode)
+          && String(last.activePluginId || "") === String(requestPluginId || "") && imagesMatch) userMessageId = String(last.id || "");
+      } catch { /* preserve the original provider/network failure */ }
+    }
+    if (!row && requestSessionId && state.session?.id === requestSessionId) row = createAgentRow(requestSessionId);
+    if (!finished) {
+      const retryOptions = { retryMessageId: userMessageId, retryText: value, retryMode: requestMode, retryPluginId: requestPluginId, retryContext: requestContext, retryImages: sentImages };
+      const retryAvailable = !toolActivityStarted && Boolean(userMessageId);
+      if (requestSessionId && userMessageId) rememberFailedChatTurn(requestSessionId, { userMessageId, message: e.message, retryOptions, retryAvailable, row });
+      if (row) row.fail(e.message, retryAvailable ? () => {
+        failedChatTurns.delete(requestSessionId);
+        send(retryOptions);
+      } : null);
+    }
+    else if (!row && requestViewId === chatViewGeneration) addErrorCard(e.message);
+    if (row && !row.el.isConnected && state.session?.id === requestSessionId) $("messages").appendChild(row.el);
+    if (requestSessionId) loadSessions();
   } finally {
-    setSending(false);
-    state.images = [];
-    renderContext();
-    $("input").focus();
+    setSending(false, requestViewId, requestSessionId);
+    if (finished) state.images = state.images.filter(image => !sentImages.includes(image));
+    if (requestViewId === chatViewGeneration) { renderContext(); $("input").focus(); }
+    if (requestSessionId && state.session?.id === requestSessionId && !row?.el.isConnected) openSession(requestSessionId);
   }
 }
 
@@ -2543,13 +2754,15 @@ async function updateMentionMenu() {
   mentionState.index = Math.min(mentionState.index, Math.max(0, mentionState.items.length - 1));
   renderMentionMenu();
 }
-async function attachWorkspaceFile(file, silent = false) {
+async function attachWorkspaceFile(file, silent = false, expectedView = chatViewGeneration) {
   const p = typeof file === "string" ? file : file.path;
   if (!p || state.contextFiles.some(item => item.path === p)) return;
   try {
     const data = await api("/api/file?path=" + encodeURIComponent(p));
+    if (expectedView !== chatViewGeneration) return;
     state.contextFiles.push({ path: data.path || p, content: String(data.content || "").slice(0, 12000) });
   } catch {
+    if (expectedView !== chatViewGeneration) return;
     state.contextFiles.push({ path: p, content: "(binary or large file attached — use workspace tools to inspect it)" });
   }
   renderContext(); if (!silent) toast("Attached " + p);
@@ -2565,9 +2778,10 @@ function chooseMention(index) {
   closeMentionMenu(); autosize(); input.focus();
   attachWorkspaceFile(file);
 }
-async function attachMentionedFiles(text) {
+async function attachMentionedFiles(text, expectedView = chatViewGeneration) {
   if (!/@(?:\([^\)]+\)|[^\s]+)/.test(String(text || ""))) return;
-  if (!state.files.length) await loadFiles();
+  if (!state.files.length) await loadFiles(expectedView);
+  if (expectedView !== chatViewGeneration) return;
   const found = [];
   const pattern = /(?:^|\s)@(?:\(([^)]+)\)|([^\s]+))/g;
   let match;
@@ -2576,16 +2790,17 @@ async function attachMentionedFiles(text) {
     const file = flattenFiles(state.files).find(item => item.path === candidate) || flattenFiles(state.files).find(item => item.path.split("/").pop() === candidate);
     if (file && !found.some(item => item.path === file.path)) found.push(file);
   }
-  for (const file of found) await attachWorkspaceFile(file, true);
+  for (const file of found) await attachWorkspaceFile(file, true, expectedView);
 }
 
 /* ---------- workspace files / context ---------- */
-async function loadFiles() {
+async function loadFiles(expectedView = chatViewGeneration) {
   try {
     const data = await api("/api/files");
+    if (expectedView !== chatViewGeneration) return;
     state.files = data.files || [];
     renderFileTree();
-  } catch { $("fileTree").innerHTML = '<div class="tree-empty">Could not load workspace files.</div>'; }
+  } catch { if (expectedView === chatViewGeneration) $("fileTree").innerHTML = '<div class="tree-empty">Could not load workspace files.</div>'; }
 }
 function flattenFiles(nodes, out = []) {
   for (const n of nodes) {
@@ -2632,8 +2847,9 @@ function renderContext() {
 }
 
 /* ---------- device upload ---------- */
-async function uploadFile(file) {
+async function uploadFile(file, expectedView = chatViewGeneration, expectedSessionId = state.session?.id || "") {
   if (file.size > 20 * 1024 * 1024) { toast("Too large — max 20 MB"); return; }
+  if (expectedView !== chatViewGeneration || (state.session?.id || "") !== expectedSessionId || state.surface === "trading") return;
   toast("Uploading " + file.name + "…");
   const b64 = await new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -2643,8 +2859,9 @@ async function uploadFile(file) {
   });
   const data = await api("/api/upload", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: file.name, dataBase64: b64, sessionId: state.session?.id })
+    body: JSON.stringify({ name: file.name, dataBase64: b64, ...(expectedSessionId ? { sessionId: expectedSessionId } : {}) })
   });
+  if (expectedView !== chatViewGeneration || (state.session?.id || "") !== expectedSessionId || state.surface === "trading") return;
   if (data.kind === "image") {
     if (state.mode !== "vision") { setMode("vision"); toast("Switched to Vision mode for image work"); }
     if (!state.images.some(i => i.path === data.path)) state.images.push({ path: data.path, name: data.name });
@@ -2652,8 +2869,10 @@ async function uploadFile(file) {
   } else if (isTextFile(data.name)) {
     try {
       const fd = await api("/api/file?path=" + encodeURIComponent(data.path));
+      if (expectedView !== chatViewGeneration || (state.session?.id || "") !== expectedSessionId || state.surface === "trading") return;
       state.contextFiles.push({ path: fd.path || data.path, content: String(fd.content || "").slice(0, 12000) });
     } catch {
+      if (expectedView !== chatViewGeneration || (state.session?.id || "") !== expectedSessionId || state.surface === "trading") return;
       state.contextFiles.push({ path: data.path, content: "" });
     }
     renderContext();
@@ -2665,9 +2884,10 @@ async function uploadFile(file) {
     toast("Uploaded " + data.name + " — attached as a file");
   }
 }
-async function handleIncomingFiles(files) {
+async function handleIncomingFiles(files, expectedView = chatViewGeneration, expectedSessionId = state.session?.id || "") {
   for (const f of [...(files || [])].slice(0, 4)) {
-    try { await uploadFile(f); } catch (err) { toast(err.message || "Upload failed"); }
+    if (expectedView !== chatViewGeneration || (state.session?.id || "") !== expectedSessionId) return;
+    try { await uploadFile(f, expectedView, expectedSessionId); } catch (err) { if (expectedView === chatViewGeneration) toast(err.message || "Upload failed"); }
   }
 }
 
@@ -2701,7 +2921,11 @@ function setMode(m) {
     if (state.models.some(x => x.id === restore) && state.settings?.model !== restore) chooseModel(restore, true);
   }
   state.mode = m;
-  $("modeSeg").querySelectorAll(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+  $("modeSeg").querySelectorAll(".mode-btn").forEach(button => {
+    const selected = button.dataset.mode === m;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
   renderModelMenu();
   updateComposerForMode();
 }
@@ -2785,10 +3009,10 @@ function renderSettings() {
     $("kiloProviderHelp").hidden = $("setProvider").value !== "kilo";
   } else if (settingsTab === "tools") {
     const modes = [
-      ["ask", "Ask before tools", "Every tool run needs your approval."],
-      ["auto", "Auto-approve", "Reads and file writes run freely; terminal still asks."],
-      ["full", "Full workspace access", "All workspace tools run without approval."],
-      ["full_pc", "Full PC access", "Terminal commands run on your machine."]
+      ["ask", "Ask before tools", "Workspace reads and public web search work. File edits and wallet/MCP data require a higher access level; commands and project checks require Full PC."],
+      ["auto", "Auto-approve", "Workspace reads, writes, and enabled integrations can run. Shell commands and project checks require Full PC access."],
+      ["full", "Full workspace access", "Workspace tools and enabled integrations run without access prompts. Shell commands and project checks still require Full PC access."],
+      ["full_pc", "Full PC access", "Enables terminal commands and project scripts in Build mode."]
     ];
     body.innerHTML = `
       <div class="panel active">
@@ -3206,14 +3430,20 @@ function wire() {
   document.addEventListener("click", e => {
     if (!e.target.closest(".model-picker") && !e.target.closest(".attach-menu")) closePopovers();
   });
-  document.addEventListener("keydown", e => {
-    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === "5") {
+  window.addEventListener("keydown", e => {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === "Digit5" || e.key === "5")) {
       e.preventDefault();
-      if (!$("agentRoomShortcut").hidden) openAgentRoom();
+      e.stopPropagation();
+      if (e.repeat) return;
+      const roomId = state.activeAgentRoomId || [...state.agentRooms.keys()].at(-1) || "";
+      if (roomId) {
+        if ($("agentRoomModal")?.hidden) openAgentRoom(roomId);
+        else closeAgentRoom();
+      }
       return;
     }
     if (e.key === "Escape") { if (!$('agentProfileOverlay')?.hidden) closeAgentProfile(); else closeAgentRoom(); closePopovers(); closeSettings(); closePluginHub(); closeMobileNav(); closeArtifact(); }
-  });
+  }, true);
   $("agentRoomShortcut")?.addEventListener("click", () => openAgentRoom());
   $("agentRoomClose")?.addEventListener("click", closeAgentRoom);
   $("agentRoomDone")?.addEventListener("click", closeAgentRoom);
@@ -3251,8 +3481,9 @@ function wire() {
   $("uploadBtn").onclick = () => $("fileInput").click();
   $("fileInput").onchange = async (e) => {
     const files = [...(e.target.files || [])];
+    const expectedView = chatViewGeneration, expectedSessionId = state.session?.id || "";
     closePopovers();
-    await handleIncomingFiles(files);
+    await handleIncomingFiles(files, expectedView, expectedSessionId);
     e.target.value = "";
   };
 
@@ -3261,7 +3492,7 @@ function wire() {
     const files = [...(e.clipboardData?.files || [])];
     if (!files.length) return;
     e.preventDefault();
-    handleIncomingFiles(files);
+    handleIncomingFiles(files, chatViewGeneration, state.session?.id || "");
   });
 
   // drag & drop files anywhere in the window
@@ -3281,7 +3512,7 @@ function wire() {
     dragDepth = 0;
     $("dropZone").hidden = true;
     const files = [...(e.dataTransfer?.files || [])];
-    if (files.length) handleIncomingFiles(files);
+    if (files.length) handleIncomingFiles(files, chatViewGeneration, state.session?.id || "");
   });
 
   // artifact panel controls

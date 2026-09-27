@@ -88,7 +88,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
   if (ROOMS.size >= 60) ROOMS.delete(ROOMS.keys().next().value);
   ROOMS.set(room.id, room);
   const snapshot = () => ({
-    id: room.id, provider: room.provider, status: room.status, leader: room.leader,
+    id: room.id, sessionId: room.sessionId, provider: room.provider, status: room.status, leader: room.leader,
     agents: room.agents.map(agent => ({ ...agent })),
     poll: { ...room.poll, votes: room.poll.votes.map(vote => ({ ...vote })), userVote: room.poll.userVote ? { ...room.poll.userVote } : null },
     helpRequests: room.helpRequests.map(request => ({ ...request })),
@@ -103,6 +103,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
       text: cleanText(text, type === "finding" || type === "review" ? 5_000 : type === "risk" ? 1_500 : 1_200),
       ...(extra.task ? { task: cleanText(extra.task, 80) } : {}),
       ...(extra.vote ? { vote: { ...extra.vote } } : {}),
+      ...(extra.poll ? { poll: structuredClone(extra.poll) } : {}),
       ...(extra.requestId ? { requestId: String(extra.requestId) } : {}),
       ...(extra.recipient ? { recipient: cleanText(extra.recipient, 80) } : {}),
       ...(extra.severity ? { severity: cleanText(extra.severity, 16).toLowerCase() } : {}),
@@ -222,6 +223,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     room.anonymousHelperCalls += 1;
     anonymousHelperBusy = true;
     publish(agentId, "help_request", `I’m asking the anonymous helper: ${cleanQuestion}`, { task: agent.task, tool: "ask_anonymous_helper" });
+    publish("anonymous-helper", "activity", "Anonymous helper spawned · reviewing the blocker", { task: "Anonymous helper" });
     return { ok: true, question: cleanQuestion, requester: agent.name };
   };
   const finishAnonymousHelper = () => { anonymousHelperBusy = false; };

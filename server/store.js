@@ -33,14 +33,22 @@ function ensure() {
   const directoryInfo = fs.lstatSync(DATA_DIR);
   if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw new Error("Sonderr's private data path must be a real directory, not a symlink.");
   try { fs.chmodSync(DATA_DIR, 0o700); } catch {}
+  const present = new Set();
   for (const file of [DATA_FILE, CREDENTIALS_FILE]) {
-    if (fs.existsSync(file)) {
-      const info = fs.lstatSync(file);
-      if (!info.isFile() || info.isSymbolicLink()) throw new Error("Sonderr's private data files must be regular files, not symlinks.");
-    }
+    let info;
+    try { info = fs.lstatSync(file); }
+    catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error("Sonderr's private data files must be regular files, not symlinks.");
+    present.add(file);
   }
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
-  if (!fs.existsSync(CREDENTIALS_FILE)) fs.writeFileSync(CREDENTIALS_FILE, "{}", { mode: 0o600 });
+  const createPrivateFile = (file, contents) => {
+    const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0);
+    const fd = fs.openSync(file, flags, 0o600);
+    try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, contents); }
+    finally { fs.closeSync(fd); }
+  };
+  if (!present.has(DATA_FILE)) createPrivateFile(DATA_FILE, JSON.stringify(initial, null, 2));
+  if (!present.has(CREDENTIALS_FILE)) createPrivateFile(CREDENTIALS_FILE, "{}");
   try { fs.chmodSync(DATA_FILE, 0o600); } catch {}
   try { fs.chmodSync(CREDENTIALS_FILE, 0o600); } catch {}
 }
@@ -377,6 +385,7 @@ function addMessage(id, role, content, meta = null) {
     if (meta.mode) message.mode = meta.mode;
     if (meta.model) message.model = meta.model;
     if (Array.isArray(meta.images) && meta.images.length) message.images = meta.images.slice(0, 4).map(String);
+    if (typeof meta.activePluginId === "string") message.activePluginId = meta.activePluginId.slice(0, 64);
   }
   session.messages.push(message);
   if (session.messages.length > MAX_MESSAGES_PER_SESSION) session.messages = session.messages.slice(-MAX_MESSAGES_PER_SESSION);

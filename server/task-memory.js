@@ -14,10 +14,21 @@ const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 function createTaskMemory({ root = path.join(store.DATA_DIR, "task-memory"), now = Date.now } = {}) {
   const base = path.resolve(root);
   const checkRoot = () => {
+    const standardBase = path.resolve(store.DATA_DIR, "task-memory");
+    if (base === standardBase) {
+      fs.mkdirSync(store.DATA_DIR, { recursive: true, mode: 0o700 });
+      const privateRoot = fs.lstatSync(store.DATA_DIR);
+      if (!privateRoot.isDirectory() || privateRoot.isSymbolicLink()) throw new Error("Task memory storage must be inside Sonderr's real private data directory");
+    }
     fs.mkdirSync(base, { recursive: true, mode: 0o700 });
-    try { fs.chmodSync(base, 0o700); } catch {}
     const stat = fs.lstatSync(base);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Task memory storage must be a real local directory");
+    if (base === standardBase) {
+      const privateReal = fs.realpathSync(store.DATA_DIR);
+      const baseReal = fs.realpathSync(base);
+      if (!baseReal.startsWith(privateReal + path.sep)) throw new Error("Task memory storage must remain inside Sonderr's private data directory");
+    }
+    try { fs.chmodSync(base, 0o700); } catch {}
   };
   const taskDir = (sessionId, taskKey) => {
     const session = String(sessionId || "");

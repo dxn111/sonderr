@@ -65,7 +65,7 @@
       </button>
       <div class="topbar-title" id="topbarTitle">New task</div>
       <div class="topbar-right">
-        <button class="agent-room-shortcut" id="agentRoomShortcut" type="button" aria-haspopup="dialog" aria-controls="agentRoomModal" hidden><span class="agent-room-shortcut-mark">✳</span><span>AI team</span><kbd>Alt 5</kbd></button>
+        <button class="agent-room-shortcut" id="agentRoomShortcut" type="button" aria-haspopup="dialog" aria-controls="agentRoomModal" aria-keyshortcuts="Alt+5" hidden><span class="agent-room-shortcut-mark">✳</span><span>AI team</span><kbd>Alt+5</kbd></button>
         <button class="studio-new" id="studioNewBtn" type="button" hidden>+ New Studio</button>
         <span class="workspace-chip" id="workspaceChip" hidden title="Workspace"></span>
       </div>
@@ -119,7 +119,7 @@
       <section class="trade-studio" id="tradeStudio" hidden></section>
       <section class="studios-project" id="studiosProject" hidden></section>
       <div class="studio-discussion-head" id="studioDiscussionHead" hidden><div class="studio-discussion-top"><div class="studio-discussion-identity"><span class="studio-discussion-mark">✦</span><div><span>YOUR BUILD PARTNER</span><strong>Studio conversation</strong></div></div><small>Ask a question, shape the plan, or build the next step.</small></div><div class="studio-discussion-actions" aria-label="Studio actions"><button type="button" data-studio-action="explain">Explain</button><button type="button" data-studio-action="plan">Plan</button><button type="button" data-studio-action="build">Build</button><button type="button" data-studio-action="review">Review</button></div></div>
-      <div class="messages" id="messages" hidden></div>
+      <div class="messages" id="messages" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions" hidden></div>
     </div>
 
     <!-- ===================== Composer ===================== -->
@@ -148,11 +148,11 @@
                 <div class="model-menu-foot" id="modelMenuFoot">Sorted best &amp; newest first</div>
               </div>
             </div>
-            <div class="mode-seg" id="modeSeg" role="tablist" aria-label="Task mode">
-              <button class="mode-btn active" data-mode="ask" title="Quick answers">Ask</button>
-              <button class="mode-btn" data-mode="plan" title="Engineering plan">Plan</button>
-              <button class="mode-btn" data-mode="build" title="Build & verify">Build</button>
-              <button class="mode-btn" data-mode="vision" title="Image understanding & editing — vision models only">Vision</button>
+            <div class="mode-seg" id="modeSeg" role="group" aria-label="Task mode">
+              <button class="mode-btn" data-mode="ask" aria-pressed="false" title="Quick answers">Ask</button>
+              <button class="mode-btn" data-mode="plan" aria-pressed="false" title="Engineering plan">Plan</button>
+              <button class="mode-btn active" data-mode="build" aria-pressed="true" title="Build & verify · default">Build</button>
+              <button class="mode-btn" data-mode="vision" aria-pressed="false" title="Image understanding & editing — vision models only">Vision</button>
             </div>
           </div>
           <div class="bar-right">

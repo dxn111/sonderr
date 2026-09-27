@@ -66,17 +66,25 @@ function isPublicAddress(address) {
       (a === 203 && b === 0 && c === 113));
   }
   if (family !== 6) return false;
-  // Treat mapped addresses as non-public rather than risk an encoded private
-  // IPv4 target. Reject special-use, local, documentation, and NAT64 ranges.
-  return !(/^(?:::|::1|::ffff:|64:ff9b:|fc|fd|fe[89ab]|ff|2001:db8:)/i.test(value));
+  // Only accept global-unicast space. This avoids accepting local/special-use,
+  // transition, documentation, multicast, and unallocated IPv6 ranges. In
+  // particular, 6to4 and Teredo can otherwise tunnel to an IPv4 loopback.
+  const words = value.split(":");
+  const first = parseInt(words[0] || "0", 16);
+  const second = parseInt(words[1] || "0", 16);
+  if (first < 0x2000 || first > 0x3fff) return false;
+  if (first === 0x2001 && ((second & 0xfe00) === 0 || (second >= 0x0db8 && second <= 0x0dbf))) return false; // special-use and 2001:db8::/32 documentation
+  if (first === 0x2002) return false; // 2002::/16 6to4 transition
+  if (first === 0x3fff && (second & 0xfff0) === 0) return false; // 3fff::/20 documentation
+  return true;
 }
 
-async function resolvePublicHttps(input, { allowCredentialQuery = false } = {}) {
+async function resolvePublicHttps(input, { allowCredentialQuery = false, allowNonStandardPort = false } = {}) {
   let url;
   try { url = new URL(String(input || "")); }
   catch { throw new Error("Web page URL is invalid."); }
-  if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) {
-    throw new Error("Web research only opens public HTTPS pages on the standard secure port.");
+  if (url.protocol !== "https:" || url.username || url.password || (!allowNonStandardPort && url.port && url.port !== "443")) {
+    throw new Error(allowNonStandardPort ? "Remote MCP servers must use HTTPS without embedded credentials." : "Web research only opens public HTTPS pages on the standard secure port.");
   }
   if (!allowCredentialQuery && [...url.searchParams.keys()].some(key => /(?:token|secret|password|api.?key|authorization|session|oauth.?code)/i.test(key))) {
     throw new Error("Web research will not send a URL containing credential-like query parameters.");
@@ -141,83 +149,33 @@ async function waitForRequestSlot() {
   lastRequestAt = Date.now();
 }
 
-async function readBoundedBody(response, maxBytes = MAX_PAGE_BYTES) {
-  const announced = Number(response.headers.get("content-length"));
-  if (Number.isFinite(announced) && announced > maxBytes) throw new Error("Web page is larger than the 1 MB read limit.");
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      try { await reader.cancel(); } catch {}
-      throw new Error("Web page exceeded the 1 MB read limit.");
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks, total));
-}
-
-async function fetchPublicText(input, { maxBytes = MAX_PAGE_BYTES, pinDns = true } = {}) {
+async function fetchPublicText(input, { maxBytes = MAX_PAGE_BYTES } = {}) {
   let target = await resolvePublicHttps(input);
   for (let redirects = 0; redirects <= 3; redirects++) {
     await waitForRequestSlot();
-    if (pinDns) {
-      const response = await requestPinnedHttps(target, maxBytes);
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        if (redirects === 3) throw new Error("Web page exceeded the three-redirect limit.");
-        if (!response.location) throw new Error("Web page returned a redirect without a destination.");
-        target = await resolvePublicHttps(new URL(response.location, target.url).toString());
-        continue;
-      }
-      if (response.status < 200 || response.status >= 300) throw new Error(`Web server returned HTTP ${response.status}.`);
-      if (!/(?:text\/html|application\/xhtml\+xml|text\/plain|application\/json)/.test(response.contentType)) throw new Error("Web research only reads HTML, plain text, or JSON pages.");
-      return { url: target.url.toString(), contentType: response.contentType, text: response.text };
+    const response = await requestPinnedHttps(target, maxBytes);
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      if (redirects === 3) throw new Error("Web page exceeded the three-redirect limit.");
+      if (!response.location) throw new Error("Web page returned a redirect without a destination.");
+      target = await resolvePublicHttps(new URL(response.location, target.url).toString());
+      continue;
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12_000);
-    try {
-      const response = await fetch(target.url, {
-        method: "GET",
-        headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml,text/plain,application/json;q=0.8" },
-        redirect: "manual",
-        signal: controller.signal
-      });
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        if (redirects === 3) throw new Error("Web page exceeded the three-redirect limit.");
-        const location = response.headers.get("location");
-        if (!location) throw new Error("Web page returned a redirect without a destination.");
-        target = await resolvePublicHttps(new URL(location, target.url).toString());
-        continue;
-      }
-      if (!response.ok) throw new Error(`Web server returned HTTP ${response.status}.`);
-      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-      if (!/(?:text\/html|application\/xhtml\+xml|text\/plain|application\/json)/.test(contentType)) {
-        throw new Error("Web research only reads HTML, plain text, or JSON pages.");
-      }
-      const text = await readBoundedBody(response, maxBytes);
-      return { url: target.url.toString(), contentType, text };
-    } catch (error) {
-      if (error.name === "AbortError") throw new Error("Web request timed out after 12 seconds.");
-      if (/^(?:Web |Local )/.test(String(error.message || ""))) throw error;
-      throw new Error("Web request failed: " + safety.redactText(error.message || "network error").slice(0, 200));
-    } finally { clearTimeout(timer); }
+    if (response.status < 200 || response.status >= 300) throw new Error(`Web server returned HTTP ${response.status}.`);
+    if (!/(?:text\/html|application\/xhtml\+xml|text\/plain|application\/json)/.test(response.contentType)) throw new Error("Web research only reads HTML, plain text, or JSON pages.");
+    return { url: target.url.toString(), contentType: response.contentType, text: response.text };
   }
   throw new Error("Web page could not be opened.");
 }
 
-function requestPinnedHttps(target, maxBytes) {
+function requestPinnedHttps(target, maxBytes, { timeoutMs = 12_000, method = "GET", headers = {}, body = "" } = {}) {
   return new Promise((resolve, reject) => {
     const url = target.url;
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const firstAddress = target.addresses.find(item => item.family === 4) || target.addresses[0];
     const req = https.request({
       hostname,
-      port: 443,
-      method: "GET",
+      port: Number(url.port) || 443,
+      method,
       path: url.pathname + url.search,
       servername: net.isIP(hostname) ? undefined : hostname,
       agent: false,
@@ -226,19 +184,19 @@ function requestPinnedHttps(target, maxBytes) {
         if (options?.all) callback(null, target.addresses);
         else callback(null, firstAddress.address, firstAddress.family);
       },
-      headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml,text/plain,application/json;q=0.8", "Accept-Encoding": "identity" }
+      headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml,text/plain,application/json;q=0.8", "Accept-Encoding": "identity", ...headers }
     }, response => {
       const status = Number(response.statusCode) || 0;
       const location = String(response.headers.location || "");
       const contentType = String(response.headers["content-type"] || "").toLowerCase();
       if ([301, 302, 303, 307, 308].includes(status)) {
         response.resume();
-        resolve({ status, location, contentType, text: "" });
+        resolve({ status, location, contentType, headers: response.headers, text: "" });
         return;
       }
       const announced = Number(response.headers["content-length"]);
       if (Number.isFinite(announced) && announced > maxBytes) {
-        response.destroy(new Error("Web page is larger than the 1 MB read limit."));
+        response.destroy(new Error("Response is larger than the configured read limit."));
         return;
       }
       const chunks = [];
@@ -246,20 +204,20 @@ function requestPinnedHttps(target, maxBytes) {
       response.on("data", chunk => {
         total += chunk.length;
         if (total > maxBytes) {
-          response.destroy(new Error("Web page exceeded the 1 MB read limit."));
+          response.destroy(new Error("Response exceeded the configured read limit."));
           return;
         }
         chunks.push(chunk);
       });
       response.once("error", reject);
-      response.once("end", () => resolve({ status, location, contentType, text: Buffer.concat(chunks, total).toString("utf8") }));
+      response.once("end", () => resolve({ status, location, contentType, headers: response.headers, text: Buffer.concat(chunks, total).toString("utf8") }));
     });
-    req.setTimeout(12_000, () => req.destroy(new Error("Web request timed out after 12 seconds.")));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("Web request timed out after 12 seconds.")));
     req.once("error", error => {
-      if (/^Web page/.test(String(error.message || "")) || /^Web request timed out/.test(String(error.message || ""))) reject(error);
+      if (/^(?:Web page|Response )/.test(String(error.message || "")) || /^Web request timed out/.test(String(error.message || ""))) reject(error);
       else reject(new Error("Web request failed: " + safety.redactText(error.message || "network error").slice(0, 200)));
     });
-    req.end();
+    req.end(body);
   });
 }
 
@@ -330,7 +288,7 @@ async function searchWeb({ query, limit = 5, site } = {}) {
   const count = Math.max(1, Math.min(MAX_RESULTS, Math.floor(Number(limit) || 5)));
   const url = new URL(SEARCH_ORIGIN);
   url.searchParams.set("q", siteDomain ? `site:${siteDomain} ${text}` : text);
-  const page = await fetchPublicText(url.toString(), { maxBytes: 500_000, pinDns: false });
+  const page = await fetchPublicText(url.toString(), { maxBytes: 500_000 });
   const results = parseSearchResults(page.text, count).filter(result => !siteDomain || matchesSearchDomain(result.url, siteDomain));
   if (!results.length) throw new Error(siteDomain
     ? `The search provider returned no readable results on ${siteDomain}; verify the domain or retry without the filter.`
@@ -424,4 +382,4 @@ async function researchWeb({ query, site, focus = "", pageLimit = 2 } = {}, depe
   });
 }
 
-module.exports = { searchWeb, openWebPage, researchWeb, fetchPublicImage, boundedExcerptBudget, parseSearchResults, htmlToText, relevantExcerpt, normalizeSearchDomain, matchesSearchDomain, isPublicAddress, assertPublicHttps };
+module.exports = { searchWeb, openWebPage, researchWeb, fetchPublicImage, boundedExcerptBudget, parseSearchResults, htmlToText, relevantExcerpt, normalizeSearchDomain, matchesSearchDomain, isPublicAddress, assertPublicHttps, resolvePublicHttps, requestPinnedHttps };

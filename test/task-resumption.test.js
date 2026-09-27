@@ -81,7 +81,7 @@ function toolCall(id, name, args) {
         else if (callNumber === 3) message = { role: "assistant", tool_calls: [
           toolCall("memory-read", "task_memory_read", { name: "decisions" }),
           toolCall("autonomous-pause", "task_checkpoint_write", {
-          goal: "Verify browser disconnect does not stop local work",
+          goal: "Verify browser disconnect does not stop local work and write task memory",
           status: "paused",
           currentMilestone: "Autonomous follow-up completed",
           verified: ["A second provider chunk ran after the client disconnected"],
@@ -162,7 +162,7 @@ function toolCall(id, name, args) {
     callNumber = 0;
     requests.length = 0;
     const autonomousSession = JSON.parse((await request(appPort, "/api/sessions", "POST", { title: "Autonomous task" })).body).session.id;
-    await requestAndDisconnect(appPort, `/api/sessions/${autonomousSession}`, { content: "Verify the autonomous local runner", mode: "build" });
+    await requestAndDisconnect(appPort, `/api/sessions/${autonomousSession}`, { content: "Verify the autonomous local runner and its long-running task memory", mode: "build" });
     const deadline = Date.now() + 5_000;
     while (callNumber < 4 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(callNumber, 4, "the local worker should continue through another provider chunk after browser disconnect");

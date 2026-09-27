@@ -8,6 +8,10 @@ const { spawn } = require("node:child_process");
 const http = require("node:http");
 const { compactConversation, sizeOf } = require("../server/compaction");
 const { parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, readCompletionResponse, maxTokensWithinTpm, requestMaxTokens, isSmallDirectRequest, walletRoutingText, hasExactWalletNetwork, selectToolsForRequest } = require("../server/provider");
+const store = require("../server/store");
+const persistedSettings = store.settings;
+let testAccessMode = "full_pc";
+store.settings = () => ({ ...persistedSettings(), approvalMode: testAccessMode });
 
 const longTranscript = [
   { role: "user", content: "Old unrelated request" },
@@ -95,14 +99,14 @@ const priceTools = selectToolsForRequest("ask", "Search the current price of SOL
 assert.ok(priceTools.includes("get_wallet_price"), "current token prices route to the price tool");
 assert.ok(!priceTools.includes("prepare_wallet_swap"), "price lookups never receive trading tools");
 const walletSendTools = selectToolsForRequest("ask", "Send 0.1 ETH to this address").map(tool => tool.function.name);
-assert.ok(walletSendTools.includes("prepare_wallet_transaction"));
+assert.ok(!walletSendTools.includes("prepare_wallet_transaction"), "Ask stays read-only even when Tools & Access is permissive");
 assert.ok(!walletSendTools.includes("prepare_wallet_swap"), "wallet sends do not receive swap-preparation tools");
 const walletSwapTools = selectToolsForRequest("ask", "Swap 0.1 ETH for USDC on Base").map(tool => tool.function.name);
-assert.ok(walletSwapTools.includes("prepare_wallet_swap"));
+assert.ok(!walletSwapTools.includes("prepare_wallet_swap"), "Ask never receives transaction-preparation tools");
 assert.ok(!walletSwapTools.includes("prepare_wallet_transaction"), "swaps do not receive transfer-preparation tools");
 assert.equal(selectToolsForRequest("ask", "How does email work?").length, 0, "general questions do not receive action tools");
-assert.ok(selectToolsForRequest("ask", "Draft and send an email to my client").some(tool => tool.function.name === "send_email"), "explicit email actions receive the confirmation-card tool");
-assert.ok(selectToolsForRequest("ask", "Connect my Notion MCP server").some(tool => tool.function.name === "connect_mcp_server"), "explicit MCP setup requests receive connector tools");
+assert.ok(!selectToolsForRequest("ask", "Draft and send an email to my client").some(tool => tool.function.name === "send_email"), "Ask does not create email drafts");
+assert.ok(!selectToolsForRequest("ask", "Connect my Notion MCP server").some(tool => tool.function.name === "connect_mcp_server"), "Ask does not configure or connect MCP servers");
 const mcpConceptTools = selectToolsForRequest("ask", "What is MCP and how does it work?").map(tool => tool.function.name);
 assert.deepEqual(mcpConceptTools, [], "conceptual MCP questions do not receive connector administration tools");
 const mcpInventoryTools = selectToolsForRequest("ask", "Show my configured MCP servers").map(tool => tool.function.name);
@@ -111,8 +115,14 @@ const mcpToolList = selectToolsForRequest("ask", "What tools does my connected N
 assert.ok(mcpToolList.includes("list_mcp_tools"));
 assert.ok(!mcpToolList.includes("add_mcp_server") && !mcpToolList.includes("connect_mcp_server"), "MCP discovery does not surface setup actions");
 const mcpUseTools = selectToolsForRequest("ask", "Use my configured Notion MCP to search my workspace").map(tool => tool.function.name);
-assert.ok(mcpUseTools.includes("list_mcp_tools") && mcpUseTools.includes("connect_mcp_server") && mcpUseTools.includes("call_mcp_tool"), "an explicit MCP task can connect, discover, then call the configured service");
-assert.ok(selectToolsForRequest("ask", "Run curl to inspect this endpoint").some(tool => tool.function.name === "run_terminal_command"), "explicit shell requests receive the terminal tool");
+assert.ok(mcpUseTools.includes("list_mcp_tools") && !mcpUseTools.includes("connect_mcp_server") && !mcpUseTools.includes("call_mcp_tool"), "Ask can inspect accessible MCP metadata but cannot connect or call a remote tool");
+assert.ok(!selectToolsForRequest("ask", "Run curl to inspect this endpoint").some(tool => tool.function.name === "run_terminal_command"), "Ask never receives the terminal tool");
+testAccessMode = "full_pc";
+assert.ok(selectToolsForRequest("build", "Run curl to inspect this endpoint").some(tool => tool.function.name === "run_terminal_command"), "a direct Build command request receives the terminal tool with Full PC access");
+testAccessMode = "ask";
+const askBeforeTools = selectToolsForRequest("build", "Please fix this project and run tests").map(tool => tool.function.name);
+assert.ok(!askBeforeTools.some(name => /write_workspace|patch_workspace|run_project_checks|run_terminal/.test(name)), "Ask-before-tools with Build does not advertise writes or command execution");
+testAccessMode = "full_pc";
 for (const query of ["Free money?", "How can I earn money?", "Find crypto rewards and paid bounties"]) {
   const earningTools = selectToolsForRequest("ask", query).map(tool => tool.function.name);
   assert.ok(earningTools.includes("web_research"), `current earning opportunities route to the combined read-only research tool: ${query}`);
@@ -123,7 +133,7 @@ assert.ok(faucetResearchOnlyTools.includes("web_research"));
 assert.ok(faucetResearchOnlyTools.includes("list_sol_faucets"), "faucet requests also show the dated in-chat candidate/exclusion card");
 assert.ok(!faucetResearchOnlyTools.includes("save_earning_opportunity"), "research alone does not silently persist earning history");
 const explicitLedgerSaveTools = selectToolsForRequest("ask", "Track this Solana faucet opportunity in my ledger").map(tool => tool.function.name);
-assert.ok(explicitLedgerSaveTools.includes("save_earning_opportunity"), "explicit tracking requests expose only the local save action in addition to relevant research");
+assert.ok(!explicitLedgerSaveTools.includes("save_earning_opportunity"), "Ask does not expose local ledger writes");
 const explicitLedgerReadTools = selectToolsForRequest("ask", "List my earning opportunity log").map(tool => tool.function.name);
 assert.deepEqual(explicitLedgerReadTools, ["list_earning_opportunities"], "ledger review remains focused and read-only");
 assert.ok(selectToolsForRequest("plan", "List my earning opportunity log").some(tool => tool.function.name === "list_earning_opportunities"), "ledger listing is available in plan mode");
