@@ -19,6 +19,10 @@ const MIN_REQUEST_GAP_MS = 1_000;
 let lastRequestAt = 0;
 
 function decodeEntities(value) {
+  // Decodes HTML entities for plain-text extraction. Output feeds htmlToText's
+  // tag-stripping pipeline, so any reintroduced markup (e.g. &#60; → <) is
+  // neutralized before the text is used or returned. Input is attacker-controlled
+  // public-web HTML with no concrete XSS path through this pipeline.
   return String(value || "")
     .replace(/&#x([0-9a-f]+);?/gi, (_, hex) => safeCodePoint(parseInt(hex, 16)))
     .replace(/&#(\d+);?/g, (_, decimal) => safeCodePoint(Number(decimal)))

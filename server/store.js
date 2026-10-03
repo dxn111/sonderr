@@ -4,6 +4,12 @@ const crypto = require("node:crypto");
 const secrets = require("./secrets");
 const safety = require("./safety");
 
+const O_NOFOLLOW = (() => {
+  const v = fs.constants.O_NOFOLLOW;
+  if (v === undefined || v === 0) throw new Error("O_NOFOLLOW is required");
+  return v;
+})();
+
 const DATA_DIR = path.join(process.env.HOME || process.env.USERPROFILE || process.cwd(), ".sonderr");
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 const CREDENTIALS_FILE = path.join(DATA_DIR, "credentials.json");
@@ -42,10 +48,17 @@ function ensure() {
     present.add(file);
   }
   const createPrivateFile = (file, contents) => {
-    const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0);
+    const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW;
     const fd = fs.openSync(file, flags, 0o600);
-    try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, contents); }
-    finally { fs.closeSync(fd); }
+    try {
+      fs.fchmodSync(fd, 0o600);
+      fs.writeFileSync(fd, contents);
+    } catch (error) {
+      try { fs.unlinkSync(file); } catch {}
+      throw error;
+    } finally {
+      fs.closeSync(fd);
+    }
   };
   if (!present.has(DATA_FILE)) createPrivateFile(DATA_FILE, JSON.stringify(initial, null, 2));
   if (!present.has(CREDENTIALS_FILE)) createPrivateFile(CREDENTIALS_FILE, "{}");
@@ -79,17 +92,30 @@ function read() {
     data.sessions = (Array.isArray(data.sessions) ? data.sessions : []).slice(-MAX_SESSIONS).map(sanitizeStoredSession).filter(Boolean);
     return data;
   }
-  catch { return structuredClone(initial); }
+  catch {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupFile = `${DATA_FILE}.${timestamp}.bak`;
+    try { fs.renameSync(DATA_FILE, backupFile); } catch {}
+    console.warn(`Sonderr: corrupted data.json detected. Backup saved to ${backupFile}. Creating fresh store.`);
+    return structuredClone(initial);
+  }
 }
 
 function write(data) {
   ensure();
   if (Array.isArray(data.sessions)) data.sessions = data.sessions.map(sanitizeStoredSession).filter(Boolean);
-  const temp = DATA_FILE + ".tmp";
-  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
-  try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, JSON.stringify(data, null, 2)); }
-  finally { fs.closeSync(fd); }
-  fs.renameSync(temp, DATA_FILE);
+  const temp = DATA_FILE + ".tmp-" + crypto.randomUUID();
+  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW, 0o600);
+  try {
+    fs.fchmodSync(fd, 0o600);
+    fs.writeFileSync(fd, JSON.stringify(data, null, 2));
+    fs.renameSync(temp, DATA_FILE);
+  } catch (error) {
+    try { fs.unlinkSync(temp); } catch {}
+    throw error;
+  } finally {
+    fs.closeSync(fd);
+  }
   try { fs.chmodSync(DATA_FILE, 0o600); } catch {}
   return data;
 }
@@ -439,7 +465,14 @@ function settings() {
 
 function credentials() {
   ensure();
-  try { return JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf8")); } catch { return {}; }
+  try { return JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf8")); }
+  catch {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupFile = `${CREDENTIALS_FILE}.${timestamp}.bak`;
+    try { fs.renameSync(CREDENTIALS_FILE, backupFile); } catch {}
+    console.warn(`Sonderr: corrupted credentials.json detected. Backup saved to ${backupFile}. Creating fresh credentials.`);
+    return {};
+  }
 }
 
 function updateSettings(next) {
@@ -624,4 +657,4 @@ function saveOnboarding(next = {}) {
   return { ...data.onboarding };
 }
 
-module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, deleteTradingSession, setSessionPlugin, addMessage, appendSessionEvent, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding };
+module.exports = { DATA_DIR, DATA_FILE, CREDENTIALS_FILE, listSessions, createSession, updateStudio, getSession, deleteTradingSession, setSessionPlugin, addMessage, appendSessionEvent, getTodos, setTodos, taskCheckpoint, setTaskCheckpoint, pauseTaskCheckpoint, pauseInterruptedTaskCheckpoints, sanitizeTaskCheckpoint, qualityState, setQualityState, sanitizeTodos, listEarningOpportunities, saveEarningOpportunity, settings, updateSettings, providerKey, providerTpmLimit, rememberProviderTpmLimit, emailConfig, updateEmailConfig, emailPassword, walletConfig, updateWalletConfig, walletPortfolioSnapshot, saveWalletPortfolioSnapshot, walletWatchState, updateWalletWatch, addWalletWatchEvent, onboarding, saveOnboarding, credentials, write };

@@ -127,6 +127,42 @@ try {
   assert.match(interrupted.nextAction, /Sonderr stopped/i);
   assert.equal(store.pauseInterruptedTaskCheckpoints(), false, "recovery should be idempotent");
   assert.equal(store.setTaskCheckpoint("missing-session", checkpoint), null);
+
+  // --- Corruption handling tests ---
+  fs.writeFileSync(store.DATA_FILE, "not valid json{{{");
+  const sessionsAfterDataCorruption = store.listSessions();
+  const dataBakFiles = fs.readdirSync(store.DATA_DIR).filter(name => name.startsWith("data.json.") && name.endsWith(".bak"));
+  assert.ok(dataBakFiles.length > 0, "read() should create a .bak file when data.json contains invalid JSON");
+  assert.deepEqual(sessionsAfterDataCorruption, [], "after data.json corruption, read() should return a fresh store with empty sessions");
+
+  fs.writeFileSync(store.CREDENTIALS_FILE, "not valid json{{{");
+  const credsAfterCorruption = store.credentials();
+  const credBakFiles = fs.readdirSync(store.DATA_DIR).filter(name => name.startsWith("credentials.json.") && name.endsWith(".bak"));
+  assert.ok(credBakFiles.length > 0, "credentials() should create a .bak file when credentials.json contains invalid JSON");
+  assert.deepEqual(credsAfterCorruption, {}, "after credentials.json corruption, credentials() should return an empty object");
+
+  // --- Temp file naming tests ---
+  const capturedTempPaths = [];
+  const originalRenameSync = fs.renameSync;
+  try {
+    fs.renameSync = function(from, to) {
+      if (String(from).startsWith(store.DATA_FILE) && String(from).includes(".tmp-")) {
+        capturedTempPaths.push(from);
+      }
+      return originalRenameSync(from, to);
+    };
+    store.write({ sessions: [] });
+    store.write({ sessions: [] });
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+  assert.ok(capturedTempPaths.length >= 2, "write() should use temp files for consecutive writes");
+  capturedTempPaths.forEach(tempPath => {
+    const tempSuffix = tempPath.slice(store.DATA_FILE.length);
+    assert.ok(tempSuffix.startsWith(".tmp-"), "temp file should start with .tmp-");
+    assert.ok(/^\.tmp-[0-9a-f-]{36}$/.test(tempSuffix), "temp file should have a UUID suffix");
+  });
+  assert.notEqual(capturedTempPaths[0], capturedTempPaths[1], "consecutive writes should use different temp paths");
 } finally {
   fs.rmSync(temporaryHome, { recursive: true, force: true });
 }

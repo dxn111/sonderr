@@ -14,6 +14,12 @@ const RESERVED_MCP_ENV = new Set([
   "NODE_OPTIONS", "NODE_PATH", "PYTHONHOME", "PYTHONPATH"
 ]);
 
+const O_NOFOLLOW = (() => {
+  const v = fs.constants.O_NOFOLLOW;
+  if (v === undefined || v === 0) throw new Error("O_NOFOLLOW is required");
+  return v;
+})();
+
 const CONFIG_DIR = path.join(process.cwd(), ".sonderr");
 const CONFIG_FILE = path.join(CONFIG_DIR, "mcp.json");
 const runtimes = new Map();
@@ -27,7 +33,7 @@ function ensureConfig() {
   try { configInfo = fs.lstatSync(CONFIG_FILE); }
   catch (error) {
     if (error.code !== "ENOENT") throw error;
-    const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0);
+    const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW;
     const fd = fs.openSync(CONFIG_FILE, flags, 0o600);
     try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, JSON.stringify({ version: 1, servers: [] }, null, 2)); }
     finally { fs.closeSync(fd); }
@@ -48,7 +54,7 @@ function readConfig() {
 function writeConfig(data) {
   ensureConfig();
   const temp = CONFIG_FILE + ".tmp-" + crypto.randomUUID();
-  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0);
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW;
   const fd = fs.openSync(temp, flags, 0o600);
   try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, JSON.stringify(data, null, 2)); }
   catch (error) { try { fs.unlinkSync(temp); } catch {} throw error; }

@@ -1,5 +1,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
+
+const O_NOFOLLOW = (() => {
+  const v = fs.constants.O_NOFOLLOW;
+  if (v === undefined || v === 0) throw new Error("O_NOFOLLOW is required");
+  return v;
+})();
 
 const DATA_DIR = path.join(process.env.HOME || process.env.USERPROFILE || process.cwd(), ".sonderr");
 const ENV_FILE = path.join(DATA_DIR, ".env");
@@ -35,11 +42,18 @@ function writeSecretFile(text) {
     const info = fs.lstatSync(ENV_FILE);
     if (!info.isFile() || info.isSymbolicLink()) throw new Error("Sonderr's secret store must be a regular file, not a symlink.");
   }
-  const temp = ENV_FILE + ".tmp";
-  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
-  try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, text); }
-  finally { fs.closeSync(fd); }
-  fs.renameSync(temp, ENV_FILE);
+  const temp = ENV_FILE + ".tmp-" + crypto.randomUUID();
+  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW, 0o600);
+  try {
+    fs.fchmodSync(fd, 0o600);
+    fs.writeFileSync(fd, text);
+    fs.renameSync(temp, ENV_FILE);
+  } catch (error) {
+    try { fs.unlinkSync(temp); } catch {}
+    throw error;
+  } finally {
+    fs.closeSync(fd);
+  }
   try { fs.chmodSync(ENV_FILE, 0o600); } catch {}
 }
 

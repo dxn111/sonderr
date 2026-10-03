@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v1.5.18 — Hardened local runtime
+
+- Escape model and file content inside fenced markdown code blocks in the frontend renderer, closing a stored XSS path in the chat transcript and artifact previews.
+- Randomize temporary file names for secret-store and session-data writes so symlink attacks cannot target predictable temp paths.
+- Replace O_TRUNC with O_EXCL on temp file opens and add failure cleanup so partial writes cannot silently corrupt the data store.
+- Back up corrupted data.json and credentials.json to timestamped .bak files before resetting, instead of silently dropping all sessions and settings.
+- Fail-closed on platforms without fs.constants.O_NOFOLLOW instead of silently disabling symlink protection.
+- Preserve existing temp-file safety patterns already used by the MCP config writer as the model for all other local-file writes.
 
 ## v1.5.17 — Safer tools, sharper teamwork
 

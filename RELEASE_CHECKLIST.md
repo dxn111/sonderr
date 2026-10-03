@@ -21,6 +21,7 @@ Run this from a clean checkout before publishing a release.
 - [ ] Verify generated-image downloads pin public DNS, reject redirects/private hosts, enforce image content types, and obey the response-size limit.
 - [ ] Confirm no API keys, OAuth tokens, seed phrases, backup files, `.sonderr/`, or personal test data are staged.
 - [ ] Review `git diff --check`, `git status --short`, `SECURITY.md`, public docs, version labels, and release notes.
+- [ ] Verify no vendor dependencies are tracked in git (git ls-files node_modules should be empty).
 
 ## Release decision
 

@@ -104,7 +104,7 @@ function renderMarkdown(src) {
   flushPara(); closeList();
   html = html.replace(/\u0000B(\d+)\u0000/g, (_, i) => {
     const b = blocks[Number(i)];
-    return '<div class="codeblock"><div class="codeblock-head"><span>' + esc(b.lang) + '</span><button class="copy" data-code="' + esc(b.code) + '">Copy</button></div><pre><code>' + b.code + "</code></pre></div>";
+    return '<div class="codeblock"><div class="codeblock-head"><span>' + esc(b.lang) + '</span><button class="copy" data-code="' + esc(b.code) + '">Copy</button></div><pre><code>' + esc(b.code) + "</code></pre></div>";
   });
   return html;
 }
@@ -2363,7 +2363,7 @@ function createAgentRow(sessionId = state.session?.id || "") {
   const el = document.createElement("div");
   el.className = "msg-agent";
   el.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span>' +
-    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="spin" aria-hidden="true"></span><span class="agent-status-text">Thinking…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
+    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="agent-status-text">Thinking…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
   $("messages").appendChild(el);
   const scrollRow = () => { if (el.isConnected && $("messages").contains(el)) scrollBottom(); };
   scrollRow();
@@ -3615,3 +3615,8 @@ async function refreshWalletWatchNotices() {
   } catch {}
 }
 setInterval(refreshWalletWatchNotices, 30_000);
+
+// Test harness: expose selected helpers under CommonJS when running in Node.js.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { renderMarkdown, esc, safeExternalHref };
+}

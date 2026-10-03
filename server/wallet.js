@@ -17,6 +17,18 @@ const UNISWAP_V3 = {
   1: { router: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45", factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984", quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e", wrappedNative: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" },
   8453: { router: "0x2626664c2603336E57B271c5C0b26F421741e481", factory: "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", wrappedNative: "0x4200000000000000000000000000000000000006" }
 };
+const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+function validateUniswapV3Addresses() {
+  for (const [chainId, deployment] of Object.entries(UNISWAP_V3)) {
+    for (const [role, address] of Object.entries(deployment)) {
+      const raw = String(address || "").trim();
+      if (!raw || !EVM_ADDRESS_RE.test(raw)) {
+        throw new Error("Uniswap V3 " + role + " address for chain " + chainId + " is invalid: \"" + address + "\"");
+      }
+    }
+  }
+}
+validateUniswapV3Addresses();
 const UNISWAP_V3_FEES = [100, 500, 3000, 10000];
 const V3_FACTORY_ABI = ["function getPool(address tokenA,address tokenB,uint24 fee) view returns (address pool)"];
 const V3_POOL_ABI = ["function liquidity() view returns (uint128)"];
@@ -387,6 +399,9 @@ async function prepareSwap(input) {
   const amount = baseAmount(input?.amount, "Swap amount"), slippageBps = Number(input?.slippageBps ?? 50);
   if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 100) throw new Error("Slippage must be between 1 and 100 basis points (1%)");
   const provider = await evmProvider(c), net = await provider.getNetwork(), expectedChainId = BigInt(c.chainId), deployments = UNISWAP_V3[String(c.chainId)];
+  for (const [role, address] of Object.entries(deployments)) {
+    if (!address || !EVM_ADDRESS_RE.test(String(address).trim())) throw new Error("Pinned Uniswap V3 " + role + " address for chain " + c.chainId + " is misconfigured");
+  }
   if (net.chainId !== expectedChainId) throw new Error("Configured RPC network does not match the selected wallet network");
   const nativeInput = sellToken === ethers.ZeroAddress;
   const nativeOutput = buyToken === ethers.ZeroAddress, poolTokenIn = nativeInput ? deployments.wrappedNative : sellToken, poolTokenOut = nativeOutput ? deployments.wrappedNative : buyToken;
@@ -402,10 +417,11 @@ async function prepareSwap(input) {
   // Discover and compare all canonical Uniswap V3 fee tiers directly on-chain.
   const factory = new ethers.Contract(deployments.factory, V3_FACTORY_ABI, provider);
   const quoter = new ethers.Contract(deployments.quoter, V3_QUOTER_ABI, provider);
+  let zeroPoolCount = 0;
   const feeQuotes = await Promise.all(UNISWAP_V3_FEES.map(async fee => {
     try {
       const poolAddress = await factory.getPool(poolTokenIn, poolTokenOut, fee);
-      if (poolAddress === ethers.ZeroAddress) return null;
+      if (poolAddress === ethers.ZeroAddress) { zeroPoolCount++; return null; }
       const pool = new ethers.Contract(poolAddress, V3_POOL_ABI, provider), liquidity = await pool.liquidity();
       if (liquidity === 0n) return null;
       const result = await quoter.quoteExactInputSingle.staticCall({ tokenIn: poolTokenIn, tokenOut: poolTokenOut, amountIn: BigInt(amount), fee, sqrtPriceLimitX96: 0 });
@@ -413,8 +429,10 @@ async function prepareSwap(input) {
     } catch { return null; }
   }));
   const pools = feeQuotes.filter(Boolean).sort((a, b) => a.amountOut === b.amountOut ? a.fee - b.fee : a.amountOut > b.amountOut ? -1 : 1);
-  const best = pools[0];
-  if (!best) throw new Error("No liquid direct Uniswap V3 pool could quote this exact pair on the selected network; no aggregator or alternate venue is used");
+  if (!pools.length) {
+    if (zeroPoolCount === UNISWAP_V3_FEES.length) console.warn("[sonderr] Uniswap V3 factory " + deployments.factory + " on chain " + c.chainId + " returned zero pools for all " + UNISWAP_V3_FEES.length + " fee tiers.");
+    throw new Error("No liquid direct Uniswap V3 pool could quote this exact pair on the selected network; no aggregator or alternate venue is used");
+  }
   const referenceAmount = BigInt(amount) > 1000n ? BigInt(amount) / 1000n : BigInt(amount);
   let priceImpactBps = null;
   if (referenceAmount < BigInt(amount)) {

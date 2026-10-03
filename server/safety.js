@@ -6,6 +6,8 @@
 
 const path = require("node:path");
 
+const normalizeIntent = (s) => String(s || "").normalize("NFKC").replace(/[^\x00-\x7F]/g, "");
+
 const REDACTION = "[redacted by Sonderr safety]";
 const MAX_DEPTH = 10;
 const MAX_KEYS = 250;
@@ -171,7 +173,7 @@ function sanitizeAssistantOutput(output, systemPrompt = "") {
 }
 
 function assessUserMessage(value) {
-  const text = String(value || "").trim();
+  const text = normalizeIntent(value).trim();
   const asksForHiddenPrompt = /\b(?:reveal|show|print|dump|repeat|export|tell me|display|ignore.{0,60}(?:rules|instructions))\b[\s\S]{0,100}\b(?:system prompt|developer message|hidden instructions?|internal prompt)\b/i.test(text)
     || /\b(?:system prompt|developer message|hidden instructions?)\b[\s\S]{0,100}\b(?:verbatim|full|exact|raw)\b/i.test(text);
   const asksForSecrets = /\b(?:api key|access token|secret key|private key|seed phrase|mnemonic|password)\b[\s\S]{0,100}\b(?:reveal|show|print|dump|export|give|tell)\b/i.test(text)
@@ -186,7 +188,7 @@ function assessUserMessage(value) {
 }
 
 function hasMcpConfigurationIntent(value) {
-  const text = String(value || "").toLowerCase();
+  const text = normalizeIntent(value).toLowerCase();
   if (isNonExecutableActionQuestion(text)) return false;
   return hasAffirmativeMatch(text, /\b(?:add|connect|configure|install|set up|setup|enable)\b[\s\S]{0,90}\b(?:mcp|model context protocol)\b/i)
     || hasAffirmativeMatch(text, /\b(?:mcp|model context protocol)\b[\s\S]{0,90}\b(?:add|connect|configure|install|set up|setup|enable)\b/i);
@@ -199,7 +201,7 @@ function isNonExecutableActionQuestion(value) {
 }
 
 function hasAffirmativeMatch(value, pattern) {
-  const text = String(value || "");
+  const text = normalizeIntent(value);
   const flags = pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g";
   const matcher = new RegExp(pattern.source, flags);
   let match;
@@ -218,7 +220,7 @@ function hasDirectIntent(value, pattern) {
 }
 
 function hasMcpCallIntent(value) {
-  const text = String(value || "").toLowerCase();
+  const text = normalizeIntent(value).toLowerCase();
   if (isNonExecutableActionQuestion(text)) return false;
   const namedConnector = /\b(?:mcp|notion|gmail|google drive|slack|linear)\b/.test(text);
   const explicitAction = hasAffirmativeMatch(text, /\b(?:call|run|invoke|read|open|fetch|search|find|query|get|retrieve|send|write|create|update|delete|archive|post|add|remove|use)\b/i);
@@ -226,7 +228,7 @@ function hasMcpCallIntent(value) {
 }
 
 function hasMcpWriteIntent(value) {
-  const text = String(value || "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[^a-z0-9]+/gi, " ").toLowerCase();
+  const text = normalizeIntent(value).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[^a-z0-9]+/gi, " ").toLowerCase();
   return /\b(?:create|write|update|edit|delete|remove|archive|send|post|publish|invite|submit|share|add|set|change|modify|save|move|transfer|insert|append|replace|rename|approve|purchase|pay|charge|close|complete|resolve)\b/.test(text);
 }
 
@@ -247,7 +249,7 @@ function mcpMutationMatchesRequest(userText, toolName) {
 }
 
 function hasWorkspaceEditIntent(value) {
-  const text = String(value || "").trim();
+  const text = normalizeIntent(value).trim();
   if (!text) return false;
   if (isNonExecutableActionQuestion(text)) return false;
   if (/^\s*(?:what|why|how|when|where|which)\b|^\s*(?:can|could|would)\s+you\s+(?:please\s+)?(?:explain|tell me|show me|help me understand)\b/i.test(text)) return false;
@@ -260,14 +262,14 @@ function hasWorkspaceEditIntent(value) {
 }
 
 function hasImageEditIntent(value) {
-  const text = String(value || "").trim();
+  const text = normalizeIntent(value).trim();
   if (!text || isNonExecutableActionQuestion(text)) return false;
   return hasAffirmativeMatch(text, /^\s*(?:please\s+)?(?:(?:can|could|would)\s+you\s+|i\s+(?:need|want)\s+you\s+to\s+)?(?:please\s+)?(?:generate|create|make|draw|paint|illustrate|design|edit|modify|change|crop|resize|remove|replace|upscale)\b[\s\S]{0,80}\b(?:image|picture|photo|artwork|illustration|background|logo|poster|graphic)\b/i)
     || hasAffirmativeMatch(text, /^\s*(?:please\s+)?(?:(?:can|could|would)\s+you\s+|i\s+(?:need|want)\s+you\s+to\s+)?(?:please\s+)?(?:edit|modify|change|crop|resize|remove|replace|upscale)\b/i);
 }
 
 function hasWalletWatchIntent(value) {
-  const text = String(value || "").toLowerCase();
+  const text = normalizeIntent(value).toLowerCase();
   if (isNonExecutableActionQuestion(text)) return false;
   return hasAffirmativeMatch(text, /\b(?:start|enable|turn on)\b[\s\S]{0,40}\b(?:watch(?:er|ing)?|monitor(?:ing)?|poll(?:ing)?|alert|notify)\b/i)
     || hasAffirmativeMatch(text, /\b(?:stop|disable|turn off)\b[\s\S]{0,40}\b(?:watch(?:er|ing)?|monitor(?:ing)?|poll(?:ing)?|alert|notify)\b/i)
@@ -275,7 +277,7 @@ function hasWalletWatchIntent(value) {
 }
 
 function hasVerificationIntent(value) {
-  const text = String(value || "").toLowerCase();
+  const text = normalizeIntent(value).toLowerCase();
   if (isNonExecutableActionQuestion(text)) return false;
   if (/^\s*(?:what|why|how|when|where|which|should|would it|is it|are we)\b/i.test(text)) return false;
   return hasAffirmativeMatch(text, /\b(?:run|execute|perform|start)\b[\s\S]{0,70}\b(?:tests?|checks?|lint|typecheck|type-check|build)\b/i)
@@ -285,7 +287,7 @@ function hasVerificationIntent(value) {
 }
 
 function hasTerminalExecutionIntent(value) {
-  const text = String(value || "").replace(/[\x60"'“”‘’]/g, "").trim();
+  const text = normalizeIntent(value).replace(/[\x60"'“”‘’]/g, "").trim();
   if (!text || isNonExecutableActionQuestion(text)) return false;
   return hasAffirmativeMatch(text, /^\s*(?:please\s+)?(?:(?:can|could|would)\s+you\s+|i\s+(?:need|want)\s+you\s+to\s+)?(?:please\s+)?(?:run|execute|start)\s+(?:(?:this|the|all|these|those|my|our|existing|project|provided|supplied|given|following|attached|specified|named)\s+){0,2}(?:terminal\s+|shell\s+)?(?:command\b|script\b|tests?\b|checks?\b|lint\b|type[ -]?check\b|build\b|git\b|npm\b|pnpm\b|yarn\b|node\b|python\b|curl\b|wget\b)/i)
     || hasAffirmativeMatch(text, /^\s*(?:please\s+)?(?:(?:can|could|would)\s+you\s+|i\s+(?:need|want)\s+you\s+to\s+)?(?:please\s+)?(?:install|curl|wget)\b/i)
@@ -293,7 +295,7 @@ function hasTerminalExecutionIntent(value) {
 }
 
 function hasWalletIntent(action, value) {
-  const text = String(value || "").toLowerCase();
+  const text = normalizeIntent(value).toLowerCase();
   const leadIn = String.raw`(?:(?:please\s+)?(?:(?:can|could|would)\s+you|i\s+(?:want|need)\s+you\s+to|i\s+want\s+to|i['’]d\s+like\s+you\s+to)\s+(?:please\s+)?|(?:please\s+)?)`;
   const asset = String.raw`(?:wallet|crypto|funds?|tokens?|coins?|eth(?:ereum)?|sol(?:ana)?|usdt|memecoin)`;
   if (action === "create") return new RegExp(String.raw`^\s*${leadIn}(?:create|make|generate|set\s*up)\b[\s\S]{0,50}\b(?:sonderr\s+)?wallet\b`).test(text);
