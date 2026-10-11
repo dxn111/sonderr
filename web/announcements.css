@@ -42,3 +42,15 @@
 @keyframes sonderr-v16-badge{0%,100%{transform:translateY(0);box-shadow:0 8px 26px #020a18aa}50%{transform:translateY(-3px);box-shadow:0 14px 30px #020a18cc}}
 @media(max-width:760px){.sonderr-v16-announcement{padding:10px}.sonderr-v16-card{width:min(540px,100%);max-height:95vh;min-height:0;grid-template-columns:1fr;grid-template-rows:minmax(200px,34vh) auto;overflow-y:auto;border-radius:18px}.sonderr-v16-hero{min-height:210px}.sonderr-v16-hero-badge{left:22px;bottom:18px}.sonderr-v16-hero-mark{top:16px;left:22px}.sonderr-v16-copy{padding:25px 24px 28px}.sonderr-v16-copy h1{margin:13px 0 9px;font-size:38px}.sonderr-v16-copy p{font-size:12.5px}.sonderr-v16-facts{margin:17px 0 18px}.sonderr-v16-close{right:10px;top:10px;width:31px;height:31px}}
 @media(prefers-reduced-motion:reduce){.sonderr-v16-announcement,.sonderr-v16-card{animation:none}.sonderr-v16-hero-badge{animation:none}.sonderr-v16-primary{transition:none}}
+
+/* ---------- v1.6 pass 3 — announcement aurora + shine ---------- */
+.sonderr-v16-hero::before{content:"";position:absolute;z-index:2;inset:-20%;background:radial-gradient(38% 30% at 22% 24%,rgba(34,205,226,.32),transparent 70%),radial-gradient(30% 26% at 74% 18%,rgba(59,130,246,.34),transparent 72%),radial-gradient(34% 30% at 56% 82%,rgba(14,165,183,.3),transparent 70%),radial-gradient(26% 22% at 88% 70%,rgba(99,102,241,.28),transparent 72%);animation:sonderr-aurora 11s ease-in-out infinite alternate;mix-blend-mode:screen;pointer-events:none}
+.sonderr-v16-hero-wash{z-index:3}
+.sonderr-v16-hero-mark,.sonderr-v16-hero-badge{z-index:4}
+@keyframes sonderr-aurora{0%{transform:translate3d(-4%,-3%,0) scale(1)}50%{transform:translate3d(3%,2%,0) scale(1.08)}100%{transform:translate3d(-2%,4%,0) scale(1.02)}}
+.sonderr-v16-primary{position:relative;overflow:hidden}
+.sonderr-v16-primary::after{content:"";position:absolute;top:0;bottom:0;left:-35%;width:26%;background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.5),rgba(255,255,255,0));transform:skewX(-16deg);animation:sonderr-btn-shine 4.2s ease-in-out infinite;pointer-events:none}
+@keyframes sonderr-btn-shine{0%,58%{left:-35%}92%,100%{left:120%}}
+.sonderr-v16-facts span{transition:transform .15s,border-color .15s,background .15s}
+.sonderr-v16-facts span:hover{transform:translateY(-2px);border-color:#bfe8ee;background:#f4fdfe}
+@media(prefers-reduced-motion:reduce){.sonderr-v16-hero::before,.sonderr-v16-primary::after{animation:none;display:none}}

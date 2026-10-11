@@ -697,38 +697,60 @@ const STUDIO_TRACKS = {
   bounty: { label: "Bounty Program", title: "New security research", milestones: ["Read the current scope and rules", "Create an authorized, safe test plan", "Prepare a private report"] }
 };
 // Mirror of server/studio-crew.js — the two specialists that work every build
-// turn, with the specific task each one is handed for the current milestone.
+// turn, with the specific task each one is handed for the current phase and
+// milestone. Client tasks are short display strings; the server brief carries
+// the full prompts.
 const STUDIO_CREWS = {
   site: [
-    { role: "Site Architect", focus: "structure, content, and working pages", lens: "Maps the pages, sections, and navigation, then verifies the built structure." },
-    { role: "Interface Designer", focus: "visual design, polish, and responsiveness", lens: "Defines the palette, type, and components, then polishes every screen." }
+    { role: "Site Architect", focus: "structure, content, and working pages", lens: "Maps the pages, sections, and navigation, then verifies the built structure.", now: { plan: "Map pages, sections, and content needs", build: "Specify pages and fixes for this pass", review: "Walk every page and list structural gaps" } },
+    { role: "Interface Designer", focus: "visual design, polish, and responsiveness", lens: "Defines the palette, type, and components, then polishes every screen.", now: { plan: "Choose palette, type scale, and spacing", build: "Style layouts, breakpoints, and polish", review: "Judge contrast, type, and responsiveness" } }
   ],
   app: [
-    { role: "App Engineer", focus: "logic, data, and working flows", lens: "Traces the core flow and data, then makes the main path actually work." },
-    { role: "Experience Designer", focus: "flows, screens, and usability", lens: "Maps the journey screen by screen, then smooths every interaction." }
+    { role: "App Engineer", focus: "logic, data, and working flows", lens: "Traces the core flow and data, then makes the main path actually work.", now: { plan: "Trace the core flow, pick the first slice", build: "Specify functions and checks for this pass", review: "Probe edge cases and broken flows" } },
+    { role: "Experience Designer", focus: "flows, screens, and usability", lens: "Maps the journey screen by screen, then smooths every interaction.", now: { plan: "Map the journey and every screen state", build: "Wire transitions, feedback, and focus", review: "Find every confusing moment and dead end" } }
   ],
   pdf: [
-    { role: "Document Architect", focus: "outline, narrative, and evidence", lens: "Shapes the outline and sections, then keeps the content accurate." },
-    { role: "Page Designer", focus: "layout, typography, and print polish", lens: "Sets the grid and type system, then makes every page print-perfect." }
+    { role: "Document Architect", focus: "outline, narrative, and evidence", lens: "Shapes the outline and sections, then keeps the content accurate.", now: { plan: "Shape outline, audience, and evidence", build: "Specify sections to draft with facts", review: "Check claims, consistency, and gaps" } },
+    { role: "Page Designer", focus: "layout, typography, and print polish", lens: "Sets the grid and type system, then makes every page print-perfect.", now: { plan: "Set grid, margins, and type scale", build: "Style typography, tables, and headers", review: "Hunt breaks, orphans, and cramped pages" } }
   ],
   design: [
-    { role: "Design Lead", focus: "concept, system, and direction", lens: "Sets the concept and direction, then keeps the system consistent." },
-    { role: "Craft Specialist", focus: "execution, detail, and finish", lens: "Turns direction into precise, export-ready artifacts." }
+    { role: "Design Lead", focus: "concept, system, and direction", lens: "Sets the concept and direction, then keeps the system consistent.", now: { plan: "Set concept and core artifacts", build: "Specify artifacts and system rules", review: "Judge the work against the concept" } },
+    { role: "Craft Specialist", focus: "execution, detail, and finish", lens: "Turns direction into precise, export-ready artifacts.", now: { plan: "Plan sizes, formats, and finishing", build: "Exact colors, alignment, export quality", review: "Zoom in on misalignments and rough edges" } }
   ],
   project: [
-    { role: "Project Planner", focus: "scope, sequence, and risks", lens: "Breaks the goal into sequenced steps and watches for risks." },
-    { role: "Build Specialist", focus: "implementation and verification", lens: "Implements the next step and runs the real checks." }
+    { role: "Project Planner", focus: "scope, sequence, and risks", lens: "Breaks the goal into sequenced steps and watches for risks.", now: { plan: "Sequence milestones and name risks", build: "Confirm the milestone and its done test", review: "Check slippage and the next best step" } },
+    { role: "Build Specialist", focus: "implementation and verification", lens: "Implements the next step and runs the real checks.", now: { plan: "Plan files, tools, and order of work", build: "Specify what to build and its checks", review: "Re-run checks and list anything unverified" } }
   ],
   developer: [
-    { role: "Code Researcher", focus: "codebase, conventions, and fit", lens: "Studies the code and finds the contribution that fits best." },
-    { role: "Contribution Guide", focus: "process, quality, and handoff", lens: "Maps the process and prepares a reviewable handoff." }
+    { role: "Code Researcher", focus: "codebase, conventions, and fit", lens: "Studies the code and finds the contribution that fits best.", now: { plan: "Study the code, pick the best fit", build: "Specify files and patterns to follow", review: "Check collisions, conventions, regressions" } },
+    { role: "Contribution Guide", focus: "process, quality, and handoff", lens: "Maps the process and prepares a reviewable handoff.", now: { plan: "Map standards, tests, review style", build: "Specify tests, docs, and handoff steps", review: "Confirm the handoff is review-ready" } }
   ],
   bounty: [
-    { role: "Scope Analyst", focus: "targets, rules, and authorization", lens: "Reads the scope and keeps every test step authorized." },
-    { role: "Safety Reviewer", focus: "harm avoidance and private reporting", lens: "Keeps testing safe and the report private and responsible." }
+    { role: "Scope Analyst", focus: "targets, rules, and authorization", lens: "Reads the scope and keeps every test step authorized.", now: { plan: "List authorized targets and forbidden edges", build: "Tie each test step to scope and rules", review: "Re-check findings against the scope" } },
+    { role: "Safety Reviewer", focus: "harm avoidance and private reporting", lens: "Keeps testing safe and the report private and responsible.", now: { plan: "Set safety boundaries and reporting", build: "Specify safe steps and evidence to record", review: "Check disclosure and redaction quality" } }
   ]
 };
+// The craft standard each track is held to — short chips for the rail plus a
+// definition of done. Mirror of server PLAYBOOKS.
+const STUDIO_PLAYBOOKS = {
+  site: { chips: ["Mobile-first", "One type system", "Real content", "Working links", "Accessibility"], done: "A visitor can arrive, understand the site, and complete the main action on a phone or a desktop." },
+  app: { chips: ["Main flow first", "Every state designed", "Recoverable errors", "Consistent UI", "Actually verified"], done: "The core flow runs cleanly and handles mistakes gracefully." },
+  pdf: { chips: ["One type scale", "Breathing margins", "No broken breaks", "Evidence-backed", "Print-ready"], done: "It reads like a professionally typeset document from cover to end." },
+  design: { chips: ["One concept", "Exact values", "Optical alignment", "Palette discipline", "Complete exports"], done: "A stranger could extend the design system without asking a single question." },
+  project: { chips: ["Finishable steps", "Done tests named", "Risks owned", "Honest updates", "Written scope"], done: "The stated result exists in the workspace and the checks actually ran." },
+  developer: { chips: ["Fit conventions", "Smallest change", "Real tests", "Clear handoff", "No false claims"], done: "A maintainer can review and merge the handoff without follow-up questions." },
+  bounty: { chips: ["Authorization first", "Gentle probes", "Evidence recorded", "Redacted", "Private report"], done: "A safe, evidence-backed private report the program can act on." }
+};
+const STUDIO_PHASE_LABELS = { plan: "PLAN PHASE", build: "BUILD PHASE", review: "REVIEW PHASE" };
 function studioCrewFor(track) { return STUDIO_CREWS[track] || STUDIO_CREWS.project; }
+function studioPlaybookFor(track) { return STUDIO_PLAYBOOKS[track] || STUDIO_PLAYBOOKS.project; }
+// The rail's suggested phase follows board progress: nothing done yet is
+// planning, work in progress is building, everything done is review.
+function studioPhaseOf(done, total) {
+  if (!total) return "plan";
+  if (done >= total) return "review";
+  return done === 0 ? "plan" : "build";
+}
 function openStudioCreate(track = "project") {
   studioTrackDraft = STUDIO_TRACKS[track] ? track : "project";
   $("studiosCreateTitle").textContent = STUDIO_TRACKS[studioTrackDraft].title;
@@ -775,8 +797,10 @@ function renderStudioProject() {
   const canvasName = studio.track === "app" ? "App" : studio.track === "pdf" ? "Document" : studio.track === "design" ? "Design" : "Website";
   const canvasHint = studio.track === "pdf" ? "Draft a print-ready page with the crew, then enter its path here. Try <code>my-report/index.html</code>." : studio.track === "design" ? "Create an SVG or HTML design file, then enter its path here. Try <code>brand/poster.svg</code>." : "Build a page with Sites, then enter its workspace path here. Try <code>my-site/index.html</code>.";
   const crew = studioCrewFor(studio.track);
-  const crewNow = nextMilestone ? nextMilestone.text : "Final review of the finished work";
-  const crewCards = crew.map((member, index) => '<div class="studio-crew-card"><span class="studio-crew-avatar"><img src="/assets/sonderr-v16-otter.png" alt="" aria-hidden="true"><i>' + (index + 1) + '</i></span><div class="studio-crew-info"><strong>' + esc(member.role) + '</strong><small>' + esc(member.focus) + '</small><p>' + esc(member.lens) + '</p></div><span class="studio-crew-task"><span>NOW</span>' + esc(crewNow) + '</span></div>').join("");
+  const crewPhase = studioPhaseOf(done, milestones.length);
+  const playbook = studioPlaybookFor(studio.track);
+  const crewCards = crew.map((member, index) => '<div class="studio-crew-card"><span class="studio-crew-avatar"><img src="/assets/sonderr-v16-otter.png" alt="" aria-hidden="true"><i>' + (index + 1) + '</i></span><div class="studio-crew-info"><strong>' + esc(member.role) + '</strong><small>' + esc(member.focus) + '</small><p>' + esc(member.lens) + '</p></div><span class="studio-crew-task"><span>NOW</span>' + esc(member.now?.[crewPhase] || (crewPhase === "review" ? "Final review of the finished work" : member.lens)) + '</span></div>').join("");
+  const craftChips = playbook.chips.map(chip => '<i>' + esc(chip) + '</i>').join("");
   const milestoneRows = milestones.map((item, index) => '<div class="studio-milestone-item' + (item.done ? ' done' : '') + '" data-milestone-row="' + esc(item.id) + '">' +
     '<span class="studio-milestone-index" aria-hidden="true">' + String(index + 1).padStart(2, "0") + '</span><label class="studio-milestone-check"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>' +
     '<div class="studio-milestone-actions"><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="up" aria-label="Move milestone up" title="Move up"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="down" aria-label="Move milestone down" title="Move down"' + (index === milestones.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" data-edit-milestone="' + esc(item.id) + '" aria-label="Edit milestone" title="Edit milestone">Edit</button><button type="button" data-remove-milestone="' + esc(item.id) + '" aria-label="Remove milestone" title="Remove milestone">×</button></div>' +
@@ -791,7 +815,8 @@ function renderStudioProject() {
     '<div class="studio-milestones">' + (milestoneRows || '<div class="studio-milestones-empty">No milestones yet. Add one to give the project a clear next step.</div>') + '</div>' +
     '<form class="studio-add-milestone" id="studioAddMilestone"><input id="studioMilestoneText" maxlength="120" required aria-label="New milestone" placeholder="Add a milestone…"><button type="submit">+ Add</button></form>' +
     '<section class="studio-focus-card"><div class="studio-focus-kicker"><span>' + (nextMilestone ? 'UP NEXT' : 'MILESTONES COMPLETE') + '</span><small>' + (nextMilestone ? 'STEP ' + String(nextMilestoneNumber).padStart(2, "0") + ' / ' + String(milestones.length).padStart(2, "0") : 'READY TO REVIEW') + '</small></div><strong>' + esc(nextMilestone?.text || 'Take a final look at what you made.') + '</strong><p>' + (nextMilestone ? 'This is the next unfinished step in your project. Sonderr can inspect the workspace, work through it, and verify the result.' : 'Review the finished work, check the important details, and decide what—if anything—should happen next.') + '</p><button type="button" data-studio-action="' + (nextMilestone ? 'build-next' : 'review') + '">' + (nextMilestone ? 'Work on this step <span>→</span>' : 'Review this project <span>→</span>') + '</button></section>' +
-    '<section class="studio-crew"><div class="studio-crew-head"><span>STUDIO CREW</span><strong>Two specialists on every build</strong></div>' + crewCards + '</section>' +
+    '<section class="studio-crew"><div class="studio-crew-head"><span>STUDIO CREW</span><strong class="studio-crew-phase" data-phase="' + crewPhase + '"><b>' + (STUDIO_PHASE_LABELS[crewPhase] || "BUILD PHASE") + '</b><small>two specialists, one task each</small></strong></div>' + crewCards +
+    '<div class="studio-craft"><span>CRAFT STANDARD</span><div class="studio-craft-chips">' + craftChips + '</div><p><b>Definition of done.</b> ' + esc(playbook.done) + '</p></div>' + '</section>' +
     (isCanvasTrack ? '<section class="studio-site-canvas"><div class="studio-site-canvas-head"><span>LIVE CANVAS</span><strong>' + canvasName + (studio.track === "design" ? " canvas" : " preview") + '</strong><a id="studioPreviewOpen" href="' + esc(previewUrl) + '" target="_blank" rel="noopener"' + (previewPath ? '' : ' hidden') + '>Open ↗</a></div><form id="studioPreviewForm"><input id="studioPreviewPath" aria-label="Workspace path to preview page" placeholder="' + (studio.track === "pdf" ? "my-report/index.html" : studio.track === "design" ? "brand/poster.svg" : "my-site/index.html") + '" value="' + esc(previewPath) + '"><button type="submit">Preview</button></form><div class="studio-preview-tools"><span>LOCAL PREVIEW · NETWORK DISABLED</span><div><button type="button" data-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview-size="mobile" aria-pressed="false">Mobile</button><button type="button" id="studioPreviewReload"' + (previewPath ? '' : ' disabled') + ' aria-label="Reload preview" title="Reload preview">↻</button></div></div><div class="studio-preview-frame-wrap" id="studioPreviewWrap"><iframe id="studioPreviewFrame" title="' + canvasName + (studio.track === "design" ? " canvas" : " preview") + '" sandbox="allow-scripts" referrerpolicy="no-referrer" src="' + esc(previewUrl) + '"></iframe>' + (!previewPath ? '<div class="studio-preview-empty"><span>▧</span><strong>Your canvas is ready</strong><small>' + canvasHint + '</small></div>' : '') + '</div>' + (studio.track === "pdf" || studio.track === "design" ? '<button class="studio-sites-plugin" type="button" id="studioCrewBuild">✦ Build with the crew</button>' : '<button class="studio-sites-plugin" type="button">✦ Build with Sites</button>') + '<p class="studio-preview-note">This preview reads workspace files only. External network requests, forms, and publishing stay disabled.' + (studio.track === "pdf" ? ' For the final PDF, open the preview in a browser tab and use Print → Save as PDF.' : '') + '</p></section>' : '') +
     (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '') + '</div>';
   project.dataset.studioSessionId = state.session.id;
