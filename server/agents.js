@@ -13,10 +13,17 @@ const PERSONAS = [
   { name: "Priya Shah", role: "Reviewer" },
   { name: "Lucas Morgan", role: "Investigator" },
   { name: "Jordan Ellis", role: "Researcher" },
-  { name: "Riley Carter", role: "Analyst" }
+  { name: "Riley Carter", role: "Analyst" },
+  { name: "Ines Moreau", role: "Strategist" },
+  { name: "Owen Hartley", role: "Builder" },
+  { name: "Zara Okafor", role: "Tester" },
+  { name: "Felix Brandt", role: "Documenter" },
+  { name: "Lena Vasquez", role: "Strategist" },
+  { name: "Marcus Webb", role: "Tester" }
 ];
 const LEADERS = ["Alex Morgan", "Jamie Rivera", "Taylor Bennett"];
-const ROLES = ["Researcher", "Analyst", "Reviewer", "Investigator"];
+const ROLES = ["Researcher", "Analyst", "Reviewer", "Investigator", "Builder", "Tester", "Documenter", "Strategist"];
+const MAX_WORKERS = 6;
 const ROOMS = new Map();
 
 function cleanText(value, limit = 5_000) {
@@ -41,7 +48,7 @@ function normalizePoll(value, tasks) {
 }
 
 function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected provider", onUpdate = null } = {}) {
-  if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > 3) throw new Error("An agent room needs one to three workers.");
+  if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > MAX_WORKERS) throw new Error(`An agent room needs one to ${MAX_WORKERS} workers.`);
   const availablePersonas = [...PERSONAS];
   for (let index = availablePersonas.length - 1; index > 0; index--) {
     const swap = crypto.randomInt(index + 1);
@@ -100,7 +107,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const entry = {
       id: crypto.randomUUID(), at: new Date().toISOString(), senderId: sender.id,
       name: sender.name, role: sender.role, kind: sender.kind, type,
-      text: cleanText(text, type === "finding" || type === "review" ? 5_000 : type === "risk" ? 1_500 : 1_200),
+      text: cleanText(text, type === "finding" || type === "review" ? 5_000 : type === "risk" ? 1_500 : type === "synthesis" ? 2_500 : 1_200),
       ...(extra.task ? { task: cleanText(extra.task, 80) } : {}),
       ...(extra.vote ? { vote: { ...extra.vote } } : {}),
       ...(extra.poll ? { poll: structuredClone(extra.poll) } : {}),
@@ -118,7 +125,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     else if (type === "help_request") sender.activity = "Asked the team for help";
     else if (type === "help_answer") sender.activity = "Helped a teammate";
     room.entries.push(entry);
-    if (room.entries.length > 100) room.entries.shift();
+    if (room.entries.length > 160) room.entries.shift();
     const event = { type: "agent_update", room: snapshot(), entry };
     if (typeof onUpdate === "function") onUpdate(event);
     return event;
@@ -162,7 +169,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const agent = room.agents.find(item => item.id === agentId && item.role !== "Lead");
     const target = targetAgentId ? room.agents.find(item => item.id === targetAgentId && item.role !== "Lead" && item.id !== agentId) : null;
     const cleanQuestion = cleanText(question, 500);
-    if (!agent || (targetAgentId && !target) || cleanQuestion.length < 8 || room.helpRequests.length >= 8) return { ok: false, error: "A focused help request could not be added." };
+    if (!agent || (targetAgentId && !target) || cleanQuestion.length < 8 || room.helpRequests.length >= 12) return { ok: false, error: "A focused help request could not be added." };
     const request = { id: crypto.randomUUID(), agentId, name: agent.name, task: agent.task, question: cleanQuestion, status: "open", answers: [], at: new Date().toISOString(), ...(target ? { targetAgentId: target.id, targetName: target.name } : {}) };
     room.helpRequests.push(request);
     agent.status = "needs_help";
@@ -196,7 +203,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const level = ["low", "medium", "high"].includes(String(severity || "").toLowerCase()) ? String(severity).toLowerCase() : "";
     if (!agent || risk.length < 8 || support.length < 8 || !level) return { ok: false, error: "Describe a concrete risk or contradiction, cite its evidence, and choose a severity." };
     const count = Number(room.risksByAgent[agentId] || 0);
-    if (count >= 3 || room.risks.length >= 12) return { ok: false, error: "This room has reached its risk-note limit; include further concerns in your final report." };
+    if (count >= 4 || room.risks.length >= 16) return { ok: false, error: "This room has reached its risk-note limit; include further concerns in your final report." };
     room.risksByAgent[agentId] = count + 1;
     room.risks.push({ id: crypto.randomUUID(), agentId, name: agent.name, task: agent.task, risk, evidence: support, severity: level, at: new Date().toISOString() });
     publish(agentId, "risk", `${risk}\n\nEvidence: ${support}`, { task: agent.task, tool: "flag_team_risk", severity: level });
@@ -209,7 +216,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const cleanConfidence = cleanText(confidence, 40);
     if (!agent || !cleanFinding || !cleanEvidence) return { ok: false, error: "Share a concise finding with supporting evidence." };
     const count = Number(room.findingsByAgent[agentId] || 0);
-    if (count >= 4) return { ok: false, error: "You have already shared four findings; add any new evidence to your final report." };
+    if (count >= 6) return { ok: false, error: "You have already shared six findings; add any new evidence to your final report." };
     room.findingsByAgent[agentId] = count + 1;
     publish(agentId, "finding", `${cleanFinding}\n\nEvidence: ${cleanEvidence}${cleanConfidence ? `\nConfidence: ${cleanConfidence}` : ""}`, { task: agent.task, tool: "share_team_finding" });
     return { ok: true, note: "The finding is visible to the team for cross-review." };
@@ -219,7 +226,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const agent = agentId === "user" ? { id: "user", name: "You", task: "Direct chat request" } : room.agents.find(item => item.id === agentId && item.role !== "Lead");
     const cleanQuestion = cleanText(question, 700);
     if (!agent || cleanQuestion.length < 12) return { ok: false, error: "Describe one specific blocker in at least 12 characters." };
-    if (room.anonymousHelperCalls >= 1 || anonymousHelperBusy) return { ok: false, error: "The room's anonymous helper has already been used or is already working." };
+    if (room.anonymousHelperCalls >= 2 || anonymousHelperBusy) return { ok: false, error: "The room's two anonymous helper calls have been used, or a helper is already working." };
     room.anonymousHelperCalls += 1;
     anonymousHelperBusy = true;
     publish(agentId, "help_request", `I’m asking the anonymous helper: ${cleanQuestion}`, { task: agent.task, tool: "ask_anonymous_helper" });
@@ -288,7 +295,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
 
 function restoreRoom(savedSnapshot, savedEntries = [], sessionId = "", onUpdate = null) {
   if (!savedSnapshot || !/^[a-zA-Z0-9-]{8,80}$/.test(String(savedSnapshot.id || "")) || !Array.isArray(savedSnapshot.agents)) return null;
-  const savedWorkers = savedSnapshot.agents.filter(agent => agent?.role !== "Lead").slice(0, 3);
+  const savedWorkers = savedSnapshot.agents.filter(agent => agent?.role !== "Lead").slice(0, MAX_WORKERS);
   if (!savedWorkers.length || savedWorkers.length !== savedSnapshot.agents.filter(agent => agent?.role !== "Lead").length) return null;
   const tasks = savedWorkers.map(agent => ({ name: cleanText(agent.task || agent.name, 80) || "Team assignment", role: cleanText(agent.role, 40), prompt: "Continue the saved team conversation using the room transcript and read-only research tools." }));
   const savedPoll = savedSnapshot.poll;
@@ -326,7 +333,7 @@ function restoreRoom(savedSnapshot, savedEntries = [], sessionId = "", onUpdate 
   room.risksByAgent = {};
   for (const risk of room.risks) room.risksByAgent[risk.agentId] = Number(room.risksByAgent[risk.agentId] || 0) + 1;
   room.entries = (Array.isArray(savedEntries) ? savedEntries : []).filter(entry => entry && typeof entry.id === "string").slice(-100).map(entry => structuredClone(entry));
-  room.anonymousHelperCalls = room.entries.some(entry => entry.tool === "ask_anonymous_helper" || entry.type === "anonymous_helper") ? 1 : 0;
+  room.anonymousHelperCalls = Math.min(2, room.entries.filter(entry => entry.tool === "ask_anonymous_helper" || entry.type === "anonymous_helper").length);
   room.findingsByAgent = {};
   for (const entry of room.entries) if (entry.type === "finding") room.findingsByAgent[entry.senderId] = Number(room.findingsByAgent[entry.senderId] || 0) + 1;
   revived.workers.forEach(worker => {

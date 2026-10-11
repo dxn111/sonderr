@@ -266,11 +266,13 @@ async function boot() {
 
 // The launch poster belongs to app startup, independently of provider/model
 // discovery. The archive remains available from the sidebar after dismissal.
+// Since v1.6 the launch slot belongs to the current release announcement; the
+// Sonderr-v1 film stays available in the announcements archive.
 function queueLaunchAnnouncement() {
   if (location.pathname === "/studios" || location.pathname === "/studios/" || location.pathname === "/trading" || location.pathname === "/trading/") return;
   setTimeout(() => {
     if (document.hidden || !$('onboardingModal')?.hidden) return;
-    showSonderrV1Announcement();
+    showSonderrV16Announcement();
   }, 900);
 }
 
@@ -332,6 +334,21 @@ function openOnboarding() {
 }
 
 /* ---------- models (automated discovery) ---------- */
+function showSonderrV16Announcement(force = false) {
+  const modal = $("sonderrV16Announcement");
+  if (!modal || (!force && location.pathname !== "/" && location.pathname !== "/index.html")) return;
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+  const video = $("sonderrLaunchVideo");
+  if (video) video.pause();
+}
+function closeSonderrV16Announcement() {
+  const modal = $("sonderrV16Announcement");
+  if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
+}
+function openReleaseCenter() {
+  window.open("/update", "_blank", "noopener");
+}
 function showSonderrV1Announcement(force = false) {
   const modal = $("sonderrV1Announcement");
   if (!modal || (!force && location.pathname !== "/" && location.pathname !== "/index.html")) return;
@@ -1498,7 +1515,7 @@ function renderAgentRoomPanel() {
     const type = entry.type || "message";
     const system = ["activity", "assignment", "poll", "poll_results"].includes(type);
     const initials = String(entry.name || "AI").split(/\s+/).map(word => word[0]).join("").slice(0, 2);
-    const label = ({ message: "MESSAGE", user_message: "YOUR MESSAGE", assignment: "ASSIGNMENT", finding: "FINDINGS", risk: "RISK FLAG", review: "CROSS-REVIEW", vote: "POLL VOTE", vote_update: "VOTE UPDATED", user_vote: "YOUR VOTE", help_request: "ASKING FOR HELP", help_answer: "TEAM HELP", anonymous_helper: "ANONYMOUS HELPER", poll: "LEAD POLL", poll_results: "RESULT", activity: entry.text?.startsWith("Background agent spawned") ? "WORKER SPAWNED" : entry.text?.startsWith("Anonymous helper spawned") ? "HELPER SPAWNED" : entry.tool ? "TOOL ACTIVITY" : "STATUS" })[type] || type.toUpperCase();
+    const label = ({ message: "MESSAGE", user_message: "YOUR MESSAGE", assignment: "ASSIGNMENT", finding: "FINDINGS", risk: "RISK FLAG", review: "CROSS-REVIEW", synthesis: "LEAD SYNTHESIS", vote: "POLL VOTE", vote_update: "VOTE UPDATED", user_vote: "YOUR VOTE", help_request: "ASKING FOR HELP", help_answer: "TEAM HELP", anonymous_helper: "ANONYMOUS HELPER", poll: "LEAD POLL", poll_results: "RESULT", activity: entry.text?.startsWith("Background agent spawned") ? "WORKER SPAWNED" : entry.text?.startsWith("Anonymous helper spawned") ? "HELPER SPAWNED" : entry.tool ? "TOOL ACTIVITY" : "STATUS" })[type] || type.toUpperCase();
     const recipientLabel = entry.recipient || (type === "user_message" ? entry.task : "");
     const time = entry.at ? new Date(entry.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
     const avatar = !system && entry.senderId === "user" ? '<span class="agent-entry-user-avatar" aria-hidden="true">Y</span>' : !system ? agentAvatarMarkup(agentById.get(entry.senderId) || { id: entry.senderId, name: entry.name, role: entry.role, status: "complete" }, "agent-entry-avatar", entry.senderId !== "anonymous-helper") : "";
@@ -2023,7 +2040,9 @@ function renderTodoCard(todos, opts = {}) {
   const items = (todos || []).map(t =>
     '<li class="todo-item st-' + esc(t.status) + '">' +
       '<span class="todo-mark">' + (TODO_STATUS_ICON[t.status] || TODO_STATUS_ICON.pending) + "</span>" +
-      '<span class="todo-text">' + esc(t.content) + (t.priority === "high" && t.status !== "completed" ? '<i class="todo-prio">high</i>' : "") + "</span>" +
+      '<span class="todo-text">' + esc(t.content) + (t.priority === "high" && t.status !== "completed" ? '<i class="todo-prio">high</i>' : "") +
+        (t.note ? '<small class="todo-note' + (t.status === "completed" ? " done" : "") + '">' + (t.status === "completed" ? "✓ " : "") + esc(t.note) + "</small>" : "") +
+      "</span>" +
     "</li>"
   ).join("");
   el.innerHTML =
@@ -2363,7 +2382,7 @@ function createAgentRow(sessionId = state.session?.id || "") {
   const el = document.createElement("div");
   el.className = "msg-agent";
   el.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span>' +
-    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="agent-status-text">Thinking…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
+    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="otter-chip" aria-hidden="true"><img src="/assets/sonderr-otter.png" alt=""><span class="otter-chip-ripple"></span></span><span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="agent-status-text">Sonderr is working…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
   $("messages").appendChild(el);
   const scrollRow = () => { if (el.isConnected && $("messages").contains(el)) scrollBottom(); };
   scrollRow();
@@ -2382,7 +2401,7 @@ function createAgentRow(sessionId = state.session?.id || "") {
       todoCard = next;
       const prog = todoProgress(todos);
       const current = todos.find(t => t.status === "in_progress");
-      this.setStatus(prog.done < prog.total && current ? "Working on: " + current.content : (prog.done === prog.total ? "Task list complete" : "Working…"));
+      this.setStatus(prog.done < prog.total && current ? "Working on: " + current.content : (prog.done === prog.total ? "Task list complete" : "Sonderr is working…"));
       scrollRow();
     },
     updateCheckpoint(checkpoint) {
@@ -3376,10 +3395,16 @@ function wire() {
   $("announcementsModal")?.addEventListener("click", e => { if (e.target === $("announcementsModal")) $("announcementsModal").hidden = true; });
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement");
+    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement"), release = $("sonderrV16Announcement");
     if (archive && !archive.hidden) archive.hidden = true;
     if (intro && !intro.hidden) closeSonderrV1Announcement();
+    if (release && !release.hidden) closeSonderrV16Announcement();
   });
+  $("sonderrV16Close")?.addEventListener("click", closeSonderrV16Announcement);
+  $("sonderrV16Later")?.addEventListener("click", closeSonderrV16Announcement);
+  $("sonderrV16Explore")?.addEventListener("click", () => { closeSonderrV16Announcement(); openReleaseCenter(); });
+  $("sonderrV16Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV16Announcement")) closeSonderrV16Announcement(); });
+  $("announcementsOpenUpdate")?.addEventListener("click", () => { $("announcementsModal").hidden = true; openReleaseCenter(); });
   $("sonderrV1Close")?.addEventListener("click", closeSonderrV1Announcement);
   $("sonderrV1Later")?.addEventListener("click", closeSonderrV1Announcement);
   $("sonderrV1Explore")?.addEventListener("click", () => { closeSonderrV1Announcement(); openAnnouncementsArchive(); });

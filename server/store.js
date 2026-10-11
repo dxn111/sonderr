@@ -288,6 +288,7 @@ function sanitizeTodos(raw) {
     out.push({
       id: String(item?.id || "").trim().slice(0, 64) || "t" + (out.length + 1),
       content, status, priority,
+      ...(String(item?.note || "").trim() ? { note: String(item.note).trim().slice(0, 200) } : {}),
       active: status === "in_progress"
     });
   }

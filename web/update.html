@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sonderr v1.6 — Release Center</title>
+<meta name="description" content="The official Sonderr v1.6.0 release center: Swarm 2.0, marathon workflow, otter companion, Studios RC, and security notes.">
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<style>
+:root{--navy:#071329;--navy2:#0d1e3c;--blue:#2b6fff;--cyan:#22cde2;--ink:#182338;--muted:#66738a;--line:#e4eaf2}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:14px/1.6 Inter,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;color:var(--ink);background:#f6f9fd}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+.hero{position:relative;overflow:hidden;background:linear-gradient(140deg,var(--navy) 0%,var(--navy2) 58%,#071326 100%);color:#fff;padding:74px 24px 66px}
+.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(700px 300px at 78% 30%,rgba(34,205,226,.16),transparent 65%),radial-gradient(560px 300px at 16% 78%,rgba(43,111,255,.2),transparent 60%);pointer-events:none}
+.hero-inner{position:relative;z-index:1;max-width:1060px;margin:0 auto;display:grid;grid-template-columns:1.15fr .85fr;gap:38px;align-items:center}
+.hero-mark{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:800;letter-spacing:.14em;color:#bcd7ff;margin-bottom:26px}
+.hero-mark img{width:30px;height:30px;object-fit:contain;filter:drop-shadow(0 0 10px #71baff88)}
+.hero-mark span{color:#8ee7ef}
+.hero .kicker{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border:1px solid rgba(142,231,239,.42);border-radius:999px;background:rgba(6,18,38,.55);color:#bff3f6;font-size:10px;font-weight:800;letter-spacing:.2em}
+.hero h1{margin:20px 0 14px;font-size:clamp(36px,5vw,58px);line-height:1.02;letter-spacing:-.055em}
+.hero h1 em{font-style:normal;background:linear-gradient(100deg,#6fd7ff,#8ee7ef);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .lede{max-width:560px;color:#b6c8e4;font-size:15px;line-height:1.75}
+.hero .cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.hero .cta .primary{display:inline-flex;align-items:center;gap:9px;height:47px;padding:0 19px;border:0;border-radius:11px;background:linear-gradient(110deg,#0ea5b7,#2b6fff);color:#fff;font-size:12.5px;font-weight:750;box-shadow:0 10px 24px rgba(24,132,213,.35);cursor:pointer;text-decoration:none}
+.hero .cta .primary:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(24,132,213,.42)}
+.hero .cta .ghost{display:inline-flex;align-items:center;height:45px;padding:0 15px;border:1px solid rgba(188,215,255,.35);border-radius:11px;color:#d7e6ff;font-size:12px;font-weight:650;text-decoration:none}
+.hero-art{position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.2);box-shadow:0 30px 80px rgba(2,10,28,.55)}
+.hero-art img{display:block;width:100%;height:100%;object-fit:cover}
+.hero-art figcaption{position:absolute;left:14px;bottom:12px;padding:7px 12px;border-radius:999px;background:rgba(6,18,38,.66);backdrop-filter:blur(8px);color:#cfe6ff;font-size:9.5px;font-weight:700;letter-spacing:.12em}
+.wrap{max-width:1060px;margin:0 auto;padding:54px 24px 70px}
+.section-label{font-size:10px;font-weight:800;letter-spacing:.18em;color:#4d7ec7}
+h2{margin:8px 0 6px;font-size:26px;letter-spacing:-.04em}
+.sub{color:var(--muted);font-size:13px;max-width:640px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:24px}
+.card{border:1px solid var(--line);border-radius:16px;background:#fff;padding:20px;box-shadow:0 2px 12px rgba(24,60,120,.05)}
+.card .tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#e9f6f8;color:#0f8ca4;font-size:8.5px;font-weight:800;letter-spacing:.1em;margin-bottom:11px}
+.card .tag.blue{background:#ecf2ff;color:#2e69c4}.card .tag.violet{background:#f3f0fb;color:#6b4fae}.card .tag.green{background:#e9f7ef;color:#0b7a55}
+.card h3{font-size:16.5px;letter-spacing:-.03em;margin-bottom:7px}
+.card p{color:var(--muted);font-size:12.5px;line-height:1.7}
+.card ul{margin:10px 0 0;padding-left:17px;color:var(--muted);font-size:12.5px}
+.card li{margin:4px 0}
+.security{margin-top:44px;border:1px solid #cfe6d8;border-radius:18px;background:linear-gradient(135deg,#f4fbf7,#eef8f2);padding:24px 26px}
+.security h2{font-size:21px}
+.security ul{margin:12px 0 0;padding-left:18px;color:#3f5a4c;font-size:12.5px}
+.security li{margin:5px 0}
+.update-steps{margin-top:44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.step{border:1px solid var(--line);border-radius:16px;background:#fff;padding:20px}
+.step b.num{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#ecf2ff;color:#2e69c4;font-size:13px;margin-bottom:12px}
+.step h3{font-size:14.5px;margin-bottom:6px;letter-spacing:-.02em}
+.step p{color:var(--muted);font-size:12.5px}
+code{font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace;background:#eef3fb;border:1px solid #dfe8f5;border-radius:6px;padding:2px 6px;color:#2b5aa0}
+footer{border-top:1px solid var(--line);background:#fff}
+.foot-inner{max-width:1060px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;color:#8b96a7;font-size:11px}
+.foot-inner nav{display:flex;gap:16px}
+@media(max-width:860px){.hero-inner{grid-template-columns:1fr}.hero-art{max-height:280px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="hero-mark"><img src="/assets/sonderr-v1-mark.png" alt="">SONDERR <span>RELEASE CENTER</span></div>
+      <span class="kicker">VERSION 1.6.0 · THE BIGGEST UPDATE YET</span>
+      <h1>Sonderr v1.6.0<br><em>goes all in.</em></h1>
+      <p class="lede">This is the release center for Sonderr v1.6.0 — the largest update yet: six-worker Swarm 2.0 with a lead synthesis verdict, a marathon workflow that sustains honest multi-day engineering, the otter companion, evidence-carrying task lists, and Sonderr Studios at release-candidate quality. Everything stays local and private.</p>
+      <div class="cta">
+        <a class="primary" href="https://github.com/dxn111/sonderr/releases/latest" target="_blank" rel="noopener noreferrer">Open the official release ↗</a>
+        <a class="ghost" href="/">Back to workspace</a>
+      </div>
+    </div>
+    <figure class="hero-art">
+      <img src="/assets/sonderr-v16-key-art.png" alt="Sonderr v1.6 key art — the glowing otter companion">
+      <figcaption>THE OTTER COMPANION · V1.6 KEY ART</figcaption>
+    </figure>
+  </div>
+</header>
+
+<main class="wrap">
+  <span class="section-label">WHAT'S NEW IN 1.6</span>
+  <h2>Six headline upgrades</h2>
+  <p class="sub">Each change ships in the same local-first package: no accounts, no telemetry, no cloud requirement.</p>
+
+  <div class="grid">
+    <article class="card">
+      <span class="tag blue">AGENTS</span>
+      <h3>Swarm 2.0</h3>
+      <p>Team rooms now field up to six read-only specialists across eight roles — Researchers, Analysts, Reviewers, Investigators, Builders, Testers, Documenters, and Strategists — and the AI lead closes every run with a published synthesis verdict.</p>
+      <ul>
+        <li>Up to 6 workers per room (was 3)</li>
+        <li>Lead synthesis: agreement, contradictions, next steps</li>
+        <li>Doubled collaboration limits and two anonymous helper calls</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag">WORKFLOW</span>
+      <h3>Marathon quality budgets</h3>
+      <p>U-tier engineering now reaches U10 at 72 active hours — a genuine one-to-three-day scale. Every request re-states the authoritative elapsed time, so long tasks never drift into guesswork, idling, or hallucinated progress.</p>
+      <ul>
+        <li>S1–S4 quick fixes · H1–H4 contained work · U1–U10 marathons</li>
+        <li>Time facts computed fresh on every turn</li>
+        <li>Same edit size and care as an H-tier pass, all the way through</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag blue">COMPANION</span>
+      <h3>The otter companion</h3>
+      <p>While Sonderr works — including through the final streamed response — a small otter now surfaces in the status line with a gentle swim animation, so you always know the local runtime is busy on your behalf.</p>
+    </article>
+    <article class="card">
+      <span class="tag violet">TASKS</span>
+      <h3>Task lists 2.0</h3>
+      <p>Todo items now carry live evidence notes: the next action for open milestones, the verifying evidence for completed ones. Marathon tasks use milestone-sized items instead of filler keysteps, and the visible progress bar reflects real verification.</p>
+    </article>
+    <article class="card">
+      <span class="tag green">STUDIOS</span>
+      <h3>Sonderr Studios — Release Candidate</h3>
+      <p>Studios graduates from beta to RC: the workspace, milestones, preview, and handoff pipeline got the polish, clearer phase guidance, and steady quality bar needed for real deliverables.</p>
+    </article>
+    <article class="card">
+      <span class="tag">RELEASES</span>
+      <h3>This Release Center</h3>
+      <p>Every launch now greets you with the current release announcement, and the release notes live on their own hub — this page — with the archive one click away in the sidebar.</p>
+    </article>
+  </div>
+
+  <section class="security">
+    <span class="section-label" style="color:#2f7d54">SECURITY IN 1.6</span>
+    <h2>Hardening that rides along</h2>
+    <p class="sub" style="color:#4c6b5b">The update gate still verifies every install against the official GitHub release before the workspace unlocks.</p>
+    <ul>
+      <li>Update checks remain pinned, size-capped, and fail-closed; development checkouts are never silently overwritten.</li>
+      <li>Workspace tooling keeps symlink-safe, exclusive temp-file writes and path containment from the 1.5.x line.</li>
+      <li>Swarm rooms stay read-only for workers; synthesis and votes are clearly labeled AI assessments, never authorization.</li>
+      <li>Wallet, email, and MCP confirmations keep their explicit per-action cards; a general request is never blanket approval.</li>
+    </ul>
+  </section>
+
+  <span class="section-label" style="display:block;margin-top:44px">UPDATING</span>
+  <h2>How updates reach you</h2>
+  <div class="update-steps">
+    <div class="step"><b class="num">1</b><h3>Launch check</h3><p>Sonderr compares your build against the official release on every start. When an update is required, the gate walks you through it — it cannot be dismissed until your install is verified current.</p></div>
+    <div class="step"><b class="num">2</b><h3>One-command install</h3><p>Managed installs update themselves in place. Fresh installs take one command from the release page: <code>curl -fsSL https://raw.githubusercontent.com/dxn111/sonderr/main/install.sh | sh</code></p></div>
+    <div class="step"><b class="num">3</b><h3>Announced every launch</h3><p>The v1.6 announcement greets you on startup; the full notes live here, and past announcements (including the Sonderr-v1 SLM film) stay in the sidebar archive.</p></div>
+  </div>
+</main>
+
+<footer>
+  <div class="foot-inner">
+    <span>Sonderr v1.6.0 · privacy-first local AI workspace · optional Web3 capabilities</span>
+    <nav>
+      <a href="/">Workspace</a>
+      <a href="/docs">Docs</a>
+      <a href="https://github.com/dxn111/sonderr" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      <a href="https://github.com/dxn111/sonderr/releases/latest" target="_blank" rel="noopener noreferrer">Releases ↗</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

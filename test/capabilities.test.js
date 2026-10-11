@@ -142,7 +142,7 @@ assert.match(installer, /COMMAND_PATH="\$BIN_DIR\/sonderr"/);
 assert.match(installer, /\.backup\.\$\(date \+%Y%m%d%H%M%S\)/);
 assert.match(installer, /chmod \+x "\$INSTALL_DIR\/bin\/sonderr-1\.5\.js"/);
 assert.match(installer, /Previous install preserved at/);
-assert.doesNotMatch(readme, /v1\.7|v1\.6|35 backend skill playbooks/);
+assert.doesNotMatch(readme, /v1\.[7-9]|35 backend skill playbooks/, "README must not advertise versions newer than the current release");
 const developerPage = fs.readFileSync(require.resolve("../web/docs-development.html"), "utf8");
 for (const expected of ["Sonderr Developer Program", "npm ci", "npm run check", "npm test", "separate program", "pull request"]) assert.ok(developerPage.toLowerCase().includes(expected.toLowerCase()), "developer page is missing: " + expected);
 console.log("capability catalog tests passed");

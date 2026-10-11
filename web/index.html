@@ -18,7 +18,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.5.11 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.6.0 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -28,7 +28,7 @@
     </button>
     <button class="side-item studios-nav" id="studiosBtn" title="Open Sonderr Studios" aria-current="false">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M6 16V5h12v11M9 9h6M9 12h6"/><path d="M3 19l3-3m15 3l-3-3"/></svg>
-      <span>Sonderr Studios</span><span class="studios-nav-tag">Studio</span>
+      <span>Sonderr Studios</span><span class="studios-nav-tag">RC</span>
     </button>
     <button class="side-item trading-nav" id="tradingBtn" title="Open Trading" aria-current="false">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/><path d="M15 6h6v6"/></svg>
@@ -84,7 +84,7 @@
         </div>
       </section>
       <section class="studios-home" id="studiosHome" hidden>
-        <div class="studios-home-top"><div class="studios-eyebrow"><span class="studio-spark">✦</span> SONDERR STUDIOS <i>·</i> BUILD SPACE</div><button class="studios-tour-replay" id="studiosTourBtn" type="button">See how it works <span>↓</span></button></div>
+        <div class="studios-home-top"><div class="studios-eyebrow"><span class="studio-spark">✦</span> SONDERR STUDIOS <i>·</i> RELEASE CANDIDATE</div><button class="studios-tour-replay" id="studiosTourBtn" type="button">See how it works <span>↓</span></button></div>
         <div class="studio-hero">
           <div class="studio-hero-copy"><div class="studio-live-label"><span></span> YOUR CREATIVE WORKSPACE</div><h1>Make the idea<br>real.</h1><p>One focused space for planning, building, and refining the things you want to ship—with Sonderr beside you at every step.</p><div class="studio-hero-actions"><button class="studio-hero-primary" type="button" data-studio-track="site">Start a website <span>↗</span></button><button class="studio-hero-secondary" type="button" data-studio-track="project">Start a project</button></div><div class="studio-hero-caption"><span>✦</span> Your brief, milestones, files, and preview stay together.</div></div>
           <div class="studio-hero-art" aria-hidden="true"><div class="studio-art-orbit studio-art-orbit-one"></div><div class="studio-art-orbit studio-art-orbit-two"></div><div class="studio-art-window"><div class="studio-art-window-bar"><i></i><i></i><i></i><span>your-next-thing.studio</span></div><div class="studio-art-window-content"><div class="studio-art-kicker">A GOOD IDEA, IN MOTION</div><div class="studio-art-title">From first<br>sketch to<br><em>something real.</em></div><div class="studio-art-line"></div><div class="studio-art-pills"><b>IDEA</b><span>PLAN</span><span>BUILD</span></div></div></div><div class="studio-art-float"><span>✦</span><div><b>Made with intention</b><small>Progress you can see</small></div></div></div>
@@ -296,6 +296,23 @@
   </section>
 </div>
 
+<!-- ===================== Sonderr v1.6 launch announcement ===================== -->
+<img id="sonderrV16Art" src="/assets/sonderr-v16-key-art.png" alt="" hidden><img id="sonderrV16Otter" src="/assets/sonderr-v16-otter.png" alt="" hidden>
+<div class="sonderr-v16-announcement" id="sonderrV16Announcement" hidden>
+  <section class="sonderr-v16-card" role="dialog" aria-modal="true" aria-labelledby="sonderrV16Title">
+    <button class="sonderr-v16-close" id="sonderrV16Close" aria-label="Close version announcement">×</button>
+    <div class="sonderr-v16-hero"><img src="/assets/sonderr-v16-key-art.png" alt="Sonderr v1.6 key art — the otter companion gliding through orbital data streams"><div class="sonderr-v16-hero-wash"></div><span class="sonderr-v16-hero-mark"><img src="/assets/sonderr-v1-mark.png" alt="">SONDERR<span>1.6</span></span><span class="sonderr-v16-hero-badge">THE BIGGEST UPDATE YET</span></div>
+    <div class="sonderr-v16-copy">
+      <div class="sonderr-v16-eyebrow"><span></span> VERSION 1.6 · RELEASE CENTER</div>
+      <h1 id="sonderrV16Title">Sonderr v1.6.0 is here.</h1>
+      <p>The biggest update yet: <strong>Swarm 2.0</strong> fields up to six specialists with a lead synthesis pass, <strong>marathon workflow</strong> carries U-tier tasks for up to 72 active hours with honest time awareness, a new <strong>otter companion</strong> keeps you company while Sonderr works, task lists gain evidence notes, and <strong>Sonderr Studios</strong> reaches release-candidate quality. All of it stays local, private, and yours.</p>
+      <div class="sonderr-v16-facts"><span><b>SWARM 2.0</b> six-worker teams</span><span><b>72H</b> marathon budgets</span><span><b>STUDIOS</b> release candidate</span></div>
+      <div class="sonderr-v16-actions"><button id="sonderrV16Explore" class="sonderr-v16-primary">See the full release <span>→</span></button><button id="sonderrV16Later" class="sonderr-v16-secondary">Maybe later</button></div>
+      <small>Announced by the otter, naturally. The full notes live in the Release Center — update.sonderr local hub — and in the announcements archive.</small>
+    </div>
+  </section>
+</div>
+
 <!-- ===================== Sonderr-v1 launch film ===================== -->
 <img id="sonderrV1KeyArt" src="/assets/sonderr-v1-key-art.png" alt="" hidden><img id="sonderrV1BrandMark" src="/assets/sonderr-v1-mark.png" alt="" hidden>
 <div class="sonderr-v1-announcement" id="sonderrV1Announcement" hidden>
@@ -317,6 +334,7 @@
   <section class="announcements-panel" role="dialog" aria-modal="true" aria-labelledby="announcementsTitle">
     <button class="modal-close" id="announcementsClose" aria-label="Close announcements">×</button>
     <div class="announcements-header"><span class="announcements-mark">✦</span><div><span>SONDERR UPDATES</span><h2 id="announcementsTitle">Sonderr announcements</h2><p>Product launches and important changes, all in one place.</p></div></div>
+    <article class="announcement-entry announcement-entry-v16"><div class="announcement-entry-meta"><span>VERSION 1.6 · BIGGEST UPDATE YET</span><time>Version 1.6</time></div><h3>Sonderr v1.6.0 — the biggest update yet</h3><p>Swarm 2.0 fields up to six AI workers with a lead synthesis pass and doubled collaboration limits. Marathon workflow carries U-tier builds for up to 72 active hours with honest time awareness and steady H-tier edit quality. A new otter companion appears while Sonderr works, task lists gain evidence notes, Sonderr Studios reaches release-candidate quality, and the Release Center gets its own hub. Security hardening and workflow updates run through the whole release.</p><div class="announcement-film announcement-film-art"><img src="/assets/sonderr-v16-swarm.png" alt="Swarm 2.0 — a lead orb coordinating six workers" loading="lazy"></div><div class="announcement-entry-actions"><button id="announcementsOpenUpdate" class="btn primary">Open the Release Center ↗</button><span>Swarm 2.0 · marathon workflow · otter companion · Studios RC</span></div></article>
     <article class="announcement-entry"><div class="announcement-entry-meta"><span>MODEL VISION · FIRST SLM</span><time>Version 1</time></div><h3>The start of the SLM generation</h3><p>Sonderr-v1 is our first model: a 0.6B small language model specialized for the Sonderr environment. Sonderr will remain an SLM by principle. Its practical capability comes from that specialization and the environment around it: web search, workspace context, and tools. We’ll keep improving the model and the environment together.</p><div class="announcement-film"><video id="announcementsLaunchVideo" src="/assets/sonderr-v1-launch.mp4" poster="/assets/sonderr-v1-poster.png" controls playsinline preload="metadata" aria-label="Sonderr-v1 launch trailer"></video></div><div class="announcement-entry-actions"><button id="announcementsUseModel" class="btn primary">Sonderr-v1 · first SLM</button><span>0.6B parameters · specialized for Sonderr</span></div></article>
     <p class="announcements-archive-note">New product announcements will appear here so you can revisit them any time.</p>
   </section>
@@ -341,7 +359,7 @@
 <div class="agent-room-scrim" id="agentRoomModal" hidden>
   <section class="agent-room-panel" role="dialog" aria-modal="true" aria-labelledby="agentRoomTitle" aria-describedby="agentRoomSubtitle">
     <header class="agent-room-header">
-      <div class="agent-room-brand"><span class="agent-room-brand-mark">✳</span><div><span class="agent-room-eyebrow">SONDERR · COLLABORATION</span><h2 id="agentRoomTitle">AI agent room</h2><p id="agentRoomSubtitle">Live research, peer review, and team poll</p></div></div>
+      <div class="agent-room-brand"><span class="agent-room-brand-mark">✳</span><div><span class="agent-room-eyebrow">SONDERR · COLLABORATION</span><h2 id="agentRoomTitle">AI agent room</h2><p id="agentRoomSubtitle">Live research, peer review, lead synthesis, and team poll</p></div></div>
       <div class="agent-room-header-actions"><span class="agent-room-live"><i></i><span id="agentRoomLiveLabel">Live</span></span><kbd>ALT 5</kbd><button class="agent-room-close" id="agentRoomClose" type="button" aria-label="Close agent room">×</button></div>
     </header>
     <div class="agent-room-layout">

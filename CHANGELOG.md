@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.6.0 — The biggest update yet
+
+### Announcements and visuals
+- Every launch now opens with the Sonderr v1.6 announcement card (AI-generated key art, release highlights, and a direct link to the new Release Center); the Sonderr-v1 SLM film no longer interrupts startup and remains permanently available in the sidebar announcements archive.
+- Add a dedicated Release Center page at `/update` — a standalone hub with the full v1.6 notes, security summary, and update instructions, linked from the launch announcement, the archive, and the README.
+- Generate v1.6 art assets: key art with the otter companion, an otter mascot portrait, and Swarm 2.0 network art (`web/assets/sonderr-v16-*.png`).
+- Add the otter companion: while Sonderr works — including through the final streamed response — the status line shows a gently swimming otter chip with a ripple animation and "Sonderr is working…" text, honoring reduced-motion preferences.
+- Update the sidebar brand to v1.6.0 and refresh Studios branding to release-candidate status.
+
+### Swarm 2.0
+- Collaboration rooms support up to six read-only workers (previously three) drawn from sixteen personas across eight roles; Builders, Testers, Documenters, and Strategists join the roster, and saved rooms restore their full-sized rosters.
+- The AI lead now ends every room with a published synthesis pass — a structured verdict separating agreement, contradictions or gaps, and up to three recommended next steps; a failed synthesis never blocks the room result.
+- Raise collaboration ceilings: six shared findings per worker, four risk flags per worker (sixteen per room), twelve live help threads, a 160-entry transcript, and two anonymous helper calls per room.
+- The synthesis entry renders in the Alt+5 agent room with a distinct "LEAD SYNTHESIS" style, and the room subtitle mentions the synthesis pass.
+
+### Marathon workflow (S1–U10)
+- Extend U-tier quality budgets to a 72-active-hour maximum (U1–U10 = 6, 8, 10, 12, 15, 18, 24, 30, 48, 72 hours); U7 and above are labeled multi-day engineering tasks, so a U10 can span one to three working days.
+- Raise U-tier run limits to 80–350 bounded provider chunks to sustain marathon tasks.
+- Restate authoritative time facts on every Build turn: humanized active-work duration (for example "1d 4h 20m"), remaining budget, task start time, and wall-clock span — with explicit instructions to treat these numbers as the only trustworthy clock and never estimate elapsed time from memory.
+- Add marathon discipline rules: U-tier tasks keep every edit the size and care of an H1-H4 pass, must produce new evidence in every pass, and checkpoint an honest pause instead of idling, hallucinating progress, or manufacturing filler work.
+- Update the long-running-work skill, quality_checkpoint schema text, and Build/Ask system prompts to match the 72-hour scale and the anti-idle, anti-hallucination rules.
+
+### Task lists 2.0
+- Todo items support an optional evidence `note`: the next concrete action for open items or the verifying evidence for completed ones, persisted through the store sanitizer and rendered inside the live task card.
+- Todo guidance now requires milestone-sized items for multi-hour and U-tier tasks — each item an independently verifiable outcome sized like a complete H-tier slice.
+
+### Studios
+- Sonderr Studios graduates from beta to release-candidate branding across the sidebar and Studios home.
+
+### Security
+- Keep the fail-closed release gate, size-capped release metadata fetch, and timestamped update backups that anchor the managed-update flow; document the v1.6 posture on the Release Center.
+- Swarm rooms remain strictly read-only for workers, and the synthesis verdict is labeled an AI assessment that never authorizes user actions.
+
+### Internal
+- Bump the application version to 1.6.0. The npm package name and `bin/sonderr-1.5.js` entrypoint intentionally stay unchanged so the managed one-click updater and install paths keep working for existing 1.5.x installs.
+
 ## v1.5.18 — Hardened local runtime
 
 - Escape model and file content inside fenced markdown code blocks in the frontend renderer, closing a stored XSS path in the chat transcript and artifact previews.

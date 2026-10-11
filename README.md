@@ -1,4 +1,4 @@
-# SONDERR v1.5.17
+# SONDERR v1.6.0
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.5.17 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story.
+Sonderr v1.6.0 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.6 is the biggest update yet: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter companion, evidence-carrying task lists, Sonderr Studios at release-candidate quality, and a dedicated Release Center at `/update`.
 
 The terminal is only the launcher.
 
@@ -73,11 +73,15 @@ Choose **Install update & restart** to download the exact release tag, install i
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
 
+### v1.6.0 — the biggest update yet
+
+Swarm 2.0 fields up to six read-only workers per room across eight roles (Researcher, Analyst, Reviewer, Investigator, Builder, Tester, Documenter, Strategist), doubles collaboration limits, allows two anonymous helper calls per room, and ends every run with an AI-lead synthesis verdict that separates agreement, contradictions, and recommended next steps. Marathon quality budgets extend U-tier engineering to 72 active hours (U7+ are multi-day); each turn restates the authoritative elapsed time so long tasks stay grounded, and U-tier work keeps H-tier edit size and care throughout. The otter companion appears in the status line while Sonderr works. Todo items carry live evidence notes. Sonderr Studios ships at release-candidate quality. Every launch presents the current release announcement; the Sonderr-v1 film remains available in the announcements archive, and full notes live at the `/update` Release Center.
+
 ### v1.5.17 security, teamwork, and tool accuracy
 
 Workspace tools reject symlinks that resolve outside the workspace or into protected paths, including `.env`, `.sonderr`, and Git internals. Static UI and documentation routes are constrained to canonical files inside `web/`. Task mode and Tools & Access are separate: Ask stays read-only, Build handles changes, and project checks or shell commands require Full PC access. Sonderr explains the actual missing boundary instead of claiming it can switch modes for you.
 
-Collaboration rooms keep the lead and up to three read-only workers inside the same chat, with a live Alt+5 room, shared findings/help/risk signals, peer review, separate AI and human poll votes, and saved-room recovery. Worker identities are labeled as fictional AI personas, and their assessments remain unverified evidence. Tool execution also checks the user's present message, so a stale call, negated instruction, or how-to question cannot silently authorize supported local actions.
+Collaboration rooms keep the lead and up to six read-only workers inside the same chat, with a live Alt+5 room, shared findings/help/risk signals, peer review, an end-of-run lead synthesis, separate AI and human poll votes, and saved-room recovery. Worker identities are labeled as fictional AI personas, and their assessments remain unverified evidence. Tool execution also checks the user's present message, so a stale call, negated instruction, or how-to question cannot silently authorize supported local actions.
 
 ### Security hardening in v1.5.11
 

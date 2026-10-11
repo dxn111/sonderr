@@ -1,10 +1,13 @@
 // Resumable quality budgets. Only active assistant work counts toward the
 // minimum; time between turns, app restarts, and user review pauses do not.
 // Budgets encourage deliberate passes, never idle waiting or filler changes.
+// Since v1.6 the U scale reaches 72 active hours so a U10 marathon can span
+// one to three real working days of sustained, verified progress.
+const U_TIER_HOURS = [6, 8, 10, 12, 15, 18, 24, 30, 48, 72];
 const LEVELS = Object.freeze(Object.fromEntries([
   ...[10, 20, 40, 60].map((seconds, index) => [`S${index + 1}`, { tier: `S${index + 1}`, minimumMs: seconds * 1000, runLimit: [2, 2, 3, 3][index], label: "small task" }]),
   ...[5, 10, 15, 20].map((minutes, index) => [`H${index + 1}`, { tier: `H${index + 1}`, minimumMs: minutes * 60 * 1000, runLimit: [8, 12, 16, 20][index], label: "contained task" }]),
-  ...[6, 8, 10, 12, 15, 18, 21, 24, 27, 30].map((hours, index) => [`U${index + 1}`, { tier: `U${index + 1}`, minimumMs: hours * 60 * 60 * 1000, runLimit: 80 + index * 20, label: "extended engineering task" }])
+  ...U_TIER_HOURS.map((hours, index) => [`U${index + 1}`, { tier: `U${index + 1}`, minimumMs: hours * 60 * 60 * 1000, runLimit: 80 + index * 30, label: hours >= 24 ? "multi-day engineering task" : "extended engineering task" }])
 ].map(([tier, value]) => [tier, Object.freeze(value)])));
 const ORDER = [...Array.from({ length: 4 }, (_, i) => `S${i + 1}`), ...Array.from({ length: 4 }, (_, i) => `H${i + 1}`), ...Array.from({ length: 10 }, (_, i) => `U${i + 1}`)];
 const ACTIVE = new Map();
@@ -24,6 +27,20 @@ function elapsedActiveMs(state, now = Date.now()) {
 
 function activeHourCount(state, now = Date.now()) {
   return Math.floor(elapsedActiveMs(state, now) / (60 * 60 * 1000));
+}
+
+// Honest, human-readable active-work duration used in model-facing context so
+// the assistant never has to guess how long a task has actually run.
+function humanizeActiveMs(ms) {
+  const totalMinutes = Math.max(0, Math.floor(Number(ms) || 0) / 60_000);
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = Math.floor(totalMinutes % 60);
+  const pieces = [];
+  if (days) pieces.push(`${days}d`);
+  if (hours) pieces.push(`${hours}h`);
+  pieces.push(`${minutes}m`);
+  return pieces.join(" ");
 }
 
 function snapshot(state, now = Date.now()) {
@@ -93,4 +110,4 @@ function refresh(state, now = Date.now()) {
   return snapshot(refreshed, now);
 }
 
-module.exports = { LEVELS, normalizeTier, begin, resume, pause, refresh, snapshot, elapsedActiveMs, activeHourCount };
+module.exports = { LEVELS, normalizeTier, begin, resume, pause, refresh, snapshot, elapsedActiveMs, activeHourCount, humanizeActiveMs };
