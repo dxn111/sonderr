@@ -4,8 +4,8 @@
 
 ### Announcements and visuals
 - Every launch now opens with the Sonderr v1.6 announcement card (AI-generated key art, release highlights, and a direct link to the new Release Center); the Sonderr-v1 SLM film no longer interrupts startup and remains permanently available in the sidebar announcements archive.
-- Add a dedicated Release Center page at `/update` — a standalone hub with the full v1.6 notes, security summary, and update instructions, linked from the launch announcement, the archive, and the README.
-- Generate v1.6 art assets: key art with the otter companion, an otter mascot portrait, and Swarm 2.0 network art (`web/assets/sonderr-v16-*.png`).
+- Add a dedicated Release Center page at `/update` — a standalone hub with the full v1.6 notes, security summary, Studios specialization showcase, and update instructions, linked from the launch announcement, the archive, and the README.
+- Generate v1.6 art assets: key art with the otter companion, an otter mascot portrait, and Swarm 2.0 network art (`web/assets/sonderr-v16-*.png`), plus new Studios visuals — the Studios hero scene, the two-specialist crew art, and the four-craft board (`web/assets/sonderr-studios-*.png`).
 - Add the otter companion: while Sonderr works — including through the final streamed response — the status line shows a gently swimming otter chip with a ripple animation and "Sonderr is working…" text, honoring reduced-motion preferences.
 - Update the sidebar brand to v1.6.0 and refresh Studios branding to release-candidate status.
 
@@ -28,6 +28,8 @@
 
 ### Studios
 - Sonderr Studios graduates from beta to release-candidate branding across the sidebar and Studios home.
+- Go specialized: add the Document Studio (print-ready PDFs and documents) and Design Studio (posters, brand systems, and design kits) alongside Website, App, Project, Developer, and Bounty studios — seven specialized starting points with track-specific milestones and canvas hints, plus a new generated craft board and Studios hero art.
+- Add the Studio Crew: every real Studios work turn fields exactly two track-matched specialists (Site Architect + Interface Designer, App Engineer + Experience Designer, Document Architect + Page Designer, Design Lead + Craft Specialist, Project Planner + Build Specialist, Code Researcher + Contribution Guide, Scope Analyst + Safety Reviewer). Each worker receives one specific current task derived from the active milestone, the lead synthesizes both reports, and the lead — never a worker — performs all edits and checks. The studio rail shows the crew with their live assignments, and the spawn_subagents tool is always supplied for Studios work turns.
 
 ### Security
 - Keep the fail-closed release gate, size-capped release metadata fetch, and timestamped update backups that anchor the managed-update flow; document the v1.6 posture on the Release Center.

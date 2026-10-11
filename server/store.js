@@ -125,7 +125,7 @@ function listSessions() {
 }
 
 function cleanStudio(raw = {}) {
-  const track = ["project", "site", "app", "developer", "bounty"].includes(raw.track) ? raw.track : "project";
+  const track = ["project", "site", "app", "pdf", "design", "developer", "bounty"].includes(raw.track) ? raw.track : "project";
   const goal = safety.redactText(String(raw.goal || "").replace(/[\u0000-\u001f]/g, " ").trim()).slice(0, 500);
   const previewPath = String(raw.previewPath || "").replace(/\\/g, "/").replace(/^\/+/, "").slice(0, 300);
   const usedMilestoneIds = new Set();
@@ -139,7 +139,7 @@ function cleanStudio(raw = {}) {
       done: item?.done === true
     };
   }).filter(item => item.text);
-  return { track, goal, milestones, ...(["site", "app"].includes(track) && previewPath ? { previewPath } : {}) };
+  return { track, goal, milestones, ...(["site", "app", "pdf", "design"].includes(track) && previewPath ? { previewPath } : {}) };
 }
 
 function createSession(title = "New task", surface = "chat", studio = null) {

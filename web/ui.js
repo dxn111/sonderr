@@ -691,9 +691,44 @@ const STUDIO_TRACKS = {
   project: { label: "Project", title: "New project", milestones: ["Define a clear first milestone", "Build the first usable version", "Review and verify"] },
   site: { label: "Website Studio", title: "New website", milestones: ["Choose an audience and visual direction", "Build responsive pages and interactions", "Preview, refine, and verify"] },
   app: { label: "App Studio", title: "New app", milestones: ["Map the user flow and core screen", "Build a working app experience", "Preview, refine, and verify"] },
+  pdf: { label: "Document Studio", title: "New document", milestones: ["Outline the story, audience, and sections", "Draft the full content and structure", "Design, polish, and prepare the print-ready file"] },
+  design: { label: "Design Studio", title: "New design", milestones: ["Set the concept, audience, and direction", "Create the core design artifacts", "Refine details and package the deliverables"] },
   developer: { label: "Developer Program", title: "New contribution", milestones: ["Choose a focused contribution", "Implement and test the change", "Prepare a reviewable handoff"] },
   bounty: { label: "Bounty Program", title: "New security research", milestones: ["Read the current scope and rules", "Create an authorized, safe test plan", "Prepare a private report"] }
 };
+// Mirror of server/studio-crew.js — the two specialists that work every build
+// turn, with the specific task each one is handed for the current milestone.
+const STUDIO_CREWS = {
+  site: [
+    { role: "Site Architect", focus: "structure, content, and working pages", lens: "Maps the pages, sections, and navigation, then verifies the built structure." },
+    { role: "Interface Designer", focus: "visual design, polish, and responsiveness", lens: "Defines the palette, type, and components, then polishes every screen." }
+  ],
+  app: [
+    { role: "App Engineer", focus: "logic, data, and working flows", lens: "Traces the core flow and data, then makes the main path actually work." },
+    { role: "Experience Designer", focus: "flows, screens, and usability", lens: "Maps the journey screen by screen, then smooths every interaction." }
+  ],
+  pdf: [
+    { role: "Document Architect", focus: "outline, narrative, and evidence", lens: "Shapes the outline and sections, then keeps the content accurate." },
+    { role: "Page Designer", focus: "layout, typography, and print polish", lens: "Sets the grid and type system, then makes every page print-perfect." }
+  ],
+  design: [
+    { role: "Design Lead", focus: "concept, system, and direction", lens: "Sets the concept and direction, then keeps the system consistent." },
+    { role: "Craft Specialist", focus: "execution, detail, and finish", lens: "Turns direction into precise, export-ready artifacts." }
+  ],
+  project: [
+    { role: "Project Planner", focus: "scope, sequence, and risks", lens: "Breaks the goal into sequenced steps and watches for risks." },
+    { role: "Build Specialist", focus: "implementation and verification", lens: "Implements the next step and runs the real checks." }
+  ],
+  developer: [
+    { role: "Code Researcher", focus: "codebase, conventions, and fit", lens: "Studies the code and finds the contribution that fits best." },
+    { role: "Contribution Guide", focus: "process, quality, and handoff", lens: "Maps the process and prepares a reviewable handoff." }
+  ],
+  bounty: [
+    { role: "Scope Analyst", focus: "targets, rules, and authorization", lens: "Reads the scope and keeps every test step authorized." },
+    { role: "Safety Reviewer", focus: "harm avoidance and private reporting", lens: "Keeps testing safe and the report private and responsible." }
+  ]
+};
+function studioCrewFor(track) { return STUDIO_CREWS[track] || STUDIO_CREWS.project; }
 function openStudioCreate(track = "project") {
   studioTrackDraft = STUDIO_TRACKS[track] ? track : "project";
   $("studiosCreateTitle").textContent = STUDIO_TRACKS[studioTrackDraft].title;
@@ -736,6 +771,12 @@ function renderStudioProject() {
   const nextMilestoneNumber = nextMilestone ? milestones.indexOf(nextMilestone) + 1 : milestones.length;
   const previewPath = String(studio.previewPath || "");
   const previewUrl = previewPath ? "/studio-preview/" + previewPath.split("/").map(encodeURIComponent).join("/") : "about:blank";
+  const isCanvasTrack = ["site", "app", "pdf", "design"].includes(studio.track);
+  const canvasName = studio.track === "app" ? "App" : studio.track === "pdf" ? "Document" : studio.track === "design" ? "Design" : "Website";
+  const canvasHint = studio.track === "pdf" ? "Draft a print-ready page with the crew, then enter its path here. Try <code>my-report/index.html</code>." : studio.track === "design" ? "Create an SVG or HTML design file, then enter its path here. Try <code>brand/poster.svg</code>." : "Build a page with Sites, then enter its workspace path here. Try <code>my-site/index.html</code>.";
+  const crew = studioCrewFor(studio.track);
+  const crewNow = nextMilestone ? nextMilestone.text : "Final review of the finished work";
+  const crewCards = crew.map((member, index) => '<div class="studio-crew-card"><span class="studio-crew-avatar"><img src="/assets/sonderr-v16-otter.png" alt="" aria-hidden="true"><i>' + (index + 1) + '</i></span><div class="studio-crew-info"><strong>' + esc(member.role) + '</strong><small>' + esc(member.focus) + '</small><p>' + esc(member.lens) + '</p></div><span class="studio-crew-task"><span>NOW</span>' + esc(crewNow) + '</span></div>').join("");
   const milestoneRows = milestones.map((item, index) => '<div class="studio-milestone-item' + (item.done ? ' done' : '') + '" data-milestone-row="' + esc(item.id) + '">' +
     '<span class="studio-milestone-index" aria-hidden="true">' + String(index + 1).padStart(2, "0") + '</span><label class="studio-milestone-check"><input type="checkbox" data-milestone-id="' + esc(item.id) + '"' + (item.done ? ' checked' : '') + '><span>' + esc(item.text) + '</span></label>' +
     '<div class="studio-milestone-actions"><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="up" aria-label="Move milestone up" title="Move up"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-move-milestone="' + esc(item.id) + '" data-direction="down" aria-label="Move milestone down" title="Move down"' + (index === milestones.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" data-edit-milestone="' + esc(item.id) + '" aria-label="Edit milestone" title="Edit milestone">Edit</button><button type="button" data-remove-milestone="' + esc(item.id) + '" aria-label="Remove milestone" title="Remove milestone">×</button></div>' +
@@ -750,7 +791,8 @@ function renderStudioProject() {
     '<div class="studio-milestones">' + (milestoneRows || '<div class="studio-milestones-empty">No milestones yet. Add one to give the project a clear next step.</div>') + '</div>' +
     '<form class="studio-add-milestone" id="studioAddMilestone"><input id="studioMilestoneText" maxlength="120" required aria-label="New milestone" placeholder="Add a milestone…"><button type="submit">+ Add</button></form>' +
     '<section class="studio-focus-card"><div class="studio-focus-kicker"><span>' + (nextMilestone ? 'UP NEXT' : 'MILESTONES COMPLETE') + '</span><small>' + (nextMilestone ? 'STEP ' + String(nextMilestoneNumber).padStart(2, "0") + ' / ' + String(milestones.length).padStart(2, "0") : 'READY TO REVIEW') + '</small></div><strong>' + esc(nextMilestone?.text || 'Take a final look at what you made.') + '</strong><p>' + (nextMilestone ? 'This is the next unfinished step in your project. Sonderr can inspect the workspace, work through it, and verify the result.' : 'Review the finished work, check the important details, and decide what—if anything—should happen next.') + '</p><button type="button" data-studio-action="' + (nextMilestone ? 'build-next' : 'review') + '">' + (nextMilestone ? 'Work on this step <span>→</span>' : 'Review this project <span>→</span>') + '</button></section>' +
-    (["site", "app"].includes(studio.track) ? '<section class="studio-site-canvas"><div class="studio-site-canvas-head"><span>LIVE CANVAS</span><strong>' + (studio.track === "app" ? "App preview" : "Website preview") + '</strong><a id="studioPreviewOpen" href="' + esc(previewUrl) + '" target="_blank" rel="noopener"' + (previewPath ? '' : ' hidden') + '>Open ↗</a></div><form id="studioPreviewForm"><input id="studioPreviewPath" aria-label="Workspace path to preview page" placeholder="my-site/index.html" value="' + esc(previewPath) + '"><button type="submit">Preview</button></form><div class="studio-preview-tools"><span>LOCAL PREVIEW · NETWORK DISABLED</span><div><button type="button" data-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview-size="mobile" aria-pressed="false">Mobile</button><button type="button" id="studioPreviewReload"' + (previewPath ? '' : ' disabled') + ' aria-label="Reload preview" title="Reload preview">↻</button></div></div><div class="studio-preview-frame-wrap" id="studioPreviewWrap"><iframe id="studioPreviewFrame" title="' + (studio.track === "app" ? "App" : "Website") + ' preview" sandbox="allow-scripts" referrerpolicy="no-referrer" src="' + esc(previewUrl) + '"></iframe>' + (!previewPath ? '<div class="studio-preview-empty"><span>▧</span><strong>Your canvas is ready</strong><small>Build a page with Sites, then enter its workspace path here. Try <code>my-site/index.html</code>.</small></div>' : '') + '</div><button class="studio-sites-plugin" type="button">✦ Build with Sites</button><p class="studio-preview-note">This preview reads workspace files only. External network requests, forms, and publishing stay disabled.</p></section>' : '') +
+    '<section class="studio-crew"><div class="studio-crew-head"><span>STUDIO CREW</span><strong>Two specialists on every build</strong></div>' + crewCards + '</section>' +
+    (isCanvasTrack ? '<section class="studio-site-canvas"><div class="studio-site-canvas-head"><span>LIVE CANVAS</span><strong>' + canvasName + (studio.track === "design" ? " canvas" : " preview") + '</strong><a id="studioPreviewOpen" href="' + esc(previewUrl) + '" target="_blank" rel="noopener"' + (previewPath ? '' : ' hidden') + '>Open ↗</a></div><form id="studioPreviewForm"><input id="studioPreviewPath" aria-label="Workspace path to preview page" placeholder="' + (studio.track === "pdf" ? "my-report/index.html" : studio.track === "design" ? "brand/poster.svg" : "my-site/index.html") + '" value="' + esc(previewPath) + '"><button type="submit">Preview</button></form><div class="studio-preview-tools"><span>LOCAL PREVIEW · NETWORK DISABLED</span><div><button type="button" data-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" data-preview-size="mobile" aria-pressed="false">Mobile</button><button type="button" id="studioPreviewReload"' + (previewPath ? '' : ' disabled') + ' aria-label="Reload preview" title="Reload preview">↻</button></div></div><div class="studio-preview-frame-wrap" id="studioPreviewWrap"><iframe id="studioPreviewFrame" title="' + canvasName + (studio.track === "design" ? " canvas" : " preview") + '" sandbox="allow-scripts" referrerpolicy="no-referrer" src="' + esc(previewUrl) + '"></iframe>' + (!previewPath ? '<div class="studio-preview-empty"><span>▧</span><strong>Your canvas is ready</strong><small>' + canvasHint + '</small></div>' : '') + '</div>' + (studio.track === "pdf" || studio.track === "design" ? '<button class="studio-sites-plugin" type="button" id="studioCrewBuild">✦ Build with the crew</button>' : '<button class="studio-sites-plugin" type="button">✦ Build with Sites</button>') + '<p class="studio-preview-note">This preview reads workspace files only. External network requests, forms, and publishing stay disabled.' + (studio.track === "pdf" ? ' For the final PDF, open the preview in a browser tab and use Print → Save as PDF.' : '') + '</p></section>' : '') +
     (studio.track === "developer" ? '<a class="studio-project-guide" href="/docs/developer" target="_blank" rel="noopener">Open Developer Program guide ↗</a>' : studio.track === "bounty" ? '<a class="studio-project-guide" href="/docs/bounty" target="_blank" rel="noopener">Open Bounty Program scope ↗</a>' : '') + '</div>';
   project.dataset.studioSessionId = state.session.id;
   const railScroll = project.querySelector(".studio-rail-scroll");
@@ -777,7 +819,7 @@ function renderStudioProject() {
     setMode(phase?.mode || "ask"); $("input").value = prompt;
     autosize(); $("input").focus();
   }; });
-  if (["site", "app"].includes(studio.track)) {
+  if (isCanvasTrack) {
     $("studioPreviewForm").onsubmit = event => {
       event.preventDefault();
       const nextPath = $("studioPreviewPath").value.trim().replace(/^\/+/, "");
@@ -795,9 +837,15 @@ function renderStudioProject() {
         project.querySelectorAll("[data-preview-size]").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
       };
     });
-    project.querySelector(".studio-sites-plugin").onclick = () => {
-      state.activePluginId = "sites"; setMode("build"); renderContext();
-      $("input").value = (studio.track === "app" ? "Create a polished, working web app" : "Create a distinctive, polished website") + " for " + state.session.title + ". Read the Studio brief, inspect the existing project, then build and verify the first useful version.";
+    const crewBuildBtn = project.querySelector(".studio-sites-plugin");
+    if (crewBuildBtn) crewBuildBtn.onclick = () => {
+      if (studio.track === "site" || studio.track === "app") {
+        state.activePluginId = "sites"; setMode("build"); renderContext();
+        $("input").value = (studio.track === "app" ? "Create a polished, working web app" : "Create a distinctive, polished website") + " for " + state.session.title + ". Read the Studio brief, inspect the existing project, then build and verify the first useful version.";
+      } else {
+        setMode("build");
+        $("input").value = (studio.track === "pdf" ? "Work with the two-specialist crew to outline, draft, and design a print-ready document" : "Work with the two-specialist crew to concept, craft, and finish polished design artifacts") + " for " + state.session.title + ". Field the crew with one specific task each, then implement and verify the first useful version.";
+      }
       autosize(); $("input").focus();
     };
   }
