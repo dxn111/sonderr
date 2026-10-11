@@ -1148,6 +1148,18 @@ const SMALL_HINTS = /mini|nano|lite|tiny|small|slim|instant|haiku|flash|nova-|8b
 const BIG_HINTS = /pro|opus|plus|max|thinking|reasoning|reasoner|ultra|large|72b|405b|a22b|a14b/;
 const DATE_HINT = /20(2[0-9])(0[1-9]|1[0-2])([0-3][0-9])?/;
 
+// Non-chat models (safety classifiers, guard models, embedders, speech, image
+// generation, rerankers, moderation) have no place in the chat picker. A
+// content-safety classifier answers a greeting with its verdict — for example
+// "User Safety: safe" — which looks like Sonderr refusing to answer. Filter
+// them from discovery so the picker only offers real conversation models.
+const NON_CHAT = /safety|guard|shield|aegis|moderation|toxic|sentiment|\bclip\b|\bbert\b|embed|rerank|whisper|speech|transcrib|\btts\b|text-to-speech|\bstt\b|\basr\b|voice-|dall-e|stable-diffusion|\bsdxl\b|\bflux\b|imagegen|image-gen/;
+function isChatModel(id) {
+  const s = String(id || "").toLowerCase();
+  if (!s) return false;
+  return !NON_CHAT.test(s);
+}
+
 // Vision capability heuristic (provider-agnostic, id-based).
 const NO_VISION = /deepseek|o3-mini|o1-mini|gpt-3\.5|instruct|embed|whisper|tts|dall-e|codestral|coder|codellama|guard|nemotron/;
 const VISION_HINTS = /gpt-4\.?o|gpt-4\.1|gpt-4-turbo|gpt-4-vision|^o[13](-|\b)|\bo[13]\b|gemini|claude|llava|llama-?3\.2-?(11|90)|vision|-vl|vl-|pixtral|glm-?4v|internvl|molmo|doubao|kimi|moonshot|minimax|grok-[234]|multimodal|omni/;
@@ -1219,6 +1231,7 @@ async function listModels() {
     .map(item => typeof item === "string" ? { id: item } : item)
     .map(item => String(item?.id || item?.name || "").trim())
     .filter(id => id && !seen.has(id) && seen.add(id))
+    .filter(isChatModel)
     .filter(id => !anonymousKilo || /:free$/i.test(id))
     .map(id => {
       const dateMatch = id.match(DATE_HINT);
@@ -1738,4 +1751,4 @@ async function editImage({ prompt, sourcePath }) {
   throw new Error("Image endpoint returned no image data");
 }
 
-module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, editImage, readCompletionResponse, readBoundedResponseText, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, toolRoutingText, isDirectSwarmIntent, hasExactWalletNetwork, filterToolsForAccess, selectToolsForRequest };
+module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, isChatModel, editImage, readCompletionResponse, readBoundedResponseText, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, toolRoutingText, isDirectSwarmIntent, hasExactWalletNetwork, filterToolsForAccess, selectToolsForRequest };

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.6.1 — The model picker fix
+
+- Filter non-chat models out of model discovery so the chat picker only offers real conversation models. Guard and safety classifiers (Llama Guard, Qwen3Guard, ShieldGemma, Nemotron Content Safety, Aegis), moderation and toxicity models, embedders, rerankers, speech models, and image-generation models no longer appear in the dropdown. Previously, selecting a content-safety classifier made every message look unanswered — the model's verdict (for example "User Safety: safe") rendered as the whole reply, which read like Sonderr refusing to respond.
+- Chat variants keep their place in the list: chat-tuned Nemotron instruct models, reasoning models, and every other conversation model are unaffected. The filter is a deterministic id-based heuristic (`isChatModel` in `server/provider.js`), exported for reuse and covered by its own test suite.
+
 ## v1.6.0 — The biggest update yet
 
 ### Announcements and visuals
