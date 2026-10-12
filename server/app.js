@@ -1539,6 +1539,15 @@ async function handleChat(req, res, sessionMatch) {
   sse(res, "start", { sessionId: session.id, userMessageId: session.messages?.at(-1)?.id || null, model: provider.config().model || null, mode, todos: session.todos || [] });
 
   try {
+    // Bulletproofing: a classifier/guard model in the chat slot produces
+    // verdicts like "User Safety: safe" instead of conversation, which reads
+    // like Sonderr refusing to answer. Fail the turn early with an honest,
+    // actionable message instead of streaming a non-answer.
+    if (mode !== "vision" && provider.config().model && provider.config().model !== "sonderr-v1" && !provider.isChatModel(provider.config().model)) {
+      const modelNote = "The selected model (" + provider.config().model + ") looks like a classifier model, not a chat model — it returns safety verdicts instead of conversations. Open the model picker and choose a chat model (for example a DeepSeek, Qwen, Llama, GPT, Gemini, or Claude entry).";
+      sse(res, "final", { message: "", classifierModel: true, notice: modelNote, mode, model: provider.config().model, events: [], todos: store.getTodos(session.id) || [], session: publicSession(session) });
+      return res.end();
+    }
     if (inputAssessment.blocked) {
       const saved = store.addMessage(session.id, "assistant", inputAssessment.message, { mode });
       sse(res, "final", { message: inputAssessment.message, mode, model: null, events: [], todos: store.getTodos(session.id) || [], session: publicSession(saved) });

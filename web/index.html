@@ -18,7 +18,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.6.1 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.6.2 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -46,6 +46,10 @@
       <button class="side-item" id="pluginHubBtn" aria-haspopup="dialog" aria-controls="pluginHubModal">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3h4a2 2 0 1 1 0 4H3v4a2 2 0 0 0 2 2h4v-3a2 2 0 1 1 4 0v3h4a2 2 0 0 0 2-2v-4h-3a2 2 0 1 1 0-4h3V5a2 2 0 0 0-2-2h-4v3a2 2 0 1 1-4 0z"/></svg>
         Sonderr Plugin Hub
+      </button>
+      <button class="side-item otter-pet-toggle" id="otterPetBtn" aria-pressed="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="6.5" r="1.6"/><circle cx="12" cy="4.8" r="1.6"/><circle cx="15.5" cy="6.5" r="1.6"/><circle cx="5.8" cy="10.2" r="1.6"/><circle cx="18.2" cy="10.2" r="1.6"/><path d="M12 11.5c-2.6 0-4.5 1.9-4.5 4.2 0 2.1 1.6 3.8 3.4 3.8.5 0 .9-.1 1.1-.3.2.2.6.3 1.1.3 1.8 0 3.4-1.7 3.4-3.8 0-2.3-1.9-4.2-4.5-4.2z"/></svg>
+        Otter pet<span class="otter-pet-state">Off</span>
       </button>
       <button class="side-item" id="settingsBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -333,6 +337,22 @@
   </section>
 </div>
 
+<!-- ===================== v1.6.2 otter pet announcement ===================== -->
+<div class="sonderr-v16-announcement" id="sonderrV162Announcement" hidden>
+  <section class="sonderr-v16-card" role="dialog" aria-modal="true" aria-labelledby="sonderrV162Title">
+    <button class="sonderr-v16-close" id="sonderrV162Close" aria-label="Close version announcement">×</button>
+    <div class="sonderr-v16-hero"><img src="/assets/sonderr-v162-pet.png" alt="Sonderr v1.6.2 key art — the otter pet floating happily on glowing blue water"><div class="sonderr-v16-hero-wash"></div><span class="sonderr-v16-hero-mark"><img src="/assets/sonderr-v1-mark.png" alt="">SONDERR<span>1.6.2</span></span><span class="sonderr-v16-hero-badge">MEET THE OTTER PET</span></div>
+    <div class="sonderr-v16-copy">
+      <div class="sonderr-v16-eyebrow"><span></span> VERSION 1.6.2 · THE COMPANION UPDATE</div>
+      <h1 id="sonderrV162Title">There’s an otter on your screen now.</h1>
+      <p><strong>The otter pet</strong> lives in your workspace: drag it anywhere, pet it for hearts, and watch it paddle while Sonderr works, celebrate finished task lists, and nap when things are quiet. The <strong>working animation</strong> is rebuilt as a smooth vector otter gliding through real water — no more raster chip. And the whole workflow is <strong>bulletproofed</strong>: empty responses say so honestly, long silences get a reassuring status, and classifier models are flagged before they can look like silence.</p>
+      <div class="sonderr-v16-facts"><span><b>PET</b> drag · pet · companion</span><span><b>VECTOR</b> Claude-grade motion</span><span><b>BULLETPROOF</b> honest errors</span></div>
+      <div class="sonderr-v16-actions"><button id="sonderrV162Explore" class="sonderr-v16-primary">See the full release <span>→</span></button><button id="sonderrV162Meet" class="sonderr-v16-secondary">Meet the otter</button></div>
+      <small>The otter insisted on writing this announcement personally. Full notes in the Release Center and the announcements archive.</small>
+    </div>
+  </section>
+</div>
+
 <!-- ===================== Sonderr-v1 launch film ===================== -->
 <img id="sonderrV1KeyArt" src="/assets/sonderr-v1-key-art.png" alt="" hidden><img id="sonderrV1BrandMark" src="/assets/sonderr-v1-mark.png" alt="" hidden>
 <div class="sonderr-v1-announcement" id="sonderrV1Announcement" hidden>
@@ -354,6 +374,7 @@
   <section class="announcements-panel" role="dialog" aria-modal="true" aria-labelledby="announcementsTitle">
     <button class="modal-close" id="announcementsClose" aria-label="Close announcements">×</button>
     <div class="announcements-header"><span class="announcements-mark">✦</span><div><span>SONDERR UPDATES</span><h2 id="announcementsTitle">Sonderr announcements</h2><p>Product launches and important changes, all in one place.</p></div></div>
+    <article class="announcement-entry announcement-entry-v16"><div class="announcement-entry-meta"><span>VERSION 1.6.2 · THE COMPANION UPDATE</span><time>Version 1.6.2</time></div><h3>The otter pet, a rebuilt working animation, and a bulletproofed workflow</h3><p>A ChatGPT-style screen companion — specialized: an otter. It lives on your workspace, paddles while Sonderr works, celebrates finished task lists, naps when things go quiet, and wiggles for hearts when you pet it. The working indicator is now a hand-built vector otter gliding between moving wave layers with shimmering status text. The workflow got a bulletproofing pass: empty responses say so honestly, long silences get a reassuring status instead of a silent spinner, classifier models are flagged in the picker and guarded server-side, and a stuck-stream watchdog keeps long turns honest.</p><div class="announcement-film announcement-film-art"><img src="/assets/sonderr-v162-pet.png" alt="The otter pet floating on glowing blue water" loading="lazy"></div><div class="announcement-entry-actions"><button class="btn primary" id="announcementsOpenUpdate162">Open the Release Center ↗</button><span>Otter pet · vector swim scene · bulletproofing</span></div></article>
     <article class="announcement-entry announcement-entry-v16"><div class="announcement-entry-meta"><span>VERSION 1.6 · BIGGEST UPDATE YET</span><time>Version 1.6</time></div><h3>Sonderr v1.6.0 — the biggest update yet</h3><p>Swarm 2.0 fields up to six AI workers with a lead synthesis pass and doubled collaboration limits. Marathon workflow carries U-tier builds for up to 72 active hours with honest time awareness and steady H-tier edit quality. A new otter companion appears while Sonderr works, task lists gain evidence notes, and Sonderr Studios reaches release-candidate quality with seven specialized studios — documents, design, websites, apps, and more — each build run by a two-specialist crew with one specific task apiece. The Release Center gets its own hub, and new Studios art ships across the app. Security hardening and workflow updates run through the whole release.</p><div class="announcement-film announcement-film-art"><img src="/assets/sonderr-v16-swarm.png" alt="Swarm 2.0 — a lead orb coordinating six workers" loading="lazy"></div><div class="announcement-entry-actions"><button id="announcementsOpenUpdate" class="btn primary">Open the Release Center ↗</button><span>Swarm 2.0 · marathon workflow · otter companion · Studios RC</span></div></article>
     <article class="announcement-entry"><div class="announcement-entry-meta"><span>MODEL VISION · FIRST SLM</span><time>Version 1</time></div><h3>The start of the SLM generation</h3><p>Sonderr-v1 is our first model: a 0.6B small language model specialized for the Sonderr environment. Sonderr will remain an SLM by principle. Its practical capability comes from that specialization and the environment around it: web search, workspace context, and tools. We’ll keep improving the model and the environment together.</p><div class="announcement-film"><video id="announcementsLaunchVideo" src="/assets/sonderr-v1-launch.mp4" poster="/assets/sonderr-v1-poster.png" controls playsinline preload="metadata" aria-label="Sonderr-v1 launch trailer"></video></div><div class="announcement-entry-actions"><button id="announcementsUseModel" class="btn primary">Sonderr-v1 · first SLM</button><span>0.6B parameters · specialized for Sonderr</span></div></article>
     <p class="announcements-archive-note">New product announcements will appear here so you can revisit them any time.</p>
@@ -421,6 +442,6 @@
     </div>
   </section>
 </div>
-<script src="/sonderr-launch-renderer.js"></script><script src="/ui.js"></script>
+<script src="/otter-pet.js"></script><script src="/sonderr-launch-renderer.js"></script><script src="/ui.js"></script>
 </body>
 </html>

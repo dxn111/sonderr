@@ -131,9 +131,12 @@ assert.match(app, /studios && !smallDirectAsk && mode !== "vision"/);
 assert.match(app, /\(studios && mode === "build" && !smallDirectAsk\)/);
 
 // The release center advertises the phase-aware crew and the new art.
+// Since v1.6.2 the hero is the otter-pet key art; the finale art remains
+// in the repo for the v1.6 archive story.
 const update = fs.readFileSync("web/update.html", "utf8");
-assert.match(update, /sonderr-v16-finale\.png/);
+assert.match(update, /sonderr-v162-pet\.png/);
 assert.match(update, /Two specialists, phase-aware/);
+assert.ok(fs.existsSync("web/assets/sonderr-v162-pet.png"));
 assert.ok(fs.existsSync("web/assets/sonderr-v16-finale.png"));
 
 console.log("studio-crew tests passed");

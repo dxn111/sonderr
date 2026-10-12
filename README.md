@@ -45,7 +45,7 @@ If `~/.local/bin` is not already on your `PATH`, add it as the installer instruc
 
 ## Overview
 
-Sonderr v1.6.1 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.6 is the biggest update yet: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter companion, evidence-carrying task lists, a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, and a dedicated Release Center at `/update`.
+Sonderr v1.6.2 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.6 is the biggest update line yet: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
 
 The terminal is only the launcher.
 
@@ -72,6 +72,10 @@ Starting with v1.5.10, the standard managed install checks the official GitHub R
 Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
+
+### v1.6.2 — the companion update
+
+The otter pet joins the workspace: a draggable, pettable screen companion that paddles while Sonderr works, celebrates finished task lists, and naps when things go quiet (toggle from the sidebar; position and preference persist). The working indicator is rebuilt as a vector otter gliding between moving wave layers with shimmering status text, and the turn pipeline is bulletproofed: empty responses end with an honest fix-it notice, stuck streams surface a reassuring status after 75 seconds, and classifier models are flagged in the picker and refused in the chat slot server-side.
 
 ### v1.6.1 — the model picker fix
 

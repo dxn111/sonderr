@@ -272,7 +272,7 @@ function queueLaunchAnnouncement() {
   if (location.pathname === "/studios" || location.pathname === "/studios/" || location.pathname === "/trading" || location.pathname === "/trading/") return;
   setTimeout(() => {
     if (document.hidden || !$('onboardingModal')?.hidden) return;
-    showSonderrV16Announcement();
+    showSonderrV162Announcement();
   }, 900);
 }
 
@@ -346,6 +346,18 @@ function closeSonderrV16Announcement() {
   const modal = $("sonderrV16Announcement");
   if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
 }
+function showSonderrV162Announcement(force = false) {
+  const modal = $("sonderrV162Announcement");
+  if (!modal || (!force && location.pathname !== "/" && location.pathname !== "/index.html")) return;
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+  const video = $("sonderrLaunchVideo");
+  if (video) video.pause();
+}
+function closeSonderrV162Announcement() {
+  const modal = $("sonderrV162Announcement");
+  if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
+}
 function openReleaseCenter() {
   window.open("/update", "_blank", "noopener");
 }
@@ -377,6 +389,11 @@ function renderModelBtn() {
   const found = active && state.models.find(m => m.id === active);
   label.textContent = found ? found.label : (active || (state.models[0]?.id ? state.models[0].label : "Model"));
 }
+// Client mirror of the server-side isChatModel heuristic (server/provider.js).
+// If the active model id looks like a classifier, say so in the picker — this
+// is the "User Safety: safe looks like no answer" trap, caught at the UI layer.
+const NON_CHAT_MODEL = /safety|guard|shield|aegis|moderation|toxic|sentiment|\bclip\b|\bbert\b|embed|rerank|whisper|speech|transcrib|\btts\b|text-to-speech|\bstt\b|\basr\b|voice-|dall-e|stable-diffusion|\bsdxl\b|\bflux\b|imagegen|image-gen/;
+function looksLikeClassifierModel(id) { return NON_CHAT_MODEL.test(String(id || "")); }
 async function loadModels(silent) {
   if (!state.apiConfigured) return;
   state.modelsLoading = true; state.modelsError = ""; renderModelBtn(); renderModelMenu();
@@ -409,6 +426,7 @@ async function chooseModel(id, silent) {
       await saveSettings({ model: id }, silent);
     }
     if (!silent) toast("Model set to " + id);
+    if (id !== "sonderr-v1" && looksLikeClassifierModel(id)) toast("Heads up: " + id + " looks like a classifier model, not a chat model — replies may be verdicts, not conversations");
   } catch (e) { if (!silent) toast(e.message); }
   renderModelBtn(); renderModelMenu(); renderSettingsModels?.();
 }
@@ -488,6 +506,7 @@ function renderModelMenu() {
     if (m.small) badges.push('<span class="mi-badge small">small</span>');
     if (m.free) badges.push('<span class="mi-badge free">free</span>');
     if (state.mode !== "vision" && m.vision) badges.push('<span class="mi-badge vision">vision</span>');
+    if (looksLikeClassifierModel(m.id)) badges.push('<span class="mi-badge classifier" title="This looks like a classifier model, not a chat model">classifier</span>');
     return '<button class="model-item' + (m.id === active ? " selected" : "") + '" role="option" aria-selected="' + (m.id === active) + '" data-id="' + esc(m.id) + '" data-provider="' + (m.id === "sonderr-v1" ? "sonderr" : "") + '">' +
       '<span class="mi-copy"><span class="mi-label">' + esc(m.label) + "</span><span class='mi-sub'>" + esc(m.id) + (m.snapshot ? " · " + m.snapshot : "") + "</span></span>" +
       badges.join("") + (m.id === active ? '<svg class="mi-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>' : "") +
@@ -2452,10 +2471,42 @@ function renderStudioBoardUpdateCard(result) {
 
 /* ---------- live agent row (SSE streaming) ---------- */
 function createAgentRow(sessionId = state.session?.id || "") {
+// The working indicator is a small vector scene: an otter gliding between two
+// wave layers with rising bubbles. Vector (not a raster chip) so it stays
+// crisp at any size, and every part animates on smooth transform/opacity
+// curves — the Claude-grade standard: organic motion, nothing janky.
+function otterSwimScene() {
+  return '<svg viewBox="0 0 52 32" width="52" height="32" aria-hidden="true" focusable="false">' +
+    '<defs>' +
+    '<linearGradient id="otterWaveG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#63b3ff" stop-opacity=".85"/><stop offset="1" stop-color="#22cde2" stop-opacity=".35"/></linearGradient>' +
+    '<linearGradient id="otterFurG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a06a45"/><stop offset="1" stop-color="#6b4226"/></linearGradient>' +
+    '</defs>' +
+    '<g class="otter-waves">' +
+    '<path class="otter-wave otter-wave-back" d="M-52 24 Q-46 21 -39 24 T-26 24 T-13 24 T0 24 T13 24 T26 24 T39 24 T52 24 T65 24 T78 24 V32 H-52 Z" fill="url(#otterWaveG)" opacity=".45"/>' +
+    '</g>' +
+    '<g class="otter-swimmer">' +
+    '<g class="otter-figure">' +
+    '<path class="otter-tail" d="M17 22 Q10 21 6 17 Q10 19 15 19.5 Q18 20 17 22 Z" fill="#5d3a22"/>' +
+    '<path d="M16 22.6 Q15 18.4 19 16.6 Q24 14.4 30 16 Q36 17.4 38.5 19.5 Q39.6 20.4 39 21.6 Q34 24.2 27 24.2 Q20 24.2 16 22.6 Z" fill="url(#otterFurG)"/>' +
+    '<circle cx="37.2" cy="17.4" r="5.4" fill="url(#otterFurG)"/>' +
+    '<circle cx="40.6" cy="12.9" r="1.35" fill="#7a4e30"/>' +
+    '<ellipse cx="40.2" cy="19" rx="3.1" ry="2.5" fill="#f2e3cf"/>' +
+    '<ellipse cx="41.6" cy="17.7" rx="1.25" ry="1" fill="#3a2417"/>' +
+    '<path d="M34.6 15.9 Q35.9 14.9 37.1 15.9" fill="none" stroke="#2c1b10" stroke-width=".85" stroke-linecap="round"/>' +
+    '<path d="M44.2 18.6 L47.4 18 M44.1 19.6 L47.2 20" stroke="#f2e3cf" stroke-width=".5" stroke-linecap="round" opacity=".9"/>' +
+    '</g>' +
+    '<circle class="otter-bubble otter-bubble-1" cx="12" cy="14" r="1.3" fill="none" stroke="#7cc4ff" stroke-width=".8"/>' +
+    '<circle class="otter-bubble otter-bubble-2" cx="9" cy="10" r=".9" fill="none" stroke="#7cc4ff" stroke-width=".7"/>' +
+    '<circle class="otter-bubble otter-bubble-3" cx="45" cy="8" r="1" fill="none" stroke="#7cc4ff" stroke-width=".7"/>' +
+    '</g>' +
+    '<path class="otter-wave otter-wave-front" d="M-52 25.5 Q-46 22.5 -39 25.5 T-26 25.5 T-13 25.5 T0 25.5 T13 25.5 T26 25.5 T39 25.5 T52 25.5 T65 25.5 T78 25.5 V32 H-52 Z" fill="url(#otterWaveG)"/>' +
+    '</svg>';
+}
+
   const el = document.createElement("div");
   el.className = "msg-agent";
   el.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span>' +
-    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="otter-chip" aria-hidden="true"><img src="/assets/sonderr-otter.png" alt=""><span class="otter-chip-ripple"></span></span><span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="agent-status-text">Sonderr is working…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
+    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="otter-swim" aria-hidden="true">' + otterSwimScene() + '</span><span class="agent-status-text shimmer-text">Sonderr is working…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
   $("messages").appendChild(el);
   const scrollRow = () => { if (el.isConnected && $("messages").contains(el)) scrollBottom(); };
   scrollRow();
@@ -2475,6 +2526,7 @@ function createAgentRow(sessionId = state.session?.id || "") {
       const prog = todoProgress(todos);
       const current = todos.find(t => t.status === "in_progress");
       this.setStatus(prog.done < prog.total && current ? "Working on: " + current.content : (prog.done === prog.total ? "Task list complete" : "Sonderr is working…"));
+      if (prog.total > 0 && prog.done >= prog.total) sonderrPetEvent("celebrate");
       scrollRow();
     },
     updateCheckpoint(checkpoint) {
@@ -2581,12 +2633,21 @@ function createAgentRow(sessionId = state.session?.id || "") {
 }
 
 /* ---------- send ---------- */
+// Notify the otter pet (web/otter-pet.js) about app activity. Safe everywhere:
+// the pet may not be loaded, and tests stub a minimal window.
+function sonderrPetEvent(kind) {
+  try { window.dispatchEvent(new CustomEvent("sonderr:pet", { detail: { kind } })); } catch {}
+}
 function setSending(on, viewId = chatViewGeneration, sessionId = state.session?.id || "") {
   if (on) {
     if (sessionId) locallyBusyChatSessions.add(sessionId);
     else locallyPreparingChatViews.add(viewId);
-  } else if (sessionId) locallyBusyChatSessions.delete(sessionId);
-  else locallyPreparingChatViews.delete(viewId);
+    sonderrPetEvent("working");
+  } else {
+    if (sessionId) locallyBusyChatSessions.delete(sessionId);
+    else locallyPreparingChatViews.delete(viewId);
+    sonderrPetEvent("idle");
+  }
   refreshSendingState();
 }
 async function send(options = {}) {
@@ -2603,6 +2664,7 @@ async function send(options = {}) {
   const startingContext = retrying && Array.isArray(options.retryContext) ? options.retryContext : state.contextFiles.slice();
   let requestContext = startingContext;
   const composerDraft = input.value;
+  let watchdogHandle = null; // cleared on every exit path — never leaks an interval
   const explicitTeamRequest = /\b(?:make|create|start|spin\s+up|spawn|launch|build|assemble)\b.{0,56}\b(?:(?:a\s+)?(?:swarm|agent team|worker team|team of agents|agent room)|(?:(?:\d{1,2}|two|three|four|five|several|multiple)\s+)?(?:sub)?agents?)\b|\b(?:swarm|agent team|worker team|team of agents|agent room)\b.{0,56}\b(?:make|create|start|spin\s+up|spawn|launch|build|assemble)\b|\b(?:with|using)\s+(?:(?:\d{1,2}|two|three|four|five|several|multiple)\s+)?(?:sub)?agents?\b/i.test(value);
   const explicitBuildTask = /\b(?:implement|edit|patch|write|change|fix|refactor|debug|repair|modify)\b.{0,50}\b(?:code|file|bug|app|ui|interface|repo|repository|project|feature|workspace)\b|\b(?:code|file|bug|app|ui|interface|repo|repository|project|feature|workspace)\b.{0,50}\b(?:implement|edit|patch|write|change|fix|refactor|debug|repair|modify)\b|\b(?:make|build|create|develop)\b.{0,50}\b(?:app|application|website|site|page|feature|component|tool|ui|interface|frontend|backend|button|form|screen|file)\b/i.test(value);
   if (!retrying && explicitTeamRequest && state.mode === "build" && !explicitBuildTask) { setMode("ask"); requestMode = "ask"; }
@@ -2654,6 +2716,7 @@ async function send(options = {}) {
       throw new Error(data.error || "Request failed (" + res.status + ")");
     }
     const handle = (evt) => {
+      lastEventAt = Date.now();
       if (evt.event === "start") {
         userMessageId = String(evt.userMessageId || "");
         if (row?.el.isConnected && evt.model) row.setStatus("Using " + String(evt.model).slice(0, 80) + " · working…");
@@ -2703,6 +2766,14 @@ async function send(options = {}) {
             $("topbarTitle").textContent = state.session?.title || "New task";
           }
           row.finish(evt.message || "", evt.connectorRequired || null);
+          if (!(evt.message || "").trim()) {
+            // Bulletproofing: an empty final message renders as a silent blank
+            // bubble, which reads like Sonderr ignored the turn. Show the
+            // server's specific notice (e.g. classifier model in the slot)
+            // when present, otherwise an honest generic explanation.
+            const note = evt.notice || "The model returned an empty response — no text came back for this turn. Send the message again, or switch to a different chat model in the model picker.";
+            row.el.querySelector(".md")?.insertAdjacentHTML("beforeend", '<div class="empty-turn-note" role="note">' + esc(note) + "</div>");
+          }
           loadSessions();
           break;
         case "error": throw new Error(evt.error || "Provider request failed");
@@ -2711,6 +2782,18 @@ async function send(options = {}) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
+    // Bulletproofing watchdog: a healthy turn produces SSE events steadily.
+    // If nothing arrives for a long while, reassure the user instead of
+    // leaving an indefinite silent spinner.
+    let lastEventAt = Date.now();
+    let watchdogNoteShown = false;
+    watchdogHandle = setInterval(() => {
+      if (finished) { clearInterval(watchdogHandle); return; }
+      if (Date.now() - lastEventAt > 75_000 && !watchdogNoteShown) {
+        watchdogNoteShown = true;
+        try { row?.setStatus("Still working — the model is taking longer than usual. Long builds can think quietly for a while; you can keep the tab open or retry if this stalls."); } catch {}
+      }
+    }, 15_000);
     const consumeEvent = raw => {
       const data = raw.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).replace(/^ /, ""));
       if (!data.length) return;
@@ -2735,8 +2818,10 @@ async function send(options = {}) {
     buf += decoder.decode();
     consumeFrames();
     if (buf.trim()) consumeEvent(buf);
+    if (watchdogHandle) clearInterval(watchdogHandle);
     if (!finished) throw new Error("Connection closed before Sonderr finished responding.");
   } catch (e) {
+    if (watchdogHandle) clearInterval(watchdogHandle);
     if (!userMessageId && requestSessionId && !toolActivityStarted) {
       try {
         const saved = await api("/api/sessions/" + encodeURIComponent(requestSessionId));
@@ -3468,16 +3553,23 @@ function wire() {
   $("announcementsModal")?.addEventListener("click", e => { if (e.target === $("announcementsModal")) $("announcementsModal").hidden = true; });
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement"), release = $("sonderrV16Announcement");
+    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement"), release = $("sonderrV16Announcement"), pet = $("sonderrV162Announcement");
     if (archive && !archive.hidden) archive.hidden = true;
     if (intro && !intro.hidden) closeSonderrV1Announcement();
     if (release && !release.hidden) closeSonderrV16Announcement();
+    if (pet && !pet.hidden) closeSonderrV162Announcement();
   });
+  $("sonderrV162Close")?.addEventListener("click", closeSonderrV162Announcement);
+  $("sonderrV162Later")?.addEventListener("click", closeSonderrV162Announcement);
+  $("sonderrV162Explore")?.addEventListener("click", () => { closeSonderrV162Announcement(); openReleaseCenter(); });
+  $("sonderrV162Meet")?.addEventListener("click", () => { closeSonderrV162Announcement(); window.dispatchEvent(new CustomEvent("sonderr:pet", { detail: { kind: "meet" } })); });
+  $("sonderrV162Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV162Announcement")) closeSonderrV162Announcement(); });
   $("sonderrV16Close")?.addEventListener("click", closeSonderrV16Announcement);
   $("sonderrV16Later")?.addEventListener("click", closeSonderrV16Announcement);
   $("sonderrV16Explore")?.addEventListener("click", () => { closeSonderrV16Announcement(); openReleaseCenter(); });
   $("sonderrV16Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV16Announcement")) closeSonderrV16Announcement(); });
   $("announcementsOpenUpdate")?.addEventListener("click", () => { $("announcementsModal").hidden = true; openReleaseCenter(); });
+  $("announcementsOpenUpdate162")?.addEventListener("click", () => { $("announcementsModal").hidden = true; openReleaseCenter(); });
   $("sonderrV1Close")?.addEventListener("click", closeSonderrV1Announcement);
   $("sonderrV1Later")?.addEventListener("click", closeSonderrV1Announcement);
   $("sonderrV1Explore")?.addEventListener("click", () => { closeSonderrV1Announcement(); openAnnouncementsArchive(); });

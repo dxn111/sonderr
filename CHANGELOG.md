@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.6.2 — The companion update (otter pet, vector motion, bulletproofing)
+
+### The otter pet
+- Add a ChatGPT-style screen companion, specialized: an otter. It floats on its own little pool anywhere on the workspace — drag it anywhere (pointer events, clamped to the viewport), click to pet it for a burst of hearts, and watch its moods: it paddles energetically while Sonderr works, celebrates when a task list completes, and naps (with z's) after four quiet minutes. Toggle it from the new "Otter pet" sidebar item; the on/off choice, position, and lifetime pet count persist in local storage. The pet is a hand-built vector (crisp at every size), ships on by default for new sessions, and honors `prefers-reduced-motion`.
+- The app now emits `sonderr:pet` events (`working`, `idle`, `celebrate`, `meet`) from the send flow and task-list rendering; the v1.6.2 announcement's "Meet the otter" button turns the pet on and throws a celebration.
+
+### Working animation, rebuilt
+- Replace the raster otter chip (a static PNG bobbing in a circle) with a hand-built vector swim scene: an otter gliding between two moving wave layers, tail flicking, bubbles rising — every part animates on smooth transform/opacity curves with proper easing. The status text gets a Claude-grade shimmer sweep. Both honor reduced-motion preferences.
+
+### Bulletproofed workflow
+- Empty final responses no longer render as a silent blank bubble: the turn ends with an honest inline notice explaining what happened and how to fix it.
+- The chat handler refuses classifier/guard models in the chat slot server-side (mirroring the v1.6.1 picker filter): the turn ends immediately with an actionable explanation instead of streaming a verdict like "User Safety: safe" that reads like silence.
+- The model picker flags any model whose id looks like a classifier with a "classifier" badge, and choosing one shows a heads-up toast.
+- A stuck-stream watchdog: if a running turn produces no events for 75 seconds, the status line says so honestly ("Still working — the model is taking longer than usual…") instead of leaving an indefinite spinner. The watchdog timer is cleared on every exit path and can never leak.
+
+### Announcements and docs
+- New v1.6.2 launch announcement with generated pet key art; the v1.6.0 announcement moves to the announcements archive alongside the Sonderr-v1 film, and the Release Center at `/update` gains an "Otter pet" section with new generated art (pet scene and glide scene) plus the bulletproofing story.
+
+### Internal
+- Bump the application version to 1.6.2. New `test/companion.test.js` suite pins the pet/animation/bulletproofing wiring (22 test suites total); `npm test` runs it as part of the standard suite.
+
 ## v1.6.1 — The model picker fix
 
 - Filter non-chat models out of model discovery so the chat picker only offers real conversation models. Guard and safety classifiers (Llama Guard, Qwen3Guard, ShieldGemma, Nemotron Content Safety, Aegis), moderation and toxicity models, embedders, rerankers, speech models, and image-generation models no longer appear in the dropdown. Previously, selecting a content-safety classifier made every message look unanswered — the model's verdict (for example "User Safety: safe") rendered as the whole reply, which read like Sonderr refusing to respond.
