@@ -19,9 +19,11 @@ const created = memory.write(session, task, "decisions", "Keep the API backward 
 assert.equal(created.updated, false);
 assert.ok(created.bytes > 0);
 const taskDir = path.join(root, session, crypto.createHash("sha256").update(task).digest("hex").slice(0, 32));
-assert.equal(fs.statSync(path.join(root, session)).mode & 0o777, 0o700);
-assert.equal(fs.statSync(taskDir).mode & 0o777, 0o700);
-assert.equal(fs.statSync(path.join(taskDir, "decisions.md")).mode & 0o777, 0o600);
+if (process.platform !== "win32") {
+  assert.equal(fs.statSync(path.join(root, session)).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(taskDir).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(path.join(taskDir, "decisions.md")).mode & 0o777, 0o600);
+}
 
 const notes = memory.list(session, task);
 assert.equal(notes.notes.length, 1);

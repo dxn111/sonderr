@@ -29,11 +29,19 @@
 
 Requirements: Node.js 20 or newer, npm, and Git.
 
+macOS / Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dxn111/sonderr/main/install.sh | sh
 ```
 
-The installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr` command under `~/.local/bin`. It never uses `sudo`; when reinstalling over a recognized Sonderr install, it preserves the previous folder as a timestamped backup. Review [`install.sh`](install.sh) before running it if you want to inspect the installer first.
+Windows (PowerShell, no admin rights needed):
+
+```powershell
+irm https://raw.githubusercontent.com/dxn111/sonderr/main/install.ps1 | iex
+```
+
+The macOS/Linux installer downloads the latest `main` source, installs it under `~/.local/share/sonderr-v1.5`, and links the `sonderr` command under `~/.local/bin`. The Windows installer does the equivalent under `%LOCALAPPDATA%\sonderr-v1.5` and creates a `sonderr.cmd` shim (default `%USERPROFILE%\.local\bin`). Neither installer uses elevated rights; when reinstalling over a recognized Sonderr install, each preserves the previous folder as a timestamped backup. Review [`install.sh`](install.sh) / [`install.ps1`](install.ps1) before running it if you want to inspect the installer first.
 
 Then start Sonderr with:
 
@@ -41,7 +49,7 @@ Then start Sonderr with:
 sonderr
 ```
 
-If `~/.local/bin` is not already on your `PATH`, add it as the installer instructs and open a new terminal.
+If `~/.local/bin` (or `%USERPROFILE%\.local\bin` on Windows) is not already on your `PATH`, add it as the installer instructs and open a new terminal.
 
 ## Overview
 
@@ -71,7 +79,7 @@ Starting with v1.5.10, the standard managed install checks the official GitHub R
 
 Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
 
-This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` (or its configured `XDG_DATA_HOME` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater currently runs on POSIX systems; Windows managed installs must follow the release's manual upgrade instructions. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
+This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` on macOS/Linux or `%LOCALAPPDATA%\sonderr-v1.5` on Windows (or its configured `XDG_DATA_HOME` / `LOCALAPPDATA` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater runs `scripts/update-release.sh` on POSIX and `scripts/update-release.ps1` on Windows with the same verify-then-swap-and-health-check flow. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
 
 ### v1.6.2 — the companion update
 
@@ -278,7 +286,7 @@ Sonderr v1.5.17 provides a localhost engineering workspace with these capabiliti
 - Ask task mode: short standalone questions use a compact prompt; substantive Ask requests use relevant read-only schemas, including workspace reads and bounded public web search. Ask is read-only and never changes the user's selected mode. Build is needed for edits and project checks; project checks and terminal commands also require Full PC access. Tools & Access separately gates wallet and remote MCP reads/actions. The local model receives explicit Ask/Plan/Build/Vision rules, and capability questions are routed through those rules instead of the casual-answer shortcut
 - Build and Plan modes restore from the latest assistant turn when a conversation is reopened; every new chat returns to Build
 - provider TPM recovery: compact long context when needed, reduce output budgets, and honor a provider's timed token-rate cooldowns before retrying
-- mandatory official-release checking and update gating for standard managed installs, with source-checkout protection, one-click POSIX updates, rollback, and an honest fail-closed path when release status cannot be verified
+- mandatory official-release checking and update gating for standard managed installs, with source-checkout protection, one-click updates on macOS/Linux and Windows, rollback, and an honest fail-closed path when release status cannot be verified
 - Sonderr branding, clean AI-harness-style UI
 
 ## License

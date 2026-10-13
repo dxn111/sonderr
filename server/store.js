@@ -6,11 +6,23 @@ const safety = require("./safety");
 
 const O_NOFOLLOW = (() => {
   const v = fs.constants.O_NOFOLLOW;
-  if (v === undefined || v === 0) throw new Error("O_NOFOLLOW is required");
+  // Windows does not support O_NOFOLLOW (value is 0/undefined there).
+  // Fall back to 0 so file creation still works; symlink checks via lstat
+  // below remain the real protection on every platform.
+  if (v === undefined || v === 0) return 0;
   return v;
 })();
 
-const DATA_DIR = path.join(process.env.HOME || process.env.USERPROFILE || process.cwd(), ".sonderr");
+function homeDir() {
+  try {
+    const { homedir } = require("node:os");
+    const dir = homedir();
+    if (dir) return dir;
+  } catch {}
+  return process.env.HOME || process.env.USERPROFILE || process.cwd();
+}
+
+const DATA_DIR = path.join(homeDir(), ".sonderr");
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 const CREDENTIALS_FILE = path.join(DATA_DIR, "credentials.json");
 const MAX_SESSIONS = 200;

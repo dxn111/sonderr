@@ -319,11 +319,17 @@ async function connectServer(id) {
     ? Object.fromEntries(Object.entries(server.env).filter(([key, value]) => /^[A-Z_][A-Z0-9_]*$/.test(key) && !RESERVED_MCP_ENV.has(key) && typeof value === "string" && value.length <= 4096 && !safety.isSecretField(key) && safety.redactText(value) === value).slice(0, 32))
     : {};
   const safeEnv = { ...serverEnv, PATH: process.env.PATH || "", HOME: isolatedHome, LANG: process.env.LANG || "" };
+  if (process.platform === "win32") {
+    safeEnv.USERPROFILE = isolatedHome;
+    if (process.env.SystemRoot) safeEnv.SystemRoot = process.env.SystemRoot;
+    if (process.env.TEMP) safeEnv.TEMP = process.env.TEMP;
+    if (process.env.TMP) safeEnv.TMP = process.env.TMP;
+  }
   if (server.tokenEnv) {
     const tokenValue = secrets.get(server.tokenEnv);
     if (tokenValue && /^[A-Z_][A-Z0-9_]*$/.test(server.tokenEnv) && !RESERVED_MCP_ENV.has(server.tokenEnv)) safeEnv[server.tokenEnv] = tokenValue;
   }
-  const child = spawn(server.command, server.args || [], { cwd: process.cwd(), env: safeEnv, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(server.command, server.args || [], { cwd: process.cwd(), env: safeEnv, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   const runtime = { child, nextId: 1, pending: new Map(), tools: [], error: "" };
   runtimes.set(server.id, runtime);
   attachParser(runtime);

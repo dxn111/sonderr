@@ -21,7 +21,7 @@ function openBrowser(url){
   if(noOpen)return;
   const command=process.platform==="win32"?"cmd.exe":process.platform==="darwin"?"open":"xdg-open";
   const args=process.platform==="win32"?["/c","start","",url]:[url];
-  execFile(command,args,e=>{if(e){console.log("  Browser did not open automatically.");console.log("  → "+url);}});
+  execFile(command,args,{windowsHide:true},e=>{if(e){console.log("  Browser did not open automatically.");console.log("  → "+url);}});
 }
 function start(port){
   if(port>65535){console.error("No available localhost port was found.");process.exitCode=1;return;}

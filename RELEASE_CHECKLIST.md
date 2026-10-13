@@ -5,10 +5,10 @@ Run this from a clean checkout before publishing a release.
 - [ ] `npm ci`
 - [ ] `npm run check`
 - [ ] `npm test`
-- [ ] `sh -n scripts/update-release.sh` and verify `test/update-gate.test.js` covers version ordering, unavailable checks, development-checkout protection, and the mandatory update state.
+- [ ] `sh -n scripts/update-release.sh` and a PowerShell parse check of `scripts/update-release.ps1` (`powershell -NoProfile -Command "[void][System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw scripts/update-release.ps1), [ref]$null)"` on Windows, `npm run check:win` elsewhere), and verify `test/update-gate.test.js` covers version ordering, unavailable checks, development-checkout protection, and the mandatory update state.
 - [ ] `npm audit --omit=dev`
 - [ ] `npm pack --dry-run` and confirm only runtime files are included.
-- [ ] Run the public install script with an isolated `HOME`; confirm it installs the documented version and runtime dependencies, then launches successfully.
+- [ ] Run the public install script with an isolated `HOME` (`install.sh`) and, on a Windows VM, the isolated `install.ps1`; confirm each installs the documented version and runtime dependencies, then launches successfully.
 - [ ] Start with `node bin/sonderr-1.5.js --no-open --port 4300`; confirm the service binds only to `127.0.0.1`.
 - [ ] Open the UI and verify onboarding, Settings, provider save/test, files, docs, responsive sidebar, and a basic non-tool chat.
 - [ ] In an isolated managed install, verify an older version is fully blocked, the required-update screen has no dismissal path, update installs the exact latest stable tag, preserves the prior install, restarts on the same port/workspace, and unblocks only after `/api/health` reports the release version. Simulate GitHub/network and install failures; verify the workspace remains blocked and a failed replacement restores the previous install where possible.

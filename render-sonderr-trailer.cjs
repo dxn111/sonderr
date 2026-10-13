@@ -1,11 +1,12 @@
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('/home/dxn1/Downloads/Devin-linux-x64-3.10.31/Devin/resources/app/node_modules/playwright-core');
 
 const root = __dirname;
 const output = path.join(root, 'web/assets/sonderr-v1-launch.mp4');
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
-const scoreWav = path.join('/tmp', 'sonderr-launch-score.wav');
+const scoreWav = path.join(os.tmpdir(), 'sonderr-launch-score.wav');
 const poster = path.join(root, 'web/assets/sonderr-v1-poster.png');
 const duration = Math.max(1, Number(process.env.SONDERR_RENDER_SECONDS) || 88);
 
@@ -162,7 +163,7 @@ function muxWebM(width,height,fps,frames){
     await page.setContent(html);
     await page.evaluate(async () => document.querySelector('#logo').decode());
     console.log('renderer loaded:', await page.evaluate(() => typeof window.render));
-    const segmentDir=path.join('/tmp',`sonderr-film-segments-${process.pid}-${Date.now()}`);fs.mkdirSync(segmentDir,{recursive:true});
+    const segmentDir=path.join(os.tmpdir(),`sonderr-film-segments-${process.pid}-${Date.now()}`);fs.mkdirSync(segmentDir,{recursive:true});
     await page.exposeFunction('saveSegment', async (i,buffer) => fs.writeFileSync(path.join(segmentDir,`segment-${String(i).padStart(3,'0')}.webm`),Buffer.from(buffer)));
     await page.exposeFunction('renderProgress', status => process.stdout.write(`Rendered ${status.seconds.toFixed(0)}s · ${status.fps.toFixed(1)} canvas fps\n`));
     await page.evaluate(t => render(t), Math.max(0, duration - .1));

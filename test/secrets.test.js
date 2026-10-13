@@ -15,8 +15,10 @@ const secrets = require("../server/secrets");
 try {
   secrets.set("EXAMPLE_API_KEY", "test-secret-value");
   assert.equal(secrets.get("EXAMPLE_API_KEY"), "test-secret-value");
-  assert.equal(fs.statSync(path.join(home, ".sonderr")).mode & 0o777, 0o700);
-  assert.equal(fs.statSync(secrets.ENV_FILE).mode & 0o777, 0o600);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(path.join(home, ".sonderr")).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(secrets.ENV_FILE).mode & 0o777, 0o600);
+  }
   assert.equal(fs.readFileSync(secrets.ENV_FILE, "utf8").includes("test-secret-value"), true, "the local secret is stored for use by the configured integration");
   secrets.remove("EXAMPLE_API_KEY");
   assert.equal(secrets.get("EXAMPLE_API_KEY"), "");

@@ -33,8 +33,13 @@ function compareVersions(left, right) {
 }
 
 function managedInstallPath(env = process.env) {
+  if (env.SONDERR_INSTALL_DIR) return path.resolve(env.SONDERR_INSTALL_DIR);
+  if (process.platform === "win32") {
+    const base = env.LOCALAPPDATA || env.APPDATA || os.homedir();
+    return path.resolve(path.join(base, "sonderr-v1.5"));
+  }
   const dataHome = env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
-  return path.resolve(env.SONDERR_INSTALL_DIR || path.join(dataHome, "sonderr-v1.5"));
+  return path.resolve(path.join(dataHome, "sonderr-v1.5"));
 }
 
 function isManagedInstall(root, env = process.env) {
@@ -104,6 +109,7 @@ async function checkForUpdate({ root = path.resolve(__dirname, ".."), currentVer
   try {
     const release = await releaseFetcher();
     const comparison = compareVersions(release.version, current);
+    const updateScript = process.platform === "win32" ? "update-release.ps1" : "update-release.sh";
     value = {
       status: comparison > 0 ? "update-required" : "current",
       currentVersion: current,
@@ -114,7 +120,7 @@ async function checkForUpdate({ root = path.resolve(__dirname, ".."), currentVer
       publishedAt: release.publishedAt,
       releaseUrl: release.url,
       updateAvailable: comparison > 0,
-      installSupported: process.platform !== "win32" && fs.existsSync(path.resolve(root, "scripts", "update-release.sh"))
+      installSupported: fs.existsSync(path.resolve(root, "scripts", updateScript))
     };
   } catch {
     value = {
@@ -130,7 +136,6 @@ async function checkForUpdate({ root = path.resolve(__dirname, ".."), currentVer
 
 async function startInstall({ root = path.resolve(__dirname, ".."), currentVersion = "0.0.0", tag, port, workspace = process.cwd(), env = process.env } = {}) {
   if (!isManagedInstall(root, env)) throw new Error("Automatic updates are available only for the standard managed Sonderr install. Development checkouts are never overwritten.");
-  if (process.platform === "win32") throw new Error("The one-click updater is not available on Windows yet. Follow the release page's manual upgrade instructions.");
   if (installInProgress || installStartPending) throw new Error("A Sonderr update is already running.");
   installStartPending = true;
   try {
@@ -138,14 +143,28 @@ async function startInstall({ root = path.resolve(__dirname, ".."), currentVersi
     if (check.status !== "update-required" || !check.latestTag || check.latestTag !== String(tag || "")) throw new Error("The update changed or could not be verified. Check for updates again before installing.");
     const numericPort = Number(port);
     if (!Number.isInteger(numericPort) || numericPort < 1 || numericPort > 65535) throw new Error("The local app port could not be verified; restart Sonderr and retry.");
-    const script = path.resolve(root, "scripts", "update-release.sh");
     const safeWorkspace = path.resolve(String(workspace || os.homedir()));
-    const child = spawn("sh", [script, check.latestTag, String(numericPort), String(process.pid), safeWorkspace], {
-      cwd: root,
-      env: { ...env, SONDERR_UPDATE_INSTALL_DIR: managedInstallPath(env) },
-      detached: true,
-      stdio: "ignore"
-    });
+    let child;
+    if (process.platform === "win32") {
+      const script = path.resolve(root, "scripts", "update-release.ps1");
+      if (!fs.existsSync(script)) throw new Error("The Windows updater script is missing. Follow the release page's manual upgrade instructions.");
+      const ps = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
+      child = spawn(ps, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Tag", check.latestTag, "-Port", String(numericPort), "-OldPid", String(process.pid), "-Workspace", safeWorkspace], {
+        cwd: root,
+        env: { ...env, SONDERR_UPDATE_INSTALL_DIR: managedInstallPath(env) },
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true
+      });
+    } else {
+      const script = path.resolve(root, "scripts", "update-release.sh");
+      child = spawn("sh", [script, check.latestTag, String(numericPort), String(process.pid), safeWorkspace], {
+        cwd: root,
+        env: { ...env, SONDERR_UPDATE_INSTALL_DIR: managedInstallPath(env) },
+        detached: true,
+        stdio: "ignore"
+      });
+    }
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("The updater process did not start in time.")), 10_000);
       child.once("spawn", () => { clearTimeout(timer); resolve(); });

@@ -11,10 +11,15 @@ assert.equal(updates.compareVersions("1.6.0", "1.5.99"), 1);
 assert.equal(updates.compareVersions("1.5.9", "1.5.9"), 0);
 assert.equal(updates.compareVersions("1.5.9-beta.2", "1.5.9"), -1);
 
-const managedPath = path.resolve("/tmp/sonderr-update-gate/home/.local/share/sonderr-v1.5");
-const env = { HOME: "/tmp/sonderr-update-gate/home", XDG_DATA_HOME: "/tmp/sonderr-update-gate/home/.local/share" };
+const managedPath = process.platform === "win32"
+  ? path.resolve("C:/sonderr-update-gate/home/sonderr-v1.5")
+  : path.resolve("/tmp/sonderr-update-gate/home/.local/share/sonderr-v1.5");
+const env = process.platform === "win32"
+  ? { LOCALAPPDATA: "C:/sonderr-update-gate/home", SONDERR_INSTALL_DIR: managedPath }
+  : { HOME: "/tmp/sonderr-update-gate/home", XDG_DATA_HOME: "/tmp/sonderr-update-gate/home/.local/share" };
 assert.equal(updates.isManagedInstall(managedPath, env), true);
 assert.equal(updates.isManagedInstall(path.dirname(managedPath), env), false, "a source checkout must never be overwritten by the updater");
+assert.equal(updates.managedInstallPath(env), managedPath, "managed install resolves to the platform data directory");
 
 (async () => {
   let fetched = 0;

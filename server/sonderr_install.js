@@ -68,7 +68,7 @@ function stage(name, progress, extra = {}) {
 }
 function run(command, args, onLine) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1" } });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true });
     let output = "";
     for (const stream of [child.stdout, child.stderr]) stream.on("data", chunk => {
       output = (output + chunk.toString()).slice(-12000);
@@ -113,35 +113,48 @@ function fileSha256(file) {
     input.on("error", reject); input.on("data", chunk => hash.update(chunk)); input.on("end", () => resolve(hash.digest("hex")));
   });
 }
+function tarExe() {
+  // Windows 10+ ships tar.exe (bsdtar); prefer it when on PATH.
+  return process.platform === "win32" ? "tar.exe" : "tar";
+}
+function tarListArgs(archive) {
+  return process.platform === "win32" ? ["-tf", archive] : ["-tf", archive];
+}
+function tarExtractArgs(archive, destination, gzip) {
+  if (process.platform === "win32") return gzip ? ["-xzf", archive, "-C", destination] : ["-xf", archive, "-C", destination];
+  return gzip
+    ? ["-xzf", archive, "--no-same-owner", "--no-same-permissions", "-C", destination]
+    : ["-xf", archive, "--no-same-owner", "--no-same-permissions", "-C", destination];
+}
 function safeExtract() {
-  const listing = require("node:child_process").execFileSync("tar", ["-tf", ARCHIVE], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+  const listing = require("node:child_process").execFileSync(tarExe(), tarListArgs(ARCHIVE), { encoding: "utf8", maxBuffer: 10 * 1024 * 1024, windowsHide: true });
   const entries = listing.split("\n").filter(Boolean);
   if (!entries.length || entries.some(name => path.isAbsolute(name) || name.split("/").includes(".."))) throw new Error("Model archive contains an unsafe path.");
   const roots = new Set(entries.map(name => name.split("/")[0]).filter(Boolean));
   if (roots.size !== 1) throw new Error("Model archive has an unexpected directory layout.");
   const temporary = MODEL_DIR + `.install-${process.pid}`;
   fs.rmSync(temporary, { recursive: true, force: true }); fs.mkdirSync(temporary, { recursive: true, mode: 0o700 });
-  require("node:child_process").execFileSync("tar", ["-xf", ARCHIVE, "--no-same-owner", "--no-same-permissions", "-C", temporary], { stdio: "ignore" });
+  require("node:child_process").execFileSync(tarExe(), tarExtractArgs(ARCHIVE, temporary, false), { stdio: "ignore", windowsHide: true });
   const root = path.join(temporary, [...roots][0]);
   if (!fs.existsSync(path.join(root, "config.json"))) throw new Error("The verified model archive is missing config.json.");
   fs.rmSync(MODEL_DIR, { recursive: true, force: true });
   fs.renameSync(root, MODEL_DIR); fs.rmSync(temporary, { recursive: true, force: true });
 }
 function safeExtractLlamaRuntime() {
-  const listing = require("node:child_process").execFileSync("tar", ["-tzf", LLAMA_ARCHIVE], { encoding: "utf8", maxBuffer: 2 * 1024 * 1024 });
+  const listing = require("node:child_process").execFileSync(tarExe(), tarListArgs(LLAMA_ARCHIVE), { encoding: "utf8", maxBuffer: 2 * 1024 * 1024, windowsHide: true });
   const entries = listing.split("\n").filter(Boolean);
   if (!entries.length || entries.some(name => path.isAbsolute(name) || name.split("/").includes(".."))) throw new Error("The CPU runtime archive contains an unsafe path.");
   if (entries.some(name => name.includes("\\") || !["llama/", "llama/LICENSE", "llama/bin/"].includes(name) && !name.startsWith("llama/bin/"))) throw new Error("The CPU runtime archive has an unexpected entry.");
   const temporary = LLAMA_RUNTIME_DIR + `.install-${process.pid}`;
   fs.rmSync(temporary, { recursive: true, force: true }); fs.mkdirSync(temporary, { recursive: true, mode: 0o700 });
-  require("node:child_process").execFileSync("tar", ["-xzf", LLAMA_ARCHIVE, "--no-same-owner", "--no-same-permissions", "-C", temporary], { stdio: "ignore" });
+  require("node:child_process").execFileSync(tarExe(), tarExtractArgs(LLAMA_ARCHIVE, temporary, true), { stdio: "ignore", windowsHide: true });
   const extractedRoot = path.join(temporary, "llama");
   const binary = path.join(extractedRoot, "bin", "llama-server");
   if (!fs.existsSync(binary) || !fs.statSync(binary).isFile()) { fs.rmSync(temporary, { recursive: true, force: true }); throw new Error("The verified CPU runtime archive is missing llama-server."); }
   fs.rmSync(LLAMA_RUNTIME_DIR, { recursive: true, force: true });
   fs.renameSync(extractedRoot, LLAMA_RUNTIME_DIR);
   fs.rmSync(temporary, { recursive: true, force: true });
-  fs.chmodSync(LLAMA_SERVER, 0o700);
+  try { fs.chmodSync(LLAMA_SERVER, 0o700); } catch {}
 }
 async function installQuantized() {
   stage("Preparing verified Q4 model", 0, { downloaded: 0, total: 352154592 });
@@ -155,7 +168,7 @@ async function installQuantized() {
     catch { await download(Q4_MODEL_URL, Q4_ARCHIVE, Q4_MODEL_SHA256, [0, 88]); }
     if (await fileSha256(Q4_ARCHIVE) !== Q4_MODEL_SHA256) throw new Error("Downloaded Q4 model checksum does not match the official release.");
     fs.renameSync(Q4_ARCHIVE, QUANTIZED_MODEL);
-    fs.chmodSync(QUANTIZED_MODEL, 0o600);
+    try { fs.chmodSync(QUANTIZED_MODEL, 0o600); } catch {}
   }
   if (!fs.existsSync(LLAMA_SERVER)) {
     stage("Downloading verified CPU runtime", 88, { downloaded: 0, total: 22 * 1024 * 1024 });
@@ -192,7 +205,9 @@ async function install() {
     stage("Preparing private Python environment", 72);
     if (!fs.existsSync(PYTHON)) {
       fs.rmSync(VENV_DIR, { recursive: true, force: true });
-      await run(process.env.PYTHON || "python3", ["-m", "venv", VENV_DIR]);
+      const pythonLauncher = process.env.PYTHON
+        || (process.platform === "win32" ? "python" : "python3");
+      await run(pythonLauncher, ["-m", "venv", VENV_DIR]);
     }
     const python = PYTHON;
     stage("Installing CPU inference runtime", 77);
