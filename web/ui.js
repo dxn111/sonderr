@@ -1899,9 +1899,11 @@ function completeToolBlock(el, ev) {
   const output = ev.output ?? {};
   const failed = Boolean(ev.failed) || Boolean(output.error);
   if (failed) {
+    el.classList.add("failed");
     stateEl.className = "tool-state " + (output.approvalRequired ? "approval" : "err");
     stateEl.textContent = output.approvalRequired ? "Approval needed" : "Failed";
   } else {
+    el.classList.add("done");
     stateEl.className = "tool-state done";
     stateEl.innerHTML = "Done <svg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6L9 17l-5-5'/></svg>";
   }
@@ -2484,42 +2486,21 @@ function renderStudioBoardUpdateCard(result) {
 
 /* ---------- live agent row (SSE streaming) ---------- */
 function createAgentRow(sessionId = state.session?.id || "") {
-// The working indicator is a small vector scene: an otter gliding between two
-// wave layers with rising bubbles. Vector (not a raster chip) so it stays
-// crisp at any size, and every part animates on smooth transform/opacity
-// curves — the Claude-grade standard: organic motion, nothing janky.
-function otterSwimScene() {
-  return '<svg viewBox="0 0 52 32" width="52" height="32" aria-hidden="true" focusable="false">' +
-    '<defs>' +
-    '<linearGradient id="otterWaveG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#63b3ff" stop-opacity=".85"/><stop offset="1" stop-color="#22cde2" stop-opacity=".35"/></linearGradient>' +
-    '<linearGradient id="otterFurG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a06a45"/><stop offset="1" stop-color="#6b4226"/></linearGradient>' +
-    '</defs>' +
-    '<g class="otter-waves">' +
-    '<path class="otter-wave otter-wave-back" d="M-52 24 Q-46 21 -39 24 T-26 24 T-13 24 T0 24 T13 24 T26 24 T39 24 T52 24 T65 24 T78 24 V32 H-52 Z" fill="url(#otterWaveG)" opacity=".45"/>' +
-    '</g>' +
-    '<g class="otter-swimmer">' +
-    '<g class="otter-figure">' +
-    '<path class="otter-tail" d="M17 22 Q10 21 6 17 Q10 19 15 19.5 Q18 20 17 22 Z" fill="#5d3a22"/>' +
-    '<path d="M16 22.6 Q15 18.4 19 16.6 Q24 14.4 30 16 Q36 17.4 38.5 19.5 Q39.6 20.4 39 21.6 Q34 24.2 27 24.2 Q20 24.2 16 22.6 Z" fill="url(#otterFurG)"/>' +
-    '<circle cx="37.2" cy="17.4" r="5.4" fill="url(#otterFurG)"/>' +
-    '<circle cx="40.6" cy="12.9" r="1.35" fill="#7a4e30"/>' +
-    '<ellipse cx="40.2" cy="19" rx="3.1" ry="2.5" fill="#f2e3cf"/>' +
-    '<ellipse cx="41.6" cy="17.7" rx="1.25" ry="1" fill="#3a2417"/>' +
-    '<path d="M34.6 15.9 Q35.9 14.9 37.1 15.9" fill="none" stroke="#2c1b10" stroke-width=".85" stroke-linecap="round"/>' +
-    '<path d="M44.2 18.6 L47.4 18 M44.1 19.6 L47.2 20" stroke="#f2e3cf" stroke-width=".5" stroke-linecap="round" opacity=".9"/>' +
-    '</g>' +
-    '<circle class="otter-bubble otter-bubble-1" cx="12" cy="14" r="1.3" fill="none" stroke="#7cc4ff" stroke-width=".8"/>' +
-    '<circle class="otter-bubble otter-bubble-2" cx="9" cy="10" r=".9" fill="none" stroke="#7cc4ff" stroke-width=".7"/>' +
-    '<circle class="otter-bubble otter-bubble-3" cx="45" cy="8" r="1" fill="none" stroke="#7cc4ff" stroke-width=".7"/>' +
-    '</g>' +
-    '<path class="otter-wave otter-wave-front" d="M-52 25.5 Q-46 22.5 -39 25.5 T-26 25.5 T-13 25.5 T0 25.5 T13 25.5 T26 25.5 T39 25.5 T52 25.5 T65 25.5 T78 25.5 V32 H-52 Z" fill="url(#otterWaveG)"/>' +
+// The working indicator is Claude-grade minimal: a small four-point spark in
+// the brand gradient that gently pulses and sways beside the shimmer text.
+// No mascot scene here — the otter lives as the draggable pet only (v1.7.1).
+function workSpark() {
+  return '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
+    '<defs><linearGradient id="workSparkG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e7ce0"/><stop offset="1" stop-color="#22cde2"/></linearGradient></defs>' +
+    '<path class="work-spark-star" d="M12 2.4 C12.75 7.9 13.6 9.25 21.6 12 C13.6 14.75 12.75 16.1 12 21.6 C11.25 16.1 10.4 14.75 2.4 12 C10.4 9.25 11.25 7.9 12 2.4 Z" fill="url(#workSparkG)"/>' +
+    '<circle cx="19.4" cy="4.6" r="1.1" fill="#22cde2" opacity=".8"/>' +
     '</svg>';
 }
 
   const el = document.createElement("div");
   el.className = "msg-agent";
   el.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span>' +
-    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="otter-swim" aria-hidden="true">' + otterSwimScene() + '</span><span class="agent-status-text shimmer-text">Sonderr is working…</span><span class="status-elapsed" hidden></span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
+    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="work-spark" aria-hidden="true">' + workSpark() + '</span><span class="agent-status-text shimmer-text">Sonderr is working…</span><span class="status-elapsed" hidden></span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
   $("messages").appendChild(el);
   const scrollRow = () => { if (el.isConnected && $("messages").contains(el)) scrollBottom(); };
   scrollRow();
@@ -2528,7 +2509,19 @@ function otterSwimScene() {
   const statusText = () => el.querySelector(".agent-status-text");
   return {
     el,
-    setStatus(text) { const s = statusText(); if (s && text) { s.textContent = text; this._startTimer(); scrollRow(); } },
+    setStatus(text) {
+      const s = statusText();
+      if (s && text) {
+        if (s.textContent !== text) {
+          s.textContent = text;
+          s.classList.remove("swap");
+          void s.offsetWidth; // restart the crossfade
+          s.classList.add("swap");
+        }
+        this._startTimer();
+        scrollRow();
+      }
+    },
     hideStatus() { this._stopTimer(); el.querySelector(".agent-status")?.remove(); },
     // v1.7 workflow: live streaming text, Claude-style. Deltas append into the
     // current narration segment; tool cards interleave chronologically.
@@ -2696,6 +2689,16 @@ function otterSwimScene() {
       }
       this.hideStatus();
       el.querySelector(".md").innerHTML = renderMarkdown(finalText);
+      // Claude-style footer on workflow turns: total time + step count.
+      const steps = this._step || 0;
+      if (steps > 0 && this._startedAt) {
+        const total = Math.max(0, Math.round((Date.now() - this._startedAt) / 1000));
+        const dur = total >= 60 ? Math.floor(total / 60) + "m " + String(total % 60).padStart(2, "0") + "s" : total + "s";
+        const chip = document.createElement("div");
+        chip.className = "worked-chip";
+        chip.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> Worked for ' + esc(dur) + " · " + steps + " step" + (steps === 1 ? "" : "s");
+        el.querySelector(".body").appendChild(chip);
+      }
       if (connector) el.querySelector(".body").appendChild(renderConnectorCard(connector));
       scrollRow();
     },

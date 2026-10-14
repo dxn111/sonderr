@@ -147,31 +147,33 @@ button,input,textarea{font:inherit;color:inherit} button{cursor:pointer;backgrou
 .agent-status .thinking-dots{display:inline-flex;align-items:center;gap:5px}
 .agent-status .thinking-dots i{width:7px;height:7px;border-radius:50%;background:#5ba2ff;opacity:.45;animation:pulse 1.1s infinite}
 .agent-status .thinking-dots i:nth-child(1){animation-delay:0s}.agent-status .thinking-dots i:nth-child(2){animation-delay:.16s}.agent-status .thinking-dots i:nth-child(3){animation-delay:.32s}
-/* otter companion — vector swim scene while Sonderr works (v1.6.2) */
-.otter-swim{width:52px;height:32px;flex:none;display:block;filter:drop-shadow(0 2px 6px rgba(63,142,247,.22))}
-.otter-swim svg{display:block;width:100%;height:100%;overflow:visible}
-.otter-swimmer{animation:otter-glide 3s cubic-bezier(.45,0,.55,1) infinite alternate}
-.otter-figure{transform-origin:27px 21px;animation:otter-bob 2.6s ease-in-out infinite}
-.otter-tail{transform-origin:17px 21px;animation:otter-tail-flick 1.3s ease-in-out infinite alternate}
-.otter-wave{animation:otter-wave-slide 3.4s linear infinite}
-.otter-wave-front{animation-duration:2.7s}
-.otter-bubble{opacity:0;animation:otter-bubble-rise 2.2s ease-out infinite}
-.otter-bubble-2{animation-delay:.7s;animation-duration:2.6s}
-.otter-bubble-3{animation-delay:1.3s;animation-duration:2.4s}
-@keyframes otter-glide{0%{transform:translate(0,0)}45%{transform:translate(3.5px,-1px)}100%{transform:translate(-2.5px,.5px)}}
-@keyframes otter-bob{0%,100%{transform:translateY(0) rotate(0deg)}30%{transform:translateY(-1.3px) rotate(-2deg)}70%{transform:translateY(.6px) rotate(1.6deg)}}
-@keyframes otter-tail-flick{0%{transform:rotate(0deg)}100%{transform:rotate(9deg)}}
-@keyframes otter-wave-slide{0%{transform:translateX(0)}100%{transform:translateX(-26px)}}
-@keyframes otter-bubble-rise{0%{transform:translateY(0);opacity:0}18%{opacity:.85}100%{transform:translateY(-9px);opacity:0}}
+/* working indicator — Claude-grade: a small pulsing brand spark (v1.7.1).
+   The otter lives as the draggable pet only; the status line stays minimal. */
+.work-spark{width:20px;height:20px;flex:none;display:block;filter:drop-shadow(0 0 6px rgba(63,142,247,.35))}
+.work-spark svg{display:block;width:100%;height:100%;overflow:visible}
+.work-spark-star{transform-box:fill-box;transform-origin:center;animation:work-spark-pulse 1.9s ease-in-out infinite}
+@keyframes work-spark-pulse{0%,100%{transform:scale(.78) rotate(-8deg);opacity:.75}50%{transform:scale(1.14) rotate(12deg);opacity:1}}
 /* shimmer status text — smooth gradient sweep, Claude-grade */
 .shimmer-text{background:linear-gradient(100deg,#5b6b84 32%,#1e7ce0 48%,#22cde2 52%,#5b6b84 68%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer-sweep 2.8s linear infinite;font-weight:600}
 @keyframes shimmer-sweep{0%{background-position:120% 0}100%{background-position:-100% 0}}
 .empty-turn-note{margin-top:8px;padding:9px 12px;border:1px solid #eadfbd;background:#fffcf2;border-radius:9px;font-size:12.5px;color:#6b5d33;line-height:1.5}
-@media(prefers-reduced-motion:reduce){.otter-swimmer,.otter-figure,.otter-tail,.otter-wave,.otter-bubble,.shimmer-text{animation:none}.shimmer-text{background:none;color:#5b6b84}}
+@media(prefers-reduced-motion:reduce){.work-spark-star,.shimmer-text{animation:none}.shimmer-text{background:none;color:#5b6b84}.work-spark{filter:none}}
 .tools:empty{display:none}
 
 /* ---------- v1.7 workflow: streaming narration, step timer, running cards ---------- */
 .status-elapsed{font-size:10.5px;font-weight:650;color:var(--faint);background:#f2f6fb;border:1px solid #e4ebf3;border-radius:20px;padding:1px 7px;font-family:var(--mono);flex:none}
+/* v1.7.1: status text crossfades into each new activity, Claude-style */
+.agent-status-text.swap{animation:status-swap .24s ease}
+@keyframes status-swap{0%{opacity:.2;transform:translateY(2.5px)}100%{opacity:1;transform:none}}
+/* v1.7.1: tool cards de-emphasize once finished, and the icon chip picks up the state color */
+.tool.done{opacity:.87}
+.tool.done:hover{opacity:1}
+.tool.running .tool-ico{background:#f2f8ff}
+.tool.done .tool-ico{background:#f2fbf6;border-color:#cdeedd;color:var(--ok)}
+.tool.failed .tool-ico{background:#fff7f7;border-color:#f3cfcf;color:var(--bad)}
+/* v1.7.1: Claude-style "Worked for 12s · 4 steps" footer */
+.worked-chip{display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:11px;font-weight:650;color:#8ba3c2;background:#f4f8fc;border:1px solid #e4ebf3;border-radius:20px;padding:2.5px 10px;width:fit-content}
+.worked-chip svg{color:var(--ok)}
 .md-seg{font-size:14px;line-height:1.65;color:var(--ink);min-width:0}
 .tools .md-seg{padding:1px 0}
 .md-seg p{margin:0 0 8px}
@@ -913,45 +915,55 @@ details.advanced .adv-body{padding:4px 14px 14px}
 @media(max-width:700px){.studios-showcase{padding:16px}.studios-showcase-copy h3{font-size:19px}.studio-craft-chips i{font-size:8.5px}.studios-crew-art-phases{display:none}.studios-crew-banner{padding-bottom:16px}}
 @media(prefers-reduced-motion:reduce){.studio-crew-task::after,.studio-craft-chips i,.studios-showcase-art::after,.studio-crew-phase b::before,.studios-showcase-chips span{transition:none;animation:none}}
 
-/* ---------- otter pet — on-screen companion (v1.6.2) ---------- */
-.otter-pet{position:fixed;z-index:60;width:96px;height:72px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;transition:filter .25s;filter:drop-shadow(0 6px 14px rgba(43,111,180,.25))}
-.otter-pet:hover{filter:drop-shadow(0 8px 18px rgba(43,111,180,.38))}
-.otter-pet.dragging{cursor:grabbing;transition:none;filter:drop-shadow(0 12px 22px rgba(43,111,180,.45))}
+/* ---------- otter pet — on-screen companion (v1.7.1 vector rebuild) ---------- */
+.otter-pet{position:fixed;z-index:60;width:118px;height:92px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;transition:filter .25s;filter:drop-shadow(0 6px 14px rgba(43,111,180,.25))}
+.otter-pet:hover{filter:drop-shadow(0 9px 20px rgba(43,111,180,.4))}
+.otter-pet.dragging{cursor:grabbing;transition:none;filter:drop-shadow(0 12px 22px rgba(43,111,180,.48))}
 .otter-pet[hidden]{display:none}
 .otter-pet svg{display:block;width:100%;height:100%;overflow:visible;pointer-events:none}
-.otter-pet-float{animation:otter-pet-bob 3.4s ease-in-out infinite;transform-origin:48px 46px}
-.otter-pet-pool{animation:otter-pet-pool 3.4s ease-in-out infinite;transform-origin:48px 52px}
-.otter-pet-tail{transform-origin:16px 45px;animation:otter-pet-tail 2.2s ease-in-out infinite alternate}
-.otter-pet-ripple ellipse{transform-origin:48px 52px;animation:otter-pet-ripple 3.4s ease-out infinite}
-.otter-pet-pebble{animation:otter-pet-pebble 3.4s ease-in-out infinite;transform-origin:46px 44px}
-@keyframes otter-pet-bob{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-2.6px) rotate(-1.4deg)}70%{transform:translateY(1px) rotate(.9deg)}}
-@keyframes otter-pet-pool{0%,100%{transform:scale(1)}50%{transform:scale(1.05,1.12)}}
-@keyframes otter-pet-tail{0%{transform:rotate(0)}100%{transform:rotate(7deg)}}
-@keyframes otter-pet-ripple{0%{transform:scale(.86);opacity:.6}70%{transform:scale(1.14);opacity:0}100%{transform:scale(1.14);opacity:0}}
-@keyframes otter-pet-pebble{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.6px)}}
-/* working: energetic paddling */
-.otter-pet.working .otter-pet-float{animation:otter-pet-bob 1.5s ease-in-out infinite}
-.otter-pet.working .otter-pet-tail{animation:otter-pet-tail .8s ease-in-out infinite alternate}
-.otter-pet.working .otter-pet-ripple ellipse{animation:otter-pet-ripple 1.6s ease-out infinite}
-/* happy: celebratory wiggle */
-.otter-pet.happy .otter-pet-float{animation:otter-pet-happy .5s ease-in-out 3}
-@keyframes otter-pet-happy{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-5px) rotate(-3.4deg)}75%{transform:translateY(-2px) rotate(3deg)}}
-/* sleeping: settled + dimmed, zzz visible */
-.otter-pet.sleeping{filter:drop-shadow(0 4px 10px rgba(43,111,180,.16)) saturate(.75)}
-.otter-pet.sleeping .otter-pet-float{animation-duration:6.5s}
+.otter-pet-float{animation:otter-pet-bob 3.6s ease-in-out infinite;transform-origin:64px 60px}
+.otter-pet-pool{animation:otter-pet-pool 3.6s ease-in-out infinite;transform-origin:64px 74px}
+.otter-pet-tail{transform-origin:28px 56px;animation:otter-pet-tail 3s ease-in-out infinite alternate}
+.otter-pet-ripple ellipse{transform-origin:62px 70px;animation:otter-pet-ripple 3.6s ease-out infinite}
+.otter-pet-pebble{animation:otter-pet-pebble 3.6s ease-in-out infinite;transform-origin:56px 45px}
+.otter-pet-eye{transform-box:fill-box;transform-origin:center;animation:otter-pet-blink 4.6s ease-in-out infinite}
+.otter-pet-eye-r{animation-delay:.06s}
+.otter-pet-sp{transform-box:fill-box;transform-origin:center;animation:otter-pet-twinkle 2.8s ease-in-out infinite;opacity:.4}
+.otter-pet-sp2{animation-delay:.9s}.otter-pet-sp3{animation-delay:1.7s}
+@keyframes otter-pet-bob{0%,100%{transform:translateY(0) rotate(0deg)}35%{transform:translateY(-3px) rotate(-1.3deg)}70%{transform:translateY(1.2px) rotate(.8deg)}}
+@keyframes otter-pet-pool{0%,100%{transform:scale(1)}50%{transform:scale(1.06,1.12)}}
+@keyframes otter-pet-tail{0%{transform:rotate(0) translateY(0)}100%{transform:rotate(-5.5deg) translateY(-1.6px)}}
+@keyframes otter-pet-ripple{0%{transform:scale(.85);opacity:.55}70%{transform:scale(1.16);opacity:0}100%{transform:scale(1.16);opacity:0}}
+@keyframes otter-pet-pebble{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-1.8px) rotate(1.6deg)}}
+@keyframes otter-pet-blink{0%,91%,100%{transform:scaleY(1)}94%{transform:scaleY(.08)}97%{transform:scaleY(1)}}
+@keyframes otter-pet-twinkle{0%,100%{opacity:.25;transform:scale(.72) rotate(0)}50%{opacity:.95;transform:scale(1.15) rotate(24deg)}}
+/* working — paddling: everything speeds up */
+.otter-pet.working .otter-pet-float{animation-duration:1.5s}
+.otter-pet.working .otter-pet-tail{animation-duration:1s}
+.otter-pet.working .otter-pet-ripple ellipse{animation-duration:1.6s}
+.otter-pet.working .otter-pet-pebble{animation:otter-pet-pebble-busy 1.5s ease-in-out infinite}
+@keyframes otter-pet-pebble-busy{0%,100%{transform:translateY(0) rotate(0)}30%{transform:translateY(-3px) rotate(-3deg)}65%{transform:translateY(.6px) rotate(2.4deg)}}
+.otter-pet.working .otter-pet-pool{animation-duration:1.5s}
+/* happy — wiggle + blush pops */
+.otter-pet.happy .otter-pet-float{animation:otter-pet-happy .55s ease-in-out 3}
+.otter-pet.happy .otter-pet-blush ellipse{opacity:.8}
+@keyframes otter-pet-happy{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-5.5px) rotate(-3.2deg)}75%{transform:translateY(-2px) rotate(2.8deg)}}
+/* sleeping — slow drift, closed eyes, z's */
+.otter-pet.sleeping{filter:drop-shadow(0 4px 10px rgba(43,111,180,.16)) saturate(.72)}
+.otter-pet.sleeping .otter-pet-float{animation-duration:6.8s}
+.otter-pet.sleeping .otter-pet-eye{animation:none;transform:scaleY(.14)}
+.otter-pet.sleeping .otter-pet-blush ellipse{opacity:.3}
 .otter-pet .otter-pet-zzz{opacity:0}
-.otter-pet.sleeping .otter-pet-z1,.otter-pet.sleeping .otter-pet-z2{font:700 10px/1 ui-sans-serif,system-ui,sans-serif;fill:#5b6b84}
+.otter-pet.sleeping .otter-pet-z1,.otter-pet.sleeping .otter-pet-z2{font:700 11px/1 ui-sans-serif,system-ui,sans-serif;fill:#5b6b84}
 .otter-pet.sleeping .otter-pet-z1{animation:otter-pet-z 3s ease-in-out infinite}
 .otter-pet.sleeping .otter-pet-z2{animation:otter-pet-z 3s ease-in-out .9s infinite}
-@keyframes otter-pet-z{0%{opacity:0;transform:translateY(2px)}35%{opacity:.9}100%{opacity:0;transform:translateY(-4px)}}
-/* petting hearts */
+@keyframes otter-pet-z{0%{opacity:0;transform:translateY(2px)}35%{opacity:.9}100%{opacity:0;transform:translateY(-5px)}}
 .otter-pet-heart{opacity:0;animation:otter-pet-heart 1.3s ease-out forwards}
-@keyframes otter-pet-heart{0%{opacity:0;transform:translate(var(--hx,0),10px) scale(.4)}18%{opacity:1}100%{opacity:0;transform:translate(var(--hx,0),-14px) scale(1.15)}}
-/* sidebar toggle */
+@keyframes otter-pet-heart{0%{opacity:0;transform:translate(var(--hx,0),12px) scale(.4)}18%{opacity:1}100%{opacity:0;transform:translate(var(--hx,0),-16px) scale(1.18)}}
 .side-item.otter-pet-toggle{position:relative}
 .side-item.otter-pet-toggle.on{color:var(--blue-ink)}
 .side-item.otter-pet-toggle.on svg{stroke:var(--blue-ink)}
 .otter-pet-state{margin-left:auto;font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#8ba3c2}
 .side-item.otter-pet-toggle.on .otter-pet-state{color:var(--blue-ink)}
-@media(max-width:700px){.otter-pet{width:74px;height:56px}}
-@media(prefers-reduced-motion:reduce){.otter-pet-float,.otter-pet-pool,.otter-pet-tail,.otter-pet-ripple ellipse,.otter-pet-pebble,.otter-pet-heart,.otter-pet-z1,.otter-pet-z2{animation:none}.otter-pet.happy .otter-pet-float,.otter-pet.working .otter-pet-float{animation:none}}
+@media(max-width:700px){.otter-pet{width:88px;height:69px}}
+@media(prefers-reduced-motion:reduce){.otter-pet-float,.otter-pet-pool,.otter-pet-tail,.otter-pet-ripple ellipse,.otter-pet-pebble,.otter-pet-eye,.otter-pet-sp,.otter-pet-heart,.otter-pet-z1,.otter-pet-z2{animation:none}.otter-pet.happy .otter-pet-float,.otter-pet.working .otter-pet-float{animation:none}}

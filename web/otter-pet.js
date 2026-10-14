@@ -1,8 +1,13 @@
-/* Sonderr Otter Pet — v1.6.2
+/* Sonderr Otter Pet — v1.7.1
    A ChatGPT-style screen companion, specialized: a small otter that lives on
    your workspace. It floats at the bottom of the screen, paddles while Sonderr
    works, celebrates finished task lists, naps when everything is quiet, and
    wiggles happily when you pet it. Drag it anywhere — the position persists.
+
+   v1.7.1 rebuild: the vector art was redrawn from scratch — rounder "baby"
+   proportions, big glossy eyes with double highlights, blush, a fluffier tail,
+   glossy pebble, layered water with sparkle. New motion: periodic blinking,
+   tail sway, water twinkle. States unchanged: working / happy / sleeping.
 
    Self-contained: no dependencies, listens for "sonderr:pet" CustomEvents
    ({kind: "working"|"idle"|"celebrate"|"meet"}) dispatched by web/ui.js.
@@ -24,46 +29,59 @@
 
   var state = Object.assign({ enabled: null, x: null, y: null, pets: 0 }, load());
 
-  // The companion otter — a friendlier, rounder vector than the working
-  // indicator: full body floating on its back, pebble on the belly, tail curl.
+  // The companion otter — v1.7.1 vector rebuild. An otter drifting on its
+  // back, holding a pebble on its belly. Round head, big glossy eyes, blush,
+  // fluffy curl tail, all sitting on layered water with soft sparkles.
   function otterSVG() {
-    return '<svg class="otter-pet-svg" viewBox="0 0 96 72" width="96" height="72" aria-hidden="true" focusable="false">' +
+    return '<svg class="otter-pet-svg" viewBox="0 0 128 100" width="118" height="92" aria-hidden="true" focusable="false">' +
       '<defs>' +
-      '<radialGradient id="otterPetPool" cx="50%" cy="62%" r="55%"><stop offset="0" stop-color="#63b3ff" stop-opacity=".5"/><stop offset=".72" stop-color="#3f8ef7" stop-opacity=".22"/><stop offset="1" stop-color="#3f8ef7" stop-opacity="0"/></radialGradient>' +
-      '<linearGradient id="otterPetFur" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a9714b"/><stop offset="1" stop-color="#6b4226"/></linearGradient>' +
-      '<linearGradient id="otterPetBelly" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7ead6"/><stop offset="1" stop-color="#e8d3b4"/></linearGradient>' +
+      '<radialGradient id="otterPetPool" cx="50%" cy="58%" r="60%"><stop offset="0" stop-color="#5fb0ff" stop-opacity=".55"/><stop offset=".65" stop-color="#3f8ef7" stop-opacity=".24"/><stop offset="1" stop-color="#3f8ef7" stop-opacity="0"/></radialGradient>' +
+      '<linearGradient id="otterPetFur" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bd8054"/><stop offset=".55" stop-color="#9a6238"/><stop offset="1" stop-color="#74471f"/></linearGradient>' +
+      '<linearGradient id="otterPetHead" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c98d5e"/><stop offset="1" stop-color="#966034"/></linearGradient>' +
+      '<linearGradient id="otterPetBelly" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf3e2"/><stop offset="1" stop-color="#eed9b9"/></linearGradient>' +
+      '<linearGradient id="otterPetStone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfdbec"/><stop offset="1" stop-color="#9fb2cc"/></linearGradient>' +
       '</defs>' +
-      '<ellipse class="otter-pet-pool" cx="48" cy="52" rx="44" ry="17" fill="url(#otterPetPool)"/>' +
+      // water
+      '<ellipse class="otter-pet-pool" cx="64" cy="74" rx="52" ry="15" fill="url(#otterPetPool)"/>' +
       '<g class="otter-pet-float">' +
       '<g class="otter-pet-body">' +
-      // tail curling from the left
-      '<path class="otter-pet-tail" d="M14 46 Q6 44 3 38 Q9 41 15 41.5 Q20 42 20 45.5 Q18 47 14 46 Z" fill="#5d3a22"/>' +
-      // body (floating, back-leaning)
-      '<path d="M18 47 Q17 38 27 34.5 Q40 30 56 33 Q68 35.2 72.5 40 Q74.5 42.2 72.8 44.4 Q62 50.5 46 50.8 Q28 51 18 47 Z" fill="url(#otterPetFur)"/>' +
-      // belly patch
-      '<path d="M30 44.5 Q42 47.5 58 45.2 Q50 49 40 48.6 Q33.5 48.2 30 44.5 Z" fill="url(#otterPetBelly)" opacity=".92"/>' +
-      // pebble on the belly
-      '<g class="otter-pet-pebble"><ellipse cx="46" cy="41.5" rx="8.2" ry="5.6" fill="#b8c6d9"/><ellipse cx="43.6" cy="39.8" rx="3" ry="1.8" fill="#d6e1ef" opacity=".85"/></g>' +
-      // paws holding the pebble
-      '<path d="M38.5 45.2 Q40 47.8 43.4 48.3" fill="none" stroke="#4a2d1a" stroke-width="2.4" stroke-linecap="round"/>' +
-      '<path d="M54 44.6 Q52.6 47.4 49.2 48" fill="none" stroke="#4a2d1a" stroke-width="2.4" stroke-linecap="round"/>' +
-      // head (right side, tilted back, happy)
+      // tail — fluffy two-tone curl rising out of the water on the left
+      '<g class="otter-pet-tail">' +
+      '<path d="M24 54 Q11.5 53 5.8 44.6 Q4.2 42 7 41.8 Q10 41.7 13.6 43.8 Q8.8 39.8 8.2 36.4 Q7.9 34.2 10.2 35.2 Q17 38.4 23.6 44.8 Q28 49.2 28.8 53 Q27.4 54.6 24 54 Z" fill="#6e421c"/>' +
+      '<path d="M12.6 43.6 Q9.6 40.4 8.9 37.6 Q14 40.6 19.2 45.2 Q15.2 45.4 12.6 43.6 Z" fill="#8a5526"/>' +
+      '</g>' +
+      // body — a rounded raft drifting on its back, belly side up
+      '<path d="M20 56 Q18.5 45.5 31.5 41.5 Q46 37.5 62.5 40 Q77 42.4 82.5 48.5 Q84.4 51 82.4 53.6 Q73 61.5 52 62.6 Q30 63.4 20 56 Z" fill="url(#otterPetFur)"/>' +
+      // cream belly facing up (it floats on its back)
+      '<path d="M30 50.5 Q39 43.8 55.5 44.8 Q68.5 45.8 72.5 50.8 Q68.5 56.2 54 57.4 Q40 58.2 30 50.5 Z" fill="url(#otterPetBelly)"/>' +
+      // pebble resting on the belly
+      '<g class="otter-pet-pebble"><ellipse cx="52" cy="42.6" rx="9" ry="6.2" fill="url(#otterPetStone)"/><ellipse cx="48.6" cy="40.4" rx="3.2" ry="2" fill="#e9f0f8" opacity=".85"/></g>' +
+      // paws wrapping around the pebble
+      '<path d="M37.5 53.5 Q40 47.2 46.5 45" fill="none" stroke="#5f3a1c" stroke-width="5.2" stroke-linecap="round"/>' +
+      '<path d="M66 52.5 Q64.5 47.4 57.8 45.2" fill="none" stroke="#5f3a1c" stroke-width="5.2" stroke-linecap="round"/>' +
+      // head — big, round, tilted back
       '<g class="otter-pet-head">' +
-      '<circle cx="72" cy="30" r="12.4" fill="url(#otterPetFur)"/>' +
-      '<circle cx="79.5" cy="21.5" r="2.5" fill="#7a4e30"/>' +
-      '<path d="M63.5 24.5 Q66 22 69.5 22.4" fill="none" stroke="#5d3a22" stroke-width="1.6" stroke-linecap="round"/>' + // ear inner hint
-      '<ellipse cx="73.4" cy="34.2" rx="6.4" ry="5.2" fill="url(#otterPetBelly)"/>' + // muzzle
-      '<path class="otter-pet-eye" d="M69.2 28.4 Q71 26.6 72.8 28.4" fill="none" stroke="#2c1b10" stroke-width="1.5" stroke-linecap="round"/>' +
-      '<path class="otter-pet-eye" d="M76.4 28.2 Q78.2 26.4 80 28.2" fill="none" stroke="#2c1b10" stroke-width="1.5" stroke-linecap="round"/>' +
-      '<ellipse cx="74.6" cy="31.9" rx="2.1" ry="1.7" fill="#33200f"/>' + // nose
-      '<path class="otter-pet-mouth" d="M71.6 35.2 Q74.8 37.8 78 35.4" fill="none" stroke="#4a2d1a" stroke-width="1.3" stroke-linecap="round"/>' +
-      '<path d="M66.5 32.5 L60.5 31.8 M66.6 34.2 L60.8 34.8" stroke="#f2e3cf" stroke-width=".8" stroke-linecap="round" opacity=".95"/>' + // whiskers
+      '<g class="otter-pet-ear otter-pet-ear-l"><circle cx="78" cy="28" r="4" fill="#966034"/><circle cx="78" cy="28" r="2" fill="#5f3a1c"/></g>' +
+      '<g class="otter-pet-ear otter-pet-ear-r"><circle cx="99.5" cy="27" r="4" fill="#966034"/><circle cx="99.5" cy="27" r="2" fill="#5f3a1c"/></g>' +
+      '<circle cx="89" cy="40" r="15.8" fill="url(#otterPetHead)"/>' +
+      '<ellipse cx="89.5" cy="47.5" rx="9.2" ry="6.6" fill="url(#otterPetBelly)"/>' + // muzzle
+      '<g class="otter-pet-blush"><ellipse cx="76.5" cy="43.5" rx="3.6" ry="2.1" fill="#f2a4a4" opacity=".5"/><ellipse cx="102" cy="42.5" rx="3.6" ry="2.1" fill="#f2a4a4" opacity=".5"/></g>' +
+      '<g class="otter-pet-eye otter-pet-eye-l"><ellipse cx="82.5" cy="36.8" rx="3.15" ry="3.35" fill="#2b1a0e"/><circle cx="83.6" cy="35.5" r="1.15" fill="#fff"/><circle cx="81.4" cy="38.2" r=".55" fill="#fff" opacity=".8"/></g>' +
+      '<g class="otter-pet-eye otter-pet-eye-r"><ellipse cx="95.8" cy="36.3" rx="3.15" ry="3.35" fill="#2b1a0e"/><circle cx="96.9" cy="35" r="1.15" fill="#fff"/><circle cx="94.7" cy="37.7" r=".55" fill="#fff" opacity=".8"/></g>' +
+      '<path d="M87.6 42.4 Q89.2 43.9 90.8 42.4 Q90.1 40.9 89.2 40.9 Q88.3 40.9 87.6 42.4 Z" fill="#33200f"/>' + // nose
+      '<path class="otter-pet-mouth" d="M89.2 44.9 Q89.2 46.8 87.2 47.3 M89.2 44.9 Q89.2 46.8 91.2 47.3" fill="none" stroke="#4a2d1a" stroke-width="1.2" stroke-linecap="round"/>' +
+      '<path d="M77.5 45.5 L71.5 44.8 M77.7 47.5 L71.9 48.1 M101 44.5 L107 43.8 M101.1 46.5 L106.9 47.1" stroke="#f6e8d4" stroke-width=".9" stroke-linecap="round" opacity=".95"/>' + // whiskers
       '</g>' +
       '</g>' +
-      '<g class="otter-pet-ripple"><ellipse cx="48" cy="52" rx="30" ry="8" fill="none" stroke="#7cc4ff" stroke-width="1.1" opacity=".55"/></g>' +
+      '<g class="otter-pet-ripple"><ellipse cx="58" cy="70" rx="34" ry="9" fill="none" stroke="#8fcaff" stroke-width="1.2" opacity=".5"/></g>' +
+      '</g>' +
+      '<g class="otter-pet-sparkles">' +
+      '<path class="otter-pet-sp otter-pet-sp1" d="M30 66 l1 2.2 2.2 1 -2.2 1 -1 2.2 -1 -2.2 -2.2 -1 2.2 -1 Z" fill="#bfe0ff"/>' +
+      '<path class="otter-pet-sp otter-pet-sp2" d="M100 70 l.9 1.9 1.9 .9 -1.9 .9 -.9 1.9 -.9 -1.9 -1.9 -.9 1.9 -.9 Z" fill="#bfe0ff"/>' +
+      '<path class="otter-pet-sp otter-pet-sp3" d="M46 82 l.8 1.7 1.7 .8 -1.7 .8 -.8 1.7 -.8 -1.7 -1.7 -.8 1.7 -.8 Z" fill="#cfe9ff"/>' +
       '</g>' +
       '<g class="otter-pet-hearts" aria-hidden="true"></g>' +
-      '<g class="otter-pet-zzz" aria-hidden="true"><text x="82" y="14" class="otter-pet-z1">z</text><text x="88" y="8" class="otter-pet-z2">z</text></g>' +
+      '<g class="otter-pet-zzz" aria-hidden="true"><text x="100" y="18" class="otter-pet-z1">z</text><text x="107" y="11" class="otter-pet-z2">z</text></g>' +
       '</svg>';
   }
 
@@ -87,7 +105,7 @@
 
     var clamp = function (value, min, max) { return Math.max(min, Math.min(max, value)); };
     var place = function (x, y) {
-      var w = root.offsetWidth || 96, h = root.offsetHeight || 72;
+      var w = root.offsetWidth || 118, h = root.offsetHeight || 92;
       var nx = clamp(x, 6, window.innerWidth - w - 6);
       var ny = clamp(y, 6, window.innerHeight - h - 6);
       root.style.left = nx + "px";
@@ -122,12 +140,12 @@
       if (Date.now() - downAt < 600) pet();
     });
     root.addEventListener("pointercancel", function () { root.classList.remove("dragging"); });
-    window.addEventListener("resize", function () { place(parseFloat(root.style.left) || 24, parseFloat(root.style.top) || (window.innerHeight - 110)); });
+    window.addEventListener("resize", function () { place(parseFloat(root.style.left) || 24, parseFloat(root.style.top) || (window.innerHeight - 130)); });
 
     // initial placement: saved corner or bottom-right
-    var w = 0; setTimeout(function () {
+    setTimeout(function () {
       if (state.x != null && state.y != null) place(state.x, state.y);
-      else place(window.innerWidth - 128, window.innerHeight - 116);
+      else place(window.innerWidth - 152, window.innerHeight - 132);
     }, 0);
   }
 
@@ -138,10 +156,13 @@
     if (busyTimer) { clearTimeout(busyTimer); busyTimer = null; }
     if (duration) busyTimer = setTimeout(function () { root.classList.remove(name); scheduleSleep(); }, duration);
   }
-  function wake() {
+  function scheduleSleep() {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(function () { if (!root.classList.contains("working")) setState("sleeping"); }, 4 * 60 * 1000);
-    if (root.classList.contains("sleeping")) setState(null);
+  }
+  function wake() {
+    scheduleSleep();
+    if (root && root.classList.contains("sleeping")) setState(null);
   }
   function pet() {
     petsCount += 1;
@@ -154,7 +175,7 @@
         heart.setAttribute("d", "M0 3.2 C0 .8 3.4 -.6 4.6 1.6 C5.8 -.6 9.2 .8 9.2 3.2 C9.2 5.8 4.6 8.6 4.6 8.6 C4.6 8.6 0 5.8 0 3.2 Z");
         heart.setAttribute("fill", "#ff8fb3");
         heart.setAttribute("class", "otter-pet-heart");
-        heart.style.setProperty("--hx", (28 + i * 16) + "px");
+        heart.style.setProperty("--hx", (36 + i * 18) + "px");
         heart.style.animationDelay = (i * 0.12) + "s";
         hearts.appendChild(heart);
         (function (node) { setTimeout(function () { node.remove(); }, 1500); })(heart);

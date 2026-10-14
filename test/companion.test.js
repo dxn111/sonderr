@@ -19,10 +19,15 @@ assert.ok(html.includes("VERSION 1.6.2 · THE COMPANION UPDATE"), "archive keeps
 assert.ok(html.includes('id="sonderrV1Announcement"'), "the Sonderr-v1 film modal must remain for the archive");
 assert.ok(html.includes('id="sonderrV16Announcement"'), "the v1.6 modal must remain for the archive");
 
-// 2. ui.js: vector swim scene, shimmer text, pet events, empty-turn notice,
-//    watchdog, and the classifier badge.
+// 2. ui.js: Claude-grade working spark, shimmer text, pet events, empty-turn
+//    notice, watchdog, and the classifier badge.
 const ui = read("web/ui.js");
-assert.ok(ui.includes("function otterSwimScene()"), "working animation must be the vector swim scene");
+assert.ok(ui.includes("function workSpark()"), "working animation must be the minimal pulsing spark (no mascot scene)");
+assert.ok(!ui.includes("function otterSwimScene()"), "the swim scene must stay retired from the status line");
+assert.ok(ui.includes("work-spark-star"), "the spark must carry its pulse animation hook");
+assert.ok(ui.includes("agent-status-text.swap") || ui.includes('classList.add("swap")'), "status text must crossfade between activities");
+assert.ok(ui.includes("worked-chip"), "workflow turns must end with a worked-for summary chip");
+assert.ok(ui.includes('el.classList.add("done")') && ui.includes('el.classList.add("failed")'), "finished tool cards must carry their state class");
 assert.ok(ui.includes("shimmer-text"), "status text must use the shimmer treatment");
 assert.ok(!ui.includes('class="otter-chip"'), "the retired raster chip markup must be gone");
 assert.ok(ui.includes('new CustomEvent("sonderr:pet"'), "ui.js must dispatch pet events");
@@ -43,13 +48,19 @@ assert.ok(pet.includes("pointerdown") && pet.includes("pointermove") && pet.incl
 assert.ok(pet.includes('"working"') && pet.includes('"celebrate"') && pet.includes('"meet"'), "the pet must react to app events");
 assert.ok(pet.includes("prefers-reduced-motion"), "the pet must honor reduced motion");
 assert.ok(pet.includes("otter-pet-heart"), "petting must produce hearts");
+assert.ok(pet.includes("otter-pet-eye"), "the rebuilt otter must have blinkable eyes");
+assert.ok(pet.includes("otter-pet-sp"), "the rebuilt otter must sit on twinkling water sparkles");
 
-// 4. ui.css: the new scene, pet styles, and badge style.
+// 4. ui.css: the spark, the pet styles, and the badge style.
 const css = read("web/ui.css");
-assert.ok(css.includes(".otter-swim{"), "the swim scene styles must exist");
+assert.ok(css.includes(".work-spark{"), "the working spark styles must exist");
+assert.ok(!css.includes(".otter-swim{"), "retired swim scene styles must be gone");
 assert.ok(css.includes(".otter-pet{"), "the pet styles must exist");
 assert.ok(css.includes(".mi-badge.classifier"), "classifier badge must be styled");
-assert.ok(css.includes("@keyframes otter-wave-slide"), "wave layers must animate");
+assert.ok(css.includes("@keyframes work-spark-pulse"), "the spark must pulse");
+assert.ok(css.includes("@keyframes otter-pet-blink"), "the otter must blink");
+assert.ok(css.includes("@keyframes status-swap"), "status crossfade must animate");
+assert.ok(css.includes(".worked-chip{"), "the worked-for chip must be styled");
 
 // 5. app.js: the server-side classifier guard.
 const app = read("server/app.js");

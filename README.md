@@ -1,4 +1,4 @@
-# SONDERR v1.7.0
+# SONDERR v1.7.1
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -53,7 +53,7 @@ If `~/.local/bin` (or `%USERPROFILE%\.local\bin` on Windows) is not already on y
 
 ## Overview
 
-Sonderr v1.7.0 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.7 is the workflow update: token-by-token streaming, live step cards for every tool call, narration woven between steps, and a self-healing loop that recovers from provider interruptions and ends safe limits with a real handoff. It rides on the v1.6 line: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
+Sonderr v1.7.1 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.7 is the workflow update: token-by-token streaming, live step cards for every tool call, narration woven between steps, and a self-healing loop that recovers from provider interruptions and ends safe limits with a real handoff. It rides on the v1.6 line: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
 
 The terminal is only the launcher.
 

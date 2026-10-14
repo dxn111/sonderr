@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.7.1 — The companion polish (a cuter otter, a Claude-grade spark, workflow finesse)
+
+### The otter pet, rebuilt
+- The screen companion was redrawn from scratch: rounder "baby" proportions, a bigger head with large glossy eyes that carry double highlights and now genuinely blink (periodic, staggered per eye), blush cheeks that pop when it is happy, small rounded ears with inner shading, a fluffy two-tone curl tail that sways, a glossy pebble on its belly, a chest fluff tuft, and layered water with soft ripples plus three twinkling star sparkles. Bigger on screen (118x92), crisp vector at every size, all states re-tuned: faster paddling while Sonderr works, a wiggle-and-blush celebration, a slow-drift nap with z's, and full `prefers-reduced-motion` support.
+
+### The working animation is Claude-grade now
+- The status line no longer runs a mascot scene. The otter swim scene is retired from the status line (the otter lives as the draggable pet only) and replaced with the Claude pattern: a small four-point spark in the brand gradient that gently pulses and sways beside the shimmer text. Minimal, calm, premium.
+
+### Workflow finesse (researched against Claude, Grok, and GLM)
+- The status text now crossfades into each new activity instead of hard-swapping.
+- Finished tool cards de-emphasize (like Claude's past steps) and their icon chip picks up the state color: green when done, red when failed, blue-tinted while running.
+- Workflow turns end with a Claude-style footer chip — "Worked for 12s · 4 steps" — summarizing the run at a glance.
+
+
 ## v1.7.0 — The workflow update (token streaming, live step cards, self-healing loop)
 
 ### Token-by-token streaming
