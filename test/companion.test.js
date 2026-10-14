@@ -12,9 +12,10 @@ const read = (path) => fs.readFileSync(require("path").join(__dirname, "..", pat
 const html = read("web/index.html");
 assert.ok(html.includes('id="otterPetBtn"'), "sidebar needs the otter pet toggle");
 assert.ok(/<script src="\/otter-pet\.js"><\/script><script src="\/sonderr-launch-renderer\.js"><\/script><script src="\/ui\.js"><\/script>/.test(html), "otter-pet.js must load before ui.js");
-assert.ok(html.includes('id="sonderrV162Announcement"'), "v1.6.2 announcement modal must exist");
-assert.ok(html.includes("/assets/sonderr-v162-pet.png"), "v1.6.2 modal must use the pet key art");
-assert.ok(html.includes("VERSION 1.6.2 · THE COMPANION UPDATE"), "archive needs the v1.6.2 entry");
+assert.ok(html.includes('id="sonderrV17Announcement"'), "v1.7 announcement modal must exist");
+assert.ok(html.includes("/assets/sonderr-v17-flow.png"), "v1.7 modal must use the workflow key art");
+assert.ok(html.includes("VERSION 1.7 · THE WORKFLOW UPDATE"), "archive needs the v1.7 entry");
+assert.ok(html.includes("VERSION 1.6.2 · THE COMPANION UPDATE"), "archive keeps the v1.6.2 entry");
 assert.ok(html.includes('id="sonderrV1Announcement"'), "the Sonderr-v1 film modal must remain for the archive");
 assert.ok(html.includes('id="sonderrV16Announcement"'), "the v1.6 modal must remain for the archive");
 
@@ -31,7 +32,9 @@ assert.ok(ui.includes("empty-turn-note"), "empty final responses must render an 
 assert.ok(ui.includes("evt.notice"), "the server's classifier notice must be surfaced");
 assert.ok(ui.includes("watchdogHandle"), "the stuck-stream watchdog must be wired");
 assert.ok(ui.includes("looksLikeClassifierModel"), "the picker must flag classifier models");
-assert.ok(ui.includes("showSonderrV162Announcement"), "the launch queue must show the v1.6.2 announcement");
+assert.ok(ui.includes("showSonderrV17Announcement"), "the launch queue must show the v1.7 announcement");
+assert.ok(ui.includes("case \"delta\": row.appendDelta(evt.text)"), "the chat stream must render live deltas");
+assert.ok(ui.includes("case \"segment\": row.addSegment(evt.text)"), "narration segments must render between tool cards");
 
 // 3. otter-pet.js: draggable, persisted, stateful, reduced-motion aware.
 const pet = read("web/otter-pet.js");

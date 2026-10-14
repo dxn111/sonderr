@@ -272,7 +272,7 @@ function queueLaunchAnnouncement() {
   if (location.pathname === "/studios" || location.pathname === "/studios/" || location.pathname === "/trading" || location.pathname === "/trading/") return;
   setTimeout(() => {
     if (document.hidden || !$('onboardingModal')?.hidden) return;
-    showSonderrV162Announcement();
+    showSonderrV17Announcement();
   }, 900);
 }
 
@@ -346,16 +346,16 @@ function closeSonderrV16Announcement() {
   const modal = $("sonderrV16Announcement");
   if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
 }
-function showSonderrV162Announcement(force = false) {
-  const modal = $("sonderrV162Announcement");
+function showSonderrV17Announcement(force = false) {
+  const modal = $("sonderrV17Announcement");
   if (!modal || (!force && location.pathname !== "/" && location.pathname !== "/index.html")) return;
   modal.hidden = false;
   modal.setAttribute("aria-hidden", "false");
   const video = $("sonderrLaunchVideo");
   if (video) video.pause();
 }
-function closeSonderrV162Announcement() {
-  const modal = $("sonderrV162Announcement");
+function closeSonderrV17Announcement() {
+  const modal = $("sonderrV17Announcement");
   if (modal) { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); }
 }
 function openReleaseCenter() {
@@ -1875,7 +1875,7 @@ function toolOutputText(output) {
 
 function createToolBlock(name, input) {
   const el = document.createElement("div");
-  el.className = "tool";
+  el.className = "tool running";
   const summary = toolSummary(name, input);
   let inputPretty = ""; try { inputPretty = JSON.stringify(input, null, 2); } catch { inputPretty = String(input ?? ""); }
   el.innerHTML =
@@ -1894,6 +1894,7 @@ function createToolBlock(name, input) {
 }
 
 function completeToolBlock(el, ev) {
+  el.classList.remove("running");
   const stateEl = el.querySelector(".tool-state");
   const output = ev.output ?? {};
   const failed = Boolean(ev.failed) || Boolean(output.error);
@@ -1903,6 +1904,11 @@ function completeToolBlock(el, ev) {
   } else {
     stateEl.className = "tool-state done";
     stateEl.innerHTML = "Done <svg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6L9 17l-5-5'/></svg>";
+  }
+  const dur = Number(ev.durationMs);
+  if (Number.isFinite(dur) && dur > 0) {
+    const label = dur >= 10_000 ? (dur / 1000).toFixed(0) + "s" : (dur / 1000).toFixed(1) + "s";
+    el.querySelector(".tool-head")?.insertAdjacentHTML("beforeend", '<span class="tool-dur">' + label + "</span>");
   }
   const rs = failed
     ? (output.approvalRequired ? "Needs approval" : String(output.error || "Tool failed").replace(/\s+/g, " ").slice(0, 72))
@@ -1919,6 +1925,13 @@ function buildToolBlocks(events) {
   for (const ev of events || []) {
     if (ev.type === "todo_update") continue; // rendered once by addAgentMessage from the last state
     if (ev.type === "task_checkpoint_update") continue; // rendered as a dedicated resume card
+    if (ev.type === "segment") {
+      const seg = document.createElement("div");
+      seg.className = "md md-seg";
+      seg.innerHTML = renderMarkdown(String(ev.text || ""));
+      wrap.appendChild(seg);
+      continue;
+    }
     if (ev.type === "present") { wrap.appendChild(renderPresentCard(ev)); continue; }
     if (ev.type === "email_confirmation") { wrap.appendChild(renderEmailConfirmation(ev)); continue; }
     if (ev.type === "wallet_confirmation") { wrap.appendChild(renderWalletConfirmation(ev)); continue; }
@@ -2506,7 +2519,7 @@ function otterSwimScene() {
   const el = document.createElement("div");
   el.className = "msg-agent";
   el.innerHTML = '<span class="avatar"><img src="/assets/sonderr-mark-64.png" alt=""></span>' +
-    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="otter-swim" aria-hidden="true">' + otterSwimScene() + '</span><span class="agent-status-text shimmer-text">Sonderr is working…</span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
+    '<div class="body"><div class="agent-status" role="status" aria-live="polite" aria-atomic="true"><span class="otter-swim" aria-hidden="true">' + otterSwimScene() + '</span><span class="agent-status-text shimmer-text">Sonderr is working…</span><span class="status-elapsed" hidden></span></div><div class="todo-slot"></div><div class="checkpoint-slot"></div><div class="tools"></div><div class="md"></div></div>';
   $("messages").appendChild(el);
   const scrollRow = () => { if (el.isConnected && $("messages").contains(el)) scrollBottom(); };
   scrollRow();
@@ -2515,8 +2528,66 @@ function otterSwimScene() {
   const statusText = () => el.querySelector(".agent-status-text");
   return {
     el,
-    setStatus(text) { const s = statusText(); if (s && text) { s.textContent = text; scrollRow(); } },
-    hideStatus() { el.querySelector(".agent-status")?.remove(); },
+    setStatus(text) { const s = statusText(); if (s && text) { s.textContent = text; this._startTimer(); scrollRow(); } },
+    hideStatus() { this._stopTimer(); el.querySelector(".agent-status")?.remove(); },
+    // v1.7 workflow: live streaming text, Claude-style. Deltas append into the
+    // current narration segment; tool cards interleave chronologically.
+    _startTimer() {
+      if (this._timer) return;
+      this._startedAt = Date.now();
+      const chip = el.querySelector(".status-elapsed");
+      if (!chip) return;
+      chip.hidden = false;
+      const tick = () => {
+        const total = Math.max(0, Math.floor((Date.now() - this._startedAt) / 1000));
+        chip.textContent = total >= 60 ? Math.floor(total / 60) + ":" + String(total % 60).padStart(2, "0") : total + "s";
+      };
+      tick();
+      this._timer = setInterval(tick, 1000);
+    },
+    _stopTimer() {
+      if (this._timer) { clearInterval(this._timer); this._timer = null; }
+      const chip = el.querySelector(".status-elapsed");
+      if (chip) { chip.hidden = true; chip.textContent = ""; }
+    },
+    closeSegment() {
+      if (!this._seg) return;
+      const seg = this._seg;
+      const text = this._segText || "";
+      this._seg = null;
+      this._segText = "";
+      this._segRenderedAt = 0;
+      seg.classList.remove("streaming");
+      if (text.trim()) seg.innerHTML = renderMarkdown(text);
+      else seg.remove();
+    },
+    appendDelta(text) {
+      if (!text) return;
+      if (!this._seg) {
+        const seg = document.createElement("div");
+        seg.className = "md md-seg streaming";
+        el.querySelector(".tools").appendChild(seg);
+        this._seg = seg;
+        this._segText = "";
+      }
+      this._segText += text;
+      const now = Date.now();
+      if (now - (this._segRenderedAt || 0) > 110) {
+        this._segRenderedAt = now;
+        this._seg.innerHTML = renderMarkdown(this._segText) + '<span class="stream-caret" aria-hidden="true"></span>';
+        scrollRow();
+      }
+    },
+    addSegment(text) {
+      const t = String(text || "").trim();
+      if (!t) return;
+      this.closeSegment();
+      const seg = document.createElement("div");
+      seg.className = "md md-seg";
+      seg.innerHTML = renderMarkdown(t);
+      el.querySelector(".tools").appendChild(seg);
+      scrollRow();
+    },
     updateTodos(todos) {
       if (!Array.isArray(todos) || !todos.length) return;
       const slot = el.querySelector(".todo-slot");
@@ -2537,16 +2608,19 @@ function otterSwimScene() {
       scrollRow();
     },
     addTool(ev) {
+      this.closeSegment();
       if (ev.name === "present_file") {
         live.set(ev.id, null); // no tool row — the present card is the UI
-        this.setStatus("Presenting " + (ev.input?.path || "file") + "…");
+        this._step = (this._step || 0) + 1;
+        this.setStatus("Step " + this._step + " · Presenting " + (ev.input?.path || "file") + "…");
         scrollRow();
         return null;
       }
       const block = createToolBlock(ev.name, ev.input);
       live.set(ev.id, block);
       el.querySelector(".tools").appendChild(block);
-      this.setStatus(toolTitle(ev.name) + (toolSummary(ev.name, ev.input) ? " · " + toolSummary(ev.name, ev.input) : "") + "…");
+      this._step = (this._step || 0) + 1;
+      this.setStatus("Step " + this._step + " · " + toolTitle(ev.name) + (toolSummary(ev.name, ev.input) ? " · " + toolSummary(ev.name, ev.input) : "") + "…");
       scrollRow();
       return block;
     },
@@ -2608,12 +2682,25 @@ function otterSwimScene() {
       this.setStatus("Thinking…");
     },
     finish(message, connector) {
+      this.closeSegment();
+      const finalText = String(message || "");
+      const finalNorm = finalText.replace(/\s+/g, " ").trim();
+      const segs = [...el.querySelectorAll(".md-seg")];
+      const toolsEl = el.querySelector(".tools");
+      const hasCards = toolsEl ? segs.length < toolsEl.children.length : false;
+      if (finalNorm) {
+        for (const seg of segs) {
+          const segNorm = String(seg.textContent || "").replace(/\s+/g, " ").trim();
+          if (segNorm === finalNorm || (!hasCards && segs.length >= 1)) seg.remove();
+        }
+      }
       this.hideStatus();
-      el.querySelector(".md").innerHTML = renderMarkdown(message || "");
+      el.querySelector(".md").innerHTML = renderMarkdown(finalText);
       if (connector) el.querySelector(".body").appendChild(renderConnectorCard(connector));
       scrollRow();
     },
     fail(message, retry = null) {
+      this.closeSegment();
       this.hideStatus();
       for (const block of live.values()) {
         const s = block.querySelector(".tool-state");
@@ -2757,6 +2844,8 @@ async function send(options = {}) {
         case "wallet_watch": row.el.querySelector(".tools").appendChild(renderWalletWatch(evt)); break;
         case "quality_update": row.setStatus("Quality " + evt.tier + (evt.ready ? " ready" : " · " + (evt.remainingMinutes ?? "?") + "m remaining")); break;
         case "round_start": row.setStatus("Working…"); break;
+        case "delta": row.appendDelta(evt.text); break;
+        case "segment": row.addSegment(evt.text); break;
         case "status": if (evt.text) row.setStatus(evt.text); break;
         case "final":
           finished = true;
@@ -3553,22 +3642,22 @@ function wire() {
   $("announcementsModal")?.addEventListener("click", e => { if (e.target === $("announcementsModal")) $("announcementsModal").hidden = true; });
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement"), release = $("sonderrV16Announcement"), pet = $("sonderrV162Announcement");
+    const archive = $("announcementsModal"), intro = $("sonderrV1Announcement"), release = $("sonderrV16Announcement"), flow = $("sonderrV17Announcement");
     if (archive && !archive.hidden) archive.hidden = true;
     if (intro && !intro.hidden) closeSonderrV1Announcement();
     if (release && !release.hidden) closeSonderrV16Announcement();
-    if (pet && !pet.hidden) closeSonderrV162Announcement();
+    if (flow && !flow.hidden) closeSonderrV17Announcement();
   });
-  $("sonderrV162Close")?.addEventListener("click", closeSonderrV162Announcement);
-  $("sonderrV162Later")?.addEventListener("click", closeSonderrV162Announcement);
-  $("sonderrV162Explore")?.addEventListener("click", () => { closeSonderrV162Announcement(); openReleaseCenter(); });
-  $("sonderrV162Meet")?.addEventListener("click", () => { closeSonderrV162Announcement(); window.dispatchEvent(new CustomEvent("sonderr:pet", { detail: { kind: "meet" } })); });
-  $("sonderrV162Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV162Announcement")) closeSonderrV162Announcement(); });
+  $("sonderrV17Close")?.addEventListener("click", closeSonderrV17Announcement);
+  $("sonderrV17Explore")?.addEventListener("click", () => { closeSonderrV17Announcement(); openReleaseCenter(); });
+  $("sonderrV17Try")?.addEventListener("click", () => { closeSonderrV17Announcement(); $("input")?.focus(); toast("Ask Sonderr something — and watch the steps stream in."); });
+  $("sonderrV17Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV17Announcement")) closeSonderrV17Announcement(); });
   $("sonderrV16Close")?.addEventListener("click", closeSonderrV16Announcement);
   $("sonderrV16Later")?.addEventListener("click", closeSonderrV16Announcement);
   $("sonderrV16Explore")?.addEventListener("click", () => { closeSonderrV16Announcement(); openReleaseCenter(); });
   $("sonderrV16Announcement")?.addEventListener("click", e => { if (e.target === $("sonderrV16Announcement")) closeSonderrV16Announcement(); });
   $("announcementsOpenUpdate")?.addEventListener("click", () => { $("announcementsModal").hidden = true; openReleaseCenter(); });
+  $("announcementsOpenUpdate17")?.addEventListener("click", () => { $("announcementsModal").hidden = true; openReleaseCenter(); });
   $("announcementsOpenUpdate162")?.addEventListener("click", () => { $("announcementsModal").hidden = true; openReleaseCenter(); });
   $("sonderrV1Close")?.addEventListener("click", closeSonderrV1Announcement);
   $("sonderrV1Later")?.addEventListener("click", closeSonderrV1Announcement);

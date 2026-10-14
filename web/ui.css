@@ -170,6 +170,21 @@ button,input,textarea{font:inherit;color:inherit} button{cursor:pointer;backgrou
 @media(prefers-reduced-motion:reduce){.otter-swimmer,.otter-figure,.otter-tail,.otter-wave,.otter-bubble,.shimmer-text{animation:none}.shimmer-text{background:none;color:#5b6b84}}
 .tools:empty{display:none}
 
+/* ---------- v1.7 workflow: streaming narration, step timer, running cards ---------- */
+.status-elapsed{font-size:10.5px;font-weight:650;color:var(--faint);background:#f2f6fb;border:1px solid #e4ebf3;border-radius:20px;padding:1px 7px;font-family:var(--mono);flex:none}
+.md-seg{font-size:14px;line-height:1.65;color:var(--ink);min-width:0}
+.tools .md-seg{padding:1px 0}
+.md-seg p{margin:0 0 8px}
+.md-seg p:last-child{margin-bottom:0}
+.md-seg.streaming{color:#33415c}
+.stream-caret{display:inline-block;width:8px;height:15px;margin-left:3px;vertical-align:-2px;background:linear-gradient(180deg,#1e7ce0,#22cde2);border-radius:2px;animation:caretBlink 1s steps(2,start) infinite}
+@keyframes caretBlink{50%{opacity:0}}
+.tool.running{border-color:#bcd7ff;background:#fff;box-shadow:0 0 0 3px rgba(47,134,255,.06)}
+.tool.running .tool-ico{animation:toolPulse 1.6s ease-in-out infinite}
+@keyframes toolPulse{50%{box-shadow:0 0 0 4px rgba(47,134,255,.14)}}
+.tool-dur{font-size:10.5px;font-weight:650;color:var(--faint);background:#f2f6fb;border:1px solid #e4ebf3;border-radius:20px;padding:1px 7px;font-family:var(--mono);flex:none;margin-left:2px}
+@media(prefers-reduced-motion:reduce){.stream-caret{animation:none}.tool.running .tool-ico{animation:none}.tool.running{box-shadow:none}}
+
 /* ---------- tool blocks (Claude-style collapsed) ---------- */
 .tools{display:flex;flex-direction:column;gap:8px}
 .tool{border:1px solid #dfe7f1;border-radius:13px;background:var(--panel);overflow:hidden;transition:border-color .15s}

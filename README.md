@@ -1,4 +1,4 @@
-# SONDERR v1.6.0
+# SONDERR v1.7.0
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -53,7 +53,7 @@ If `~/.local/bin` (or `%USERPROFILE%\.local\bin` on Windows) is not already on y
 
 ## Overview
 
-Sonderr v1.6.2 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.6 is the biggest update line yet: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
+Sonderr v1.7.0 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.7 is the workflow update: token-by-token streaming, live step cards for every tool call, narration woven between steps, and a self-healing loop that recovers from provider interruptions and ends safe limits with a real handoff. It rides on the v1.6 line: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
 
 The terminal is only the launcher.
 
@@ -80,6 +80,10 @@ Starting with v1.5.10, the standard managed install checks the official GitHub R
 Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` on macOS/Linux or `%LOCALAPPDATA%\sonderr-v1.5` on Windows (or its configured `XDG_DATA_HOME` / `LOCALAPPDATA` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater runs `scripts/update-release.sh` on POSIX and `scripts/update-release.ps1` on Windows with the same verify-then-swap-and-health-check flow. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
+
+### v1.7.0 — the workflow update
+
+Sonderr's workflow now works like Claude's. Responses stream token-by-token as they are written, with automatic fallbacks for gateways that answer JSON or reject the stream flag. Every tool call is a live step card — pulsing running state, duration badge, collapsible result — and the model narrates briefly between steps so a run reads like a story instead of a silent file dump. The loop is self-healing: mid-loop provider errors retry on a compacted conversation, unrecoverable interruptions end with an honest summary of exactly what was verified and how to continue (turn marked incomplete for resume), and safe limits end with a real written handoff instead of "say continue". Safe ceilings doubled to 40 rounds and 120 tool calls per turn.
 
 ### v1.6.2 — the companion update
 

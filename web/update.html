@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Sonderr v1.6 — Release Center</title>
-<meta name="description" content="The official Sonderr v1.6.0 release center: Swarm 2.0, marathon workflow, otter companion, Studios RC, and security notes.">
+<title>Sonderr v1.7 — Release Center</title>
+<meta name="description" content="The official Sonderr v1.7.0 release center: token streaming, live step cards, the self-healing workflow loop, the otter pet, Swarm 2.0, marathon workflow, Studios, and security notes.">
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
 :root{--navy:#071329;--navy2:#0d1e3c;--blue:#2b6fff;--cyan:#22cde2;--ink:#182338;--muted:#66738a;--line:#e4eaf2}
@@ -63,29 +63,78 @@ footer{border-top:1px solid var(--line);background:#fff}
   <div class="hero-inner">
     <div>
       <div class="hero-mark"><img src="/assets/sonderr-v1-mark.png" alt="">SONDERR <span>RELEASE CENTER</span></div>
-      <span class="kicker">VERSION 1.6.2 · THE COMPANION UPDATE · STILL THE BIGGEST LINE YET</span>
-      <h1>Sonderr v1.6.2<br><em>introduces the otter pet.</em></h1>
-      <p class="lede">This is the release center for Sonderr v1.6.2 — the companion update on top of the largest release yet: a ChatGPT-style otter pet for your screen, a rebuilt Claude-grade working animation, and a bulletproofed workflow with honest empty-turn notices, a stuck-stream watchdog, and classifier-model guards. All of it rides on v1.6's six-worker Swarm 2.0, 72-hour marathon budgets, and specialized Studios. Everything stays local and private.</p>
+      <span class="kicker">VERSION 1.7 · THE WORKFLOW UPDATE · ON TOP OF THE BIGGEST LINE YET</span>
+      <h1>Sonderr v1.7<br><em>streams its own thinking.</em></h1>
+      <p class="lede">This is the release center for Sonderr v1.7 — the workflow update: token-by-token streaming so text appears as it is written, live step cards for every tool call with running states and duration badges, narration woven between steps Claude-style, and a self-healing loop that recovers from provider interruptions, ends limits with a real handoff, and doubles the safe round and tool-call budgets. All of it rides on v1.6.2's otter pet and v1.6's six-worker Swarm 2.0, 72-hour marathon budgets, and specialized Studios. Everything stays local and private.</p>
       <div class="cta">
         <a class="primary" href="https://github.com/dxn111/sonderr/releases/latest" target="_blank" rel="noopener noreferrer">Open the official release ↗</a>
         <a class="ghost" href="/">Back to workspace</a>
       </div>
     </div>
     <figure class="hero-art">
-      <img src="/assets/sonderr-v162-pet.png" alt="Sonderr v1.6.2 key art — the otter pet floating happily on glowing blue water">
-      <figcaption>V1.6.2 · MEET THE OTTER PET</figcaption>
+      <img src="/assets/sonderr-v17-flow.png" alt="Sonderr v1.7 key art — the otter swimming down a glowing blue stream of completed step cards">
+      <figcaption>V1.7 · WATCH SONDERR THINK</figcaption>
     </figure>
   </div>
 </header>
 
 <main class="wrap">
-  <span class="section-label">WHAT'S NEW IN 1.6.2</span>
-  <h2>The companion update</h2>
+  <span class="section-label">WHAT'S NEW IN 1.7</span>
+  <h2>The workflow update</h2>
   <p class="sub">Each change ships in the same local-first package: no accounts, no telemetry, no cloud requirement.</p>
 
   <div class="grid">
     <article class="card">
-      <span class="tag blue">AGENTS</span>
+      <span class="tag blue">NEW IN 1.7 · STREAMING</span>
+      <h3>Token-by-token streaming</h3>
+      <p>Responses now stream live as they are written — the single biggest feel change in Sonderr yet. Narration between tool rounds appears in the same flow, so a run reads like a story instead of a silent file dump. Providers that can't stream fall back automatically; nothing fails because of it.</p>
+      <ul>
+        <li>Live text with a soft streaming caret</li>
+        <li>Narration segments persist between tool calls</li>
+        <li>Automatic JSON fallback for non-streaming gateways</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag">NEW IN 1.7 · STEP CARDS</span>
+      <h3>Live step cards</h3>
+      <p>Every tool call renders as a Claude-style step card: a pulsing running state while it works, a duration badge when it lands, and a collapsible result. The status line counts steps and shows an elapsed timer, so you always know exactly where a long run is.</p>
+      <ul>
+        <li>Running pulse → done badge with duration</li>
+        <li>Step counter + elapsed timer in the status line</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag blue">NEW IN 1.7 · SELF-HEALING</span>
+      <h3>A loop that doesn't die</h3>
+      <p>The old failure — a tool runs, the follow-up request hiccups, the turn just dies — is gone. Mid-loop provider errors retry once on a compacted conversation; if recovery is impossible, the turn ends with an honest summary of exactly what was verified and how to continue. Checkpoints and conversation state survive for resume.</p>
+      <ul>
+        <li>One compacted-conversation recovery per interruption</li>
+        <li>Interrupted turns list completed steps explicitly</li>
+        <li>Marked incomplete so resume keeps full context</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag blue">NEW IN 1.7 · REAL HANDOFFS</span>
+      <h3>Limits end in a handoff, not a dead end</h3>
+      <p>Hitting a safe limit no longer tells you to “say continue”. Sonderr immediately writes the handoff itself: what was completed and verified, what remains, and the single exact next action. And the ceilings doubled — up to 40 tool-model rounds and 120 tool calls per turn — so fewer runs ever touch the limit at all.</p>
+      <ul>
+        <li>Automatic handoff synthesis in the same turn</li>
+        <li>40 rounds (was 24) · 120 tool calls (was 80)</li>
+        <li>Synthesis runs without tool schemas, honestly bounded</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag blue">FROM 1.6.2 · OTTER PET</span>
+      <h3>A pet that lives on your screen</h3>
+      <p>ChatGPT-style companion, specialized: an otter. It floats on its own little pool anywhere on your workspace — drag it wherever you like, click to pet it for hearts, and watch its moods: paddling while Sonderr works, celebrating finished task lists, napping when everything has been quiet for a while. Toggle it from the sidebar; the position and preference persist.</p>
+      <ul>
+        <li>Drag anywhere · click to pet · hearts included</li>
+        <li>Reacts to work, celebrations, and quiet</li>
+        <li>Hand-built vector — crisp at every size</li>
+      </ul>
+    </article>
+    <article class="card">
+      <span class="tag blue">AGENTS · FROM 1.6</span>
       <h3>Swarm 2.0</h3>
       <p>Team rooms now field up to six read-only specialists across eight roles — Researchers, Analysts, Reviewers, Investigators, Builders, Testers, Documenters, and Strategists — and the AI lead closes every run with a published synthesis verdict.</p>
       <ul>
@@ -95,7 +144,7 @@ footer{border-top:1px solid var(--line);background:#fff}
       </ul>
     </article>
     <article class="card">
-      <span class="tag">WORKFLOW</span>
+      <span class="tag">WORKFLOW · FROM 1.6</span>
       <h3>Marathon quality budgets</h3>
       <p>U-tier engineering now reaches U10 at 72 active hours — a genuine one-to-three-day scale. Every request re-states the authoritative elapsed time, so long tasks never drift into guesswork, idling, or hallucinated progress.</p>
       <ul>
@@ -110,7 +159,7 @@ footer{border-top:1px solid var(--line);background:#fff}
       <p>While Sonderr works — including through the final streamed response — a small otter now surfaces in the status line with a gentle swim animation, so you always know the local runtime is busy on your behalf.</p>
     </article>
     <article class="card">
-      <span class="tag blue">NEW IN 1.6.2 · OTTER PET</span>
+      <span class="tag blue">FROM 1.6.2 · OTTER PET</span>
       <h3>A pet that lives on your screen</h3>
       <p>ChatGPT-style companion, specialized: an otter. It floats on its own little pool anywhere on your workspace — drag it wherever you like, click to pet it for hearts, and watch its moods: paddling while Sonderr works, celebrating finished task lists, napping when everything has been quiet for a while. Toggle it from the sidebar; the position and preference persist.</p>
       <ul>
@@ -120,7 +169,7 @@ footer{border-top:1px solid var(--line);background:#fff}
       </ul>
     </article>
     <article class="card">
-      <span class="tag">NEW IN 1.6.2 · WORKFLOW</span>
+      <span class="tag">FROM 1.6.2 · WORKFLOW</span>
       <h3>Bulletproofed turns</h3>
       <p>No more silent failures: empty responses say so honestly with a fix-it note, stuck streams get a reassuring status after 75 seconds instead of an infinite spinner, classifier models are flagged in the picker and blocked from the chat slot server-side, and the working animation is rebuilt as a smooth vector otter gliding between moving wave layers with shimmering status text.</p>
       <ul>
@@ -157,7 +206,14 @@ footer{border-top:1px solid var(--line);background:#fff}
   </div>
 
   <section class="security" style="background:linear-gradient(145deg,#f0f8ff,#eaf6fd);border-color:#d2e8f7">
-    <span class="section-label" style="color:#1e7ce0">NEW IN 1.6.2 · THE OTTER PET</span>
+    <span class="section-label" style="color:#1e7ce0">NEW IN 1.7 · THE WORKFLOW, LIVE</span>
+    <h2>A run that reads like a story.</h2>
+    <p class="sub" style="color:#51678a">Text streams as it is written. Every tool call is a step card with a running pulse and a duration badge. Narration flows between the cards. And when a provider hiccups, the turn recovers or wraps up honestly — it never just dies. The safe ceilings doubled too: 40 rounds and 120 tool calls per turn.</p>
+    <div style="margin:18px 0 4px;border-radius:14px;overflow:hidden;border:1px solid #dbe7f5;box-shadow:0 10px 26px rgba(32,77,139,.08)"><img src="/assets/sonderr-v17-flow.png" alt="The otter swimming down a glowing blue stream of completed step cards" style="display:block;width:100%;height:auto"></div>
+  </section>
+
+  <section class="security" style="background:linear-gradient(145deg,#f0f8ff,#eaf6fd);border-color:#d2e8f7">
+    <span class="section-label" style="color:#1e7ce0">FROM 1.6.2 · THE OTTER PET</span>
     <h2>A companion that lives on your screen.</h2>
     <p class="sub" style="color:#51678a">Drag it anywhere. Pet it for hearts. It paddles while Sonderr works, celebrates finished task lists, and naps when everything is quiet — a hand-built vector otter, crisp at every size, honoring reduced-motion preferences. The working indicator got the same treatment: a smooth gliding swim scene with shimmering status text.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin:18px 0 4px">
@@ -194,13 +250,13 @@ footer{border-top:1px solid var(--line);background:#fff}
   <div class="update-steps">
     <div class="step"><b class="num">1</b><h3>Launch check</h3><p>Sonderr compares your build against the official release on every start. When an update is required, the gate walks you through it — it cannot be dismissed until your install is verified current.</p></div>
     <div class="step"><b class="num">2</b><h3>One-command install</h3><p>Managed installs update themselves in place. Fresh installs take one command from the release page: <code>curl -fsSL https://raw.githubusercontent.com/dxn111/sonderr/main/install.sh | sh</code> (macOS/Linux) or <code>irm https://raw.githubusercontent.com/dxn111/sonderr/main/install.ps1 | iex</code> (Windows PowerShell)</p></div>
-    <div class="step"><b class="num">3</b><h3>Announced every launch</h3><p>The v1.6 announcement greets you on startup; the full notes live here, and past announcements (including the Sonderr-v1 SLM film) stay in the sidebar archive.</p></div>
+    <div class="step"><b class="num">3</b><h3>Announced every launch</h3><p>The v1.7 announcement greets you on startup; the full notes live here, and past announcements (including the otter pet and the Sonderr-v1 SLM film) stay in the sidebar archive.</p></div>
   </div>
 </main>
 
 <footer>
   <div class="foot-inner">
-    <span>Sonderr v1.6.0 · privacy-first local AI workspace · optional Web3 capabilities</span>
+    <span>Sonderr v1.7.0 · privacy-first local AI workspace · optional Web3 capabilities</span>
     <nav>
       <a href="/">Workspace</a>
       <a href="/docs">Docs</a>

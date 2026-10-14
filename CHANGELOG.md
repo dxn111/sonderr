@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.7.0 — The workflow update (token streaming, live step cards, self-healing loop)
+
+### Token-by-token streaming
+- Responses now stream live as the model writes them, Claude-style: OpenAI-compatible SSE is parsed into the same completion shape (content, tool-call deltas reassembled by index, finish reason, usage), and text is pushed to the UI as throttled `delta` events (~90 ms batches). Deltas are live-only — they are never persisted into message events, so history stays lean; mid-loop narration is preserved separately as small `segment` events so reloads still show the story between tool cards.
+- Bulletproof fallbacks, verified by tests: a gateway that ignores the stream flag and answers JSON is sniffed by content type and parsed directly (streaming remembered off for the rest of the turn, no wasted request); a provider that rejects `stream:true` with an HTTP 400 falls back to the classic path mid-turn; an unreadable streamed body retries once through the classic path. The local sonderr-v1 model keeps the classic path. The old 429/413/TPM/compaction machinery is untouched and fully re-verified.
+
+### Live step cards and narration
+- Every tool call renders as a Claude-style step card: a pulsing running state while it executes, a duration badge when it lands (e.g. "2.3s"), and the existing collapsible input/output body. The status line gains a step counter ("Step 3 · Reading files…") and a live elapsed timer chip.
+- The workflow system prompt now asks the model to narrate one or two short sentences between tool rounds — what it learned, what it is doing next — so a run reads like a story instead of a silent file dump, and never to paste raw tool output into the reply.
+
+### The self-healing loop
+- A mid-loop provider failure no longer kills the turn ("lists files then dies" is fixed). The follow-up request retries once on a compacted conversation; if recovery is impossible, the turn ends with an honest progress summary built from the actual completed tool steps ("Completed read_workspace_file · index.html…"), marked incomplete so the checkpoint and conversation persist for resume.
+- Hitting a safe limit no longer dead-ends with "say continue": the turn immediately writes a real handoff (what was verified, what remains, the exact next action) via a tool-less synthesis request, with the classic notice as fallback.
+- Safe ceilings doubled: up to 40 tool→model rounds (was 24) and 120 tool calls (was 80) per user message.
+
+### Announcements and docs
+- New v1.7 launch announcement ("Watch Sonderr think. Literally.") with fresh key art, a v1.7 archive entry, an updated Release Center at /update with the workflow story, and version badges updated to v1.7.0.
+
 ## v1.6.2 — The companion update (otter pet, vector motion, bulletproofing)
 
 ### The otter pet

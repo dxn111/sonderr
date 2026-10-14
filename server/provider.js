@@ -186,6 +186,79 @@ async function readCompletionResponse(response) {
   return data;
 }
 
+/** Parse an OpenAI-compatible SSE chat completion stream into the same shape
+ *  readCompletionResponse returns, pushing live text deltas to the callback as
+ *  they arrive. Throws ("empty-stream" / "no-stream-body") when the body is not
+ *  a usable event stream so the caller can fall back to the classic JSON path. */
+async function readStreamingCompletion(response, pushDelta) {
+  if (!response.body?.getReader) throw new Error("no-stream-body");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let carry = "", content = "", finishReason = null, usage = null, sawAnyChunk = false;
+  const toolCalls = new Map(); // streamed index -> assembled tool call
+  const handleBlock = (block) => {
+    for (const line of block.split("\n")) {
+      const trimmed = line.replace(/\r$/, "").trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let chunk;
+      try { chunk = JSON.parse(payload); } catch { continue; }
+      if (chunk?.error) throw new Error("Provider reported an error while streaming. Check provider configuration, access, and quota.");
+      sawAnyChunk = true;
+      if (chunk.usage && typeof chunk.usage === "object") usage = chunk.usage;
+      const choice = Array.isArray(chunk.choices) ? chunk.choices[0] : null;
+      if (!choice) continue;
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+      const delta = choice.delta || {};
+      const text = typeof delta.content === "string" ? delta.content : "";
+      if (text) { content += text; if (typeof pushDelta === "function") { try { pushDelta(text); } catch {} } }
+      if (Array.isArray(delta.tool_calls)) {
+        for (const part of delta.tool_calls) {
+          const idx = Number.isInteger(part.index) ? part.index : toolCalls.size;
+          const existing = toolCalls.get(idx) || { id: "", type: "function", function: { name: "", arguments: "" } };
+          if (part.id) existing.id = part.id;
+          if (part.function?.name) existing.function.name += part.function.name;
+          if (part.function?.arguments) existing.function.arguments += part.function.arguments;
+          toolCalls.set(idx, existing);
+        }
+      }
+    }
+  };
+  try {
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 24_000_000) {
+        await reader.cancel().catch(() => {});
+        throw new Error("Provider stream exceeded Sonderr's response-size limit.");
+      }
+      carry += decoder.decode(value, { stream: true });
+      let boundary = carry.match(/\r?\n\r?\n/);
+      while (boundary) {
+        const block = carry.slice(0, boundary.index);
+        carry = carry.slice(boundary.index + boundary[0].length);
+        handleBlock(block);
+        boundary = carry.match(/\r?\n\r?\n/);
+      }
+    }
+    if (carry.trim()) handleBlock(carry);
+  } finally { reader.releaseLock?.(); }
+  if (!sawAnyChunk && !content && !toolCalls.size) throw new Error("empty-stream");
+  const message = { role: "assistant", content };
+  if (toolCalls.size) {
+    message.tool_calls = [...toolCalls.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, call]) => call)
+      .map(call => ({ ...call, function: { name: call.function.name, arguments: call.function.arguments || "{}" } }));
+  }
+  const data = { choices: [{ message, finish_reason: finishReason || (toolCalls.size ? "tool_calls" : "stop") }] };
+  if (usage) data.usage = usage;
+  return data;
+}
+
 function publicProviders() { return Object.fromEntries(Object.entries(PROVIDERS).filter(([id]) => id !== "sonderr").map(([id, item]) => [id, { id, ...item }])); }
 
 function providerMessages(messages) {
@@ -1255,8 +1328,8 @@ async function listModels() {
 // Tool execution loop with live events
 // ---------------------------------------------------------------------------
 
-const MAX_ROUNDS = 24;             // bounded tool -> model round trips per user message
-const MAX_TOOL_CALLS = 80;          // hard per-message ceiling, including parallel calls
+const MAX_ROUNDS = 40;             // bounded tool -> model round trips per user message
+const MAX_TOOL_CALLS = 120;         // hard per-message ceiling, including parallel calls
 const TOOL_RESULT_CHAR_LIMIT = 16000; // keep provider payloads sane
 
 /** Truncate long strings inside a tool result so a single tool cannot eat the context. */
@@ -1329,8 +1402,27 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     events.push(event);
     if (onEvent) { try { onEvent(event); } catch {} }
   };
-  const readTrackedCompletion = async (response, startedAt) => {
-    const completion = await readCompletionResponse(response);
+  // v1.7 workflow: stream completions token-by-token when the provider supports
+  // it. Delta events are live-only (never pushed into the persisted events
+  // array) so history stays lean while the user watches text appear in real
+  // time, Claude-style.
+  const streamOpts = { stream: !localSonderrModel && !probe };
+  let deltaBuf = "", deltaLastFlush = 0;
+  const flushDelta = (force = false) => {
+    if (!deltaBuf) return;
+    const now = Date.now();
+    if (!force && now - deltaLastFlush < 90 && deltaBuf.length < 96) return;
+    const text = deltaBuf;
+    deltaBuf = "";
+    deltaLastFlush = now;
+    if (onEvent) { try { onEvent({ type: "delta", text }); } catch {} }
+  };
+  const pushDelta = (text) => {
+    if (!text || shouldStop()) return;
+    deltaBuf += text;
+    flushDelta();
+  };
+  const trackUsage = (completion, startedAt) => {
     usage.requests++;
     const report = completion?.usage || {};
     const inputTokens = Number(report.prompt_tokens ?? report.input_tokens);
@@ -1341,7 +1433,41 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
       usage.requestMs += Math.max(0, Date.now() - startedAt);
       usage.requestsWithUsage++;
     }
-    return completion;
+  };
+  // Fetch + read one completion with bulletproof streaming: if the provider's
+  // streamed body turns out to be unusable, the same turn transparently falls
+  // back to the classic JSON path and retries once.
+  const fetchAndRead = async (chat, extra = {}) => {
+    for (let fallbackAttempt = 0; fallbackAttempt < 2; fallbackAttempt++) {
+      const startedAt = Date.now();
+      const { response, budgetReduced: reduced } = await fetchCompletion(chat, {
+        stream: streamOpts.stream,
+        forceCompactLimit: extra.forceCompactLimit || 0,
+        onStreamRejected: () => { streamOpts.stream = false; }
+      });
+      try {
+        // Bulletproof streaming: sniff the body type. A gateway that ignored
+        // the stream flag and answered JSON is parsed directly (and streaming
+        // is remembered off for the rest of the turn) instead of burning a
+        // retry on an unparsable "stream".
+        const contentType = String(response.headers?.get?.("content-type") || "");
+        const looksStreaming = streamOpts.stream && /text\/event-stream/i.test(contentType);
+        if (streamOpts.stream && !looksStreaming) streamOpts.stream = false;
+        const completion = looksStreaming
+          ? await readStreamingCompletion(response, pushDelta)
+          : await readCompletionResponse(response);
+        flushDelta(true);
+        trackUsage(completion, startedAt);
+        return { data: completion, budgetReduced: reduced };
+      } catch (error) {
+        flushDelta(true);
+        const fallbackable = streamOpts.stream
+          && (error.message === "empty-stream" || error.message === "no-stream-body" || /unreadable response/i.test(error.message));
+        if (!fallbackable || fallbackAttempt === 1 || shouldStop()) throw error;
+        streamOpts.stream = false;
+        emit("status", { text: "The provider's streamed response was unreadable; retrying once through the classic request path." });
+      }
+    }
   };
 
   const anonymousKiloModel = !localSonderrModel && current.provider === "kilo" && !apiKey && /:free$/i.test(model);
@@ -1362,7 +1488,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     headers["x-kilocode-mode"] = ({ ask: "ask", plan: "plan", build: "build", vision: "general" })[mode] || "general";
   }
 
-  function makePayload(chat, tokenBudget) {
+  function makePayload(chat, tokenBudget, stream = false) {
     const localOutputLimit = mode === "build" ? 2048 : mode === "plan" ? 1024 : activeTools.length ? 512 : 384;
     const effectiveTokenBudget = localSonderrModel ? Math.min(tokenBudget, localOutputLimit) : tokenBudget;
     return JSON.stringify({
@@ -1375,12 +1501,12 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
       max_tokens: effectiveTokenBudget,
       tools: activeTools.length ? activeTools : undefined,
       tool_choice: activeTools.length ? (forceToolChoice ? "required" : "auto") : undefined,
-      stream: false
+      stream: Boolean(stream)
     });
   }
 
-  function payloadFor(chat, tokenBudget = current.maxTokens, compactLimit = 0) {
-    let payload = makePayload(chat, tokenBudget);
+  function payloadFor(chat, tokenBudget = current.maxTokens, compactLimit = 0, stream = false) {
+    let payload = makePayload(chat, tokenBudget, stream);
     if (compaction && (compactLimit > 0 || payload.length > maxPayloadChars)) {
       let checkpoint = null;
       try { checkpoint = typeof compaction.getCheckpoint === "function" ? compaction.getCheckpoint() : null; } catch {}
@@ -1391,7 +1517,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
         maxChars: compactLimit || Math.max(24_000, Number(compaction.maxConversationChars) || DEFAULT_CONTEXT_CHARS)
       });
       chat.splice(0, chat.length, ...reduced.messages);
-      payload = makePayload(chat, tokenBudget);
+      payload = makePayload(chat, tokenBudget, stream);
       compactionCount++;
       emit("status", { text: compactLimit
         ? "The provider rejected an oversized request. Sonderr compacted prior conversation around your original request and latest checkpoint before retrying."
@@ -1400,9 +1526,12 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     return payload;
   }
 
-  async function fetchCompletion(chat) {
+  async function fetchCompletion(chat, opts = {}) {
+    // streamEff is the per-call effective flag: a provider that rejects the
+    // stream flag loses it for the rest of this call's retry loop too.
+    let streamEff = Boolean(opts.stream);
     let tokenBudget = Math.max(128, Number(compaction?.maxTokens) || current.maxTokens);
-    let compactLimit = 0;
+    let compactLimit = Math.max(0, Number(opts.forceCompactLimit) || 0);
     let attempt = 0;
     let tpmCooldownRetries = 0;
     let generalRateLimitRetries = 0;
@@ -1410,20 +1539,20 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     const learnedLimit = knownTpmLimit(current);
     if (learnedLimit) {
       emit("status", { text: `Using this provider’s recently observed ${learnedLimit.toLocaleString()} TPM ceiling to right-size the request before sending it.` });
-      let payload = payloadFor(chat, tokenBudget, compactLimit);
+      let payload = payloadFor(chat, tokenBudget, compactLimit, streamEff);
       const margin = Math.max(128, Math.ceil(learnedLimit * 0.05));
       const available = () => Math.floor(learnedLimit - Math.max(0, estimateTokenCount(payload) - tokenBudget) - margin);
       if (available() < 128 && compaction) {
         for (const target of [32_000, 16_000, 8_000, 4_000, 2_000]) {
           compactLimit = target;
-          payload = payloadFor(chat, tokenBudget, compactLimit);
+          payload = payloadFor(chat, tokenBudget, compactLimit, streamEff);
           if (available() >= 128) break;
         }
       }
       if (available() < 128) {
         activeSystem = compactSystemForTpm(mode);
         activeTools = compactToolsForTpm(tools);
-        payload = payloadFor(chat, tokenBudget, compactLimit);
+        payload = payloadFor(chat, tokenBudget, compactLimit, streamEff);
       }
       const safeBudget = available();
       if (safeBudget < 128) {
@@ -1433,7 +1562,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
       if (compaction && tokenBudget < (Number(compaction.maxTokens) || current.maxTokens)) compaction.maxTokens = tokenBudget;
     }
     while (true) {
-      const payload = payloadFor(chat, tokenBudget, compactLimit);
+      const payload = payloadFor(chat, tokenBudget, compactLimit, streamEff);
       let response;
       try {
         response = await fetchProvider(url, { method: "POST", headers, body: payload });
@@ -1447,6 +1576,15 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
       }
       if (response.ok) return { response, tokenBudget, budgetReduced: tokenBudget < current.maxTokens };
       const detail = await readBoundedResponseText(response).catch(() => "");
+      // Bulletproof streaming: a provider that rejects the stream flag (some
+      // gateways only accept stream:false) falls back to the classic JSON path
+      // for the rest of the turn instead of failing the user's request.
+      if (streamEff && response.status === 400 && /\bstream\b/i.test(detail) && typeof opts.onStreamRejected === "function") {
+        opts.onStreamRejected();
+        streamEff = false;
+        emit("status", { text: "This provider does not support streaming responses; falling back to the classic request path." });
+        continue;
+      }
       const observedTpm = parseTpmLimitError(detail);
       if (observedTpm) rememberTpmLimit(current, observedTpm.limit);
       if (response.status === 429) {
@@ -1491,7 +1629,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
         activeSystem = compactSystemForTpm(mode);
           activeTools = compactToolsForTpm(tools);
         }
-        const compactedPayload = payloadFor(chat, tokenBudget, compactLimit);
+        const compactedPayload = payloadFor(chat, tokenBudget, compactLimit, streamEff);
         if (tpm) inputEstimate = Math.max(0, inputEstimate - Math.ceil(Math.max(0, originalLength - compactedPayload.length) / 3.5));
         else inputEstimate = Math.max(0, estimateTokenCount(compactedPayload) - tokenBudget);
       }
@@ -1514,25 +1652,27 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     }
   }
 
-  let requestStartedAt = Date.now();
-  let { response, budgetReduced } = await fetchCompletion(messages);
-
-  let data = await readTrackedCompletion(response, requestStartedAt);
+  let budgetReduced = false;
+  let firstRead = await fetchAndRead(messages);
+  budgetReduced = budgetReduced || firstRead.budgetReduced;
+  let data = firstRead.data;
   if (data?.choices?.[0]?.message?.tool_calls?.length) forceToolChoice = false;
   if (probe) return { ok: true, mode: "provider", model, provider: current.provider, content: "Connection successful." };
 
   if (safety.hasPseudoToolMarkup(data?.choices?.[0]?.message?.content) && typeof executeTool === "function" && activeTools.length && !shouldStop()) {
     emit("status", { text: "The model returned pretend tool syntax. Retrying once through Sonderr's actual structured tools; no action has been taken yet." });
     activeSystem += "\n\n# Structured tool recovery\nThe prior generated text used pseudo-tool markup, which did not execute. Do not print XML, pseudo calls, or claim an action occurred. If the user's current request authorizes a tool action, invoke only the provided structured function tool with valid arguments; otherwise answer normally and say no action was taken.";
-    requestStartedAt = Date.now();
-    const retry = await fetchCompletion(messages);
-    budgetReduced = budgetReduced || retry.budgetReduced;
-    data = await readTrackedCompletion(retry.response, requestStartedAt);
+    const retryRead = await fetchAndRead(messages);
+    budgetReduced = budgetReduced || retryRead.budgetReduced;
+    data = retryRead.data;
     forceToolChoice = false;
   }
 
   let rounds = 0;
   let toolCalls = 0;
+  let completedToolCalls = 0;
+  const toolLog = []; // { label, ok } — bounded evidence for honest interruption wrap-ups
+  let providerInterrupted = "";
 
   while (data?.choices?.[0]?.message?.tool_calls?.length && data?.choices?.[0]?.finish_reason !== "length" && typeof executeTool === "function" && rounds < MAX_ROUNDS && !shouldStop()) {
     rounds++;
@@ -1540,6 +1680,8 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     messages = [...messages, assistant];
 
     emit("round_start", { round: rounds, tools: assistant.tool_calls.length });
+    const narration = String(assistant.content || "").trim();
+    if (narration) emit("segment", { text: narration });
 
     for (const call of assistant.tool_calls) {
       if (shouldStop()) break;
@@ -1586,6 +1728,8 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
 
       const clean = truncateToolResult(output ?? { ok: true });
       const durationMs = Date.now() - started;
+      completedToolCalls++;
+      if (toolLog.length < 40) toolLog.push({ label: String(name || "tool") + (input && input.path ? " · " + String(input.path) : input && input.query ? " · " + String(input.query) : input && input.command ? " · " + String(input.command).slice(0, 60) : ""), ok: !failed });
       const visibleOutput = name === "load_skill" && clean && typeof clean === "object"
         ? { id: clean.id, name: clean.name, category: clean.category, loaded: true, focused: Boolean(clean.focused), sections: clean.sections, omittedInstructions: Boolean(clean.omittedInstructions), instructionChars: String(clean.instructions || "").length, note: clean.focused ? "A task-focused playbook extract is active; detailed text is hidden from the chat card." : "The full playbook is active; detailed text is hidden from the chat card." }
         : name === "task_memory_read" && clean && typeof clean === "object"
@@ -1603,10 +1747,26 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
 
     if (shouldStop()) break;
 
-    requestStartedAt = Date.now();
-    const { response: follow, budgetReduced: followBudgetReduced } = await fetchCompletion(messages);
-    budgetReduced = budgetReduced || followBudgetReduced;
-    data = await readTrackedCompletion(follow, requestStartedAt);
+    let followRead = null;
+    try {
+      followRead = await fetchAndRead(messages);
+    } catch (error) {
+      if (shouldStop()) break;
+      // Bulletproof workflow: a bloated tool result or a provider hiccup must
+      // not kill the whole turn. One recovery attempt on a compacted
+      // conversation before wrapping up honestly.
+      const reason = String(error?.message || "provider error").replace(/\s+/g, " ").slice(0, 140);
+      emit("status", { text: "The provider interrupted the follow-up request (" + reason + "). Retrying once on a compacted conversation." });
+      try {
+        followRead = await fetchAndRead(messages, { forceCompactLimit: 4000 });
+      } catch (error2) {
+        providerInterrupted = String(error2?.message || error?.message || "provider error").replace(/\s+/g, " ").slice(0, 300);
+        emit("status", { text: "The provider interrupted this turn after " + completedToolCalls + " completed tool step" + (completedToolCalls === 1 ? "" : "s") + ". Summarizing verified progress instead of failing." });
+        break;
+      }
+    }
+    budgetReduced = budgetReduced || followRead.budgetReduced;
+    data = followRead.data;
   }
 
   const outputTruncated = data?.choices?.[0]?.finish_reason === "length";
@@ -1621,7 +1781,40 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     emit("status", { text: userPaused ? "Pause requested — finishing the current safe operation." : "Reached the safe " + reason + " — task progress is paused for a later turn." });
   }
 
-  const incomplete = hitRoundLimit || hitToolLimit || userPaused || outputTruncated;
+  // v1.7 workflow, Claude-grade: hitting a safe limit no longer dead-ends the
+  // turn with "say continue". Sonderr immediately writes a real handoff —
+  // what was verified, what remains, the exact next action — in the same turn.
+  if ((hitRoundLimit || hitToolLimit) && !userPaused && !providerInterrupted) {
+    const reason = hitToolLimit ? "tool-call limit (" + MAX_TOOL_CALLS + ")" : "round-trip limit (" + MAX_ROUNDS + ")";
+    emit("status", { text: "Reached the safe " + reason + ". Writing a progress summary with the exact next step…" });
+    const savedTools = activeTools;
+    const savedSystem = activeSystem;
+    const savedForce = forceToolChoice;
+    activeTools = [];
+    forceToolChoice = false;
+    activeSystem += "\n\n# Turn handoff\nYou just reached this turn's safe tool/round limit. From the tool results already in this conversation, write the user a concise handoff: what was completed and verified (with the evidence), what remains, and the single exact next action to take when they say \"continue\". Do not claim unverified work and do not attempt more tool calls.";
+    try {
+      const synth = await fetchAndRead(messages);
+      const synthText = String(synth?.data?.choices?.[0]?.message?.content || "").trim();
+      if (synthText) {
+        data = synth.data;
+        budgetReduced = budgetReduced || synth.budgetReduced;
+      }
+    } catch {
+      // The classic limit notice below remains the honest fallback.
+    } finally {
+      activeTools = savedTools;
+      activeSystem = savedSystem;
+      forceToolChoice = savedForce;
+    }
+  }
+
+  const interruptedNotice = providerInterrupted ? (() => {
+    const steps = toolLog.slice(-12).map(entry => "- " + (entry.ok ? "Completed " : "Attempted ") + entry.label + (entry.ok ? "" : " (did not finish)"));
+    return "The provider interrupted this turn after " + completedToolCalls + " completed tool step" + (completedToolCalls === 1 ? "" : "s") + (steps.length ? ". Verified progress so far:\n" + steps.join("\n") : ".") + "\n\nNothing was lost — say \"continue\" and I'll pick up from this exact point. (" + providerInterrupted + ")";
+  })() : null;
+
+  const incomplete = hitRoundLimit || hitToolLimit || userPaused || outputTruncated || Boolean(providerInterrupted);
   if (!incomplete && loadedSkills.size) {
     let index = 0;
     for (const loaded of [...loadedSkills.values()]) {
@@ -1648,7 +1841,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     }
   }
 
-  const finalContent = safety.sanitizeAssistantOutput((outputTruncated && !data?.choices?.[0]?.message?.content
+  const finalContent = safety.sanitizeAssistantOutput(interruptedNotice || (outputTruncated && !data?.choices?.[0]?.message?.content
     ? "The selected model exhausted its output-token budget before returning any text. Shorten the request or choose a model with a larger output limit; in Settings, increase Max tokens if this provider/model supports it."
     : data?.choices?.[0]?.message?.content) || (userPaused
     ? "I paused the local task at your request and saved its checkpoint where available."

@@ -150,7 +150,7 @@ const windowsUpdater = fs.readFileSync(require.resolve("../scripts/update-releas
 assert.match(windowsUpdater, /api\/health/);
 assert.match(windowsUpdater, /backup/);
 assert.match(readme, /install\.ps1/);
-assert.doesNotMatch(readme, /v1\.[7-9]|35 backend skill playbooks/, "README must not advertise versions newer than the current release");
+assert.doesNotMatch(readme, /v1\.[8-9]|v1\.1[0-9]|35 backend skill playbooks/, "README must not advertise versions newer than the current release");
 const developerPage = fs.readFileSync(require.resolve("../web/docs-development.html"), "utf8");
 for (const expected of ["Sonderr Developer Program", "npm ci", "npm run check", "npm test", "separate program", "pull request"]) assert.ok(developerPage.toLowerCase().includes(expected.toLowerCase()), "developer page is missing: " + expected);
 console.log("capability catalog tests passed");

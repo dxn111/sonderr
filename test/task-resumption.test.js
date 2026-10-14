@@ -99,7 +99,12 @@ function toolCall(id, name, args) {
       }
       let message;
       if (alwaysRequestTools) {
-        message = { role: "assistant", tool_calls: [toolCall("bounded-call-" + callNumber, "task_checkpoint_read", {})] };
+        if (!Array.isArray(body.tools) || !body.tools.length) {
+          // The v1.7 turn-handoff synthesis request arrives without tool schemas.
+          message = { role: "assistant", content: "Handoff: verified the bounded loop end to end; the next step is to resume with a fresh limit." };
+        } else {
+          message = { role: "assistant", tool_calls: [toolCall("bounded-call-" + callNumber, "task_checkpoint_read", {})] };
+        }
       } else if (callNumber === 1) {
         message = { role: "assistant", tool_calls: [toolCall("checkpoint-1", "task_checkpoint_write", {
           goal: "Implement and verify resumable task memory",
@@ -141,8 +146,8 @@ function toolCall(id, name, args) {
 
     const secondTurn = await request(appPort, `/api/sessions/${sessionId}`, "POST", { content: "Continue from checkpoint", mode: "build" });
     assert.equal(secondTurn.status, 200);
-    assert.equal(callNumber, 6, "resume reads the saved checkpoint before answering");
-    const resumeRequest = requests[4];
+    assert.equal(callNumber, 7, "the interrupted follow-up recovers once, reads the saved checkpoint, and still answers in turn one");
+    const resumeRequest = requests[6];
     const latestUserMessage = resumeRequest.messages.filter(message => message.role === "user").at(-1);
     assert.match(latestUserMessage.content, /Saved task checkpoint from an earlier turn/);
     assert.match(latestUserMessage.content, /Resume and inspect the saved checkpoint/);
@@ -204,9 +209,11 @@ function toolCall(id, name, args) {
       executeTool: async () => { executedTools++; return { ok: true }; }
     });
     assert.equal(limitedRun.incomplete, true);
-    assert.equal(limitedRun.rounds, 24);
-    assert.equal(executedTools, 24, "work gets more than the old eight rounds, but remains bounded");
-    assert.match(limitedRun.content, /paused at Sonderr's safe tool limit/i);
+    assert.equal(limitedRun.rounds, 40);
+    assert.equal(executedTools, 40, "work gets more rounds than the old eight, but remains bounded");
+    assert.match(limitedRun.content, /Handoff/i, "a limit turn ends with a real handoff summary instead of a dead end");
+    const synthesisRequest = requests.at(-1);
+    assert.equal(Array.isArray(synthesisRequest.tools), false, "the handoff synthesis runs without tool schemas");
   } finally {
     await Promise.all([appServer, modelServer].map(server => new Promise(resolve => server.close(resolve))));
     fs.rmSync(temporaryHome, { recursive: true, force: true });
