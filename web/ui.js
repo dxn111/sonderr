@@ -1507,18 +1507,102 @@ function renderAgentPollEntry(room, entry) {
   }).join("");
   return '<article class="agent-room-poll-post"><div class="agent-poll-post-author">' + agentAvatarMarkup(leader || { id: "lead", name: "AI lead", role: "Lead", status: "coordinating" }) + '<span><strong>' + esc(leader?.name || "AI Lead") + '</strong><small>LEAD POLL · ' + (poll.status === "closed" ? "VOTE ENDED · RESULTS" : "VOTE IN CHAT") + '</small></span></div><h3>' + esc(poll.question || entry.text || "Team poll") + '</h3><div class="agent-chat-poll-choices">' + options + '</div><p class="agent-poll-post-foot">' + (poll.status === "closed" ? 'AI vote is complete. ' : '') + (ownVote ? 'Your vote: <b>' + esc(poll.userVote.option) + '</b> · You can change it.' : 'Choose an option to add your vote to the room.') + ' AI votes stay separate from your vote.</p></article>';
 }
+/* ---------- v1.7.2 swarm board: phases, timing, live mission card ---------- */
+const SWARM_PHASES = [
+  { id: "research", label: "Research" },
+  { id: "review", label: "Cross-review" },
+  { id: "synthesis", label: "Synthesis" }
+];
+const SWARM_PHASE_LABELS = { research: "Researching", review: "Cross-reviewing", synthesis: "Synthesizing", complete: "Complete" };
+function swarmPhaseOf(room, entries = []) {
+  if (room?.phase) return room.phase;
+  if (!room || room.status !== "active") return "complete";
+  // Legacy saved rooms carry no phase — derive one so old boards still look right.
+  if ((entries || []).some(entry => entry.type === "synthesis")) return "complete";
+  const workers = (room.agents || []).filter(agent => agent.role !== "Lead");
+  if (workers.length && workers.every(worker => ["complete", "failed"].includes(worker.status))) return "synthesis";
+  if (workers.some(worker => worker.status === "reviewing")) return "review";
+  return "research";
+}
+function swarmElapsedLabel(startedAt, completedAt) {
+  const start = Date.parse(startedAt || "");
+  if (!Number.isFinite(start)) return "";
+  const end = Date.parse(completedAt || "");
+  const total = Math.max(0, Math.round(((Number.isFinite(end) ? end : Date.now()) - start) / 1000));
+  if (total < 60) return total + "s";
+  return Math.floor(total / 60) + "m " + String(total % 60).padStart(2, "0") + "s";
+}
+let swarmTicker = null;
+function ensureSwarmTicker() {
+  if (swarmTicker || typeof setInterval !== "function") return;
+  swarmTicker = setInterval(() => {
+    const chips = document.querySelectorAll(".swarm-elapsed[data-started]");
+    if (!chips.length) { clearInterval(swarmTicker); swarmTicker = null; return; }
+    for (const chip of chips) {
+      const label = swarmElapsedLabel(chip.dataset.started, chip.dataset.completed);
+      if (label) chip.textContent = label;
+    }
+  }, 1000);
+}
+function swarmElapsedChip(agent) {
+  if (!agent?.startedAt) return "";
+  return '<span class="swarm-elapsed" data-started="' + esc(agent.startedAt) + '" data-completed="' + esc(agent.completedAt || "") + '">' + esc(swarmElapsedLabel(agent.startedAt, agent.completedAt)) + '</span>';
+}
+function swarmPhaseStrip(room, entries = []) {
+  const phase = swarmPhaseOf(room, entries);
+  const workers = (room.agents || []).filter(agent => agent.role !== "Lead");
+  const done = workers.filter(worker => ["complete", "failed"].includes(worker.status)).length;
+  const order = ["research", "review", "synthesis", "complete"];
+  const activeIndex = order.indexOf(phase);
+  return '<div class="swarm-phases" role="img" aria-label="Team run phases">' + SWARM_PHASES.map((item, index) => {
+    const state = phase === "complete" || index < activeIndex ? " is-done" : index === activeIndex ? " is-active" : "";
+    const count = item.id === "research" && workers.length ? ' <b>' + done + '/' + workers.length + '</b>' : "";
+    return '<span class="swarm-phase' + state + '"><i></i>' + item.label + count + '</span>';
+  }).join("") + '</div>';
+}
 function renderAgentRoomChatCard(roomId) {
   const data = state.agentRooms.get(roomId);
   const room = data?.room;
   const card = document.createElement("section");
   card.className = "agent-room-chat-card";
   if (!room) return card;
+  const entries = data.entries || [];
+  const phase = swarmPhaseOf(room, entries);
   const workers = (room.agents || []).filter(agent => agent.role !== "Lead");
-  const running = workers.filter(agent => ["queued", "researching", "reviewing"].includes(agent.status)).length;
+  const doneCount = workers.filter(agent => ["complete", "failed"].includes(agent.status)).length;
+  const running = workers.length - doneCount;
+  const reviewedCount = entries.filter(entry => entry.type === "review").length;
+  const roomElapsed = swarmElapsedLabel(room.startedAt, room.completedAt);
+  const title = phase === "complete"
+    ? (room.status === "failed" ? "Team run ended with issues" : "Team run complete" + (roomElapsed ? " · " + roomElapsed : ""))
+    : phase === "synthesis" ? "Commander is synthesizing…"
+    : phase === "review" ? "Cross-review underway · " + reviewedCount + '/' + workers.length + " reviewed"
+    : "Team researching · " + doneCount + '/' + workers.length + " done";
   const initials = workers.slice(0, 3).map(agent => '<span title="' + esc(agent.name + " · AI " + agent.role) + '">' + esc(agent.name.split(/\s+/).map(word => word[0]).join("").slice(0, 2)) + '</span>').join("");
-  const taskRows = workers.slice(0, 5).map((agent, index) => '<div class="agent-room-task-row"><i class="agent-room-task-dot status-' + esc(agent.status || "queued") + '"></i><span><b>Worker spawned · x' + (index + 1) + ' <em>' + esc(agent.name || "AI worker") + '</em></b><small>' + esc(agent.activity || agentStatusLabel(agent.status)) + (agent.task ? ' · ' + esc(agent.task) : '') + '</small></span></div>').join("");
-  const helperSpawn = (data.entries || []).filter(entry => entry.type === "activity" && entry.text?.startsWith("Anonymous helper spawned")).at(-1);
+  // Live worker rows: every worker with its assignment, current activity,
+  // status dot, and honest elapsed time — the board reads like a mission feed.
+  const workerRows = workers.map(agent => {
+    const avatar = agentAvatarMarkup(agent, "agent-room-task-avatar", false);
+    const needsHelp = agent.status === "needs_help";
+    return '<div class="agent-room-task-row' + (needsHelp ? ' needs-help' : '') + '">' + avatar +
+      '<span class="agent-room-task-copy"><b>' + esc(agent.name || "AI worker") + ' <em>· ' + esc(agent.role || "worker") + '</em></b>' +
+      '<small>' + esc(agent.activity || agentStatusLabel(agent.status)) + (agent.task ? ' · ' + esc(agent.task) : '') + '</small></span>' +
+      '<span class="agent-room-task-side">' + swarmElapsedChip(agent) + '<i class="agent-room-task-dot status-' + esc(agent.status || "queued") + '"></i></span></div>';
+  }).join("");
+  const helperSpawn = entries.filter(entry => entry.type === "activity" && entry.text?.startsWith("Anonymous helper spawned")).at(-1);
   const helperRow = helperSpawn ? '<div class="agent-room-task-row helper-spawn-row"><i class="agent-room-task-dot status-researching"></i><span><b>Anonymous helper spawned</b><small>Reviewing a blocker in this room</small></span></div>' : "";
+  // Team signal counters: findings, help given, risk flags, votes recorded.
+  const findingCount = entries.filter(entry => entry.type === "finding").length;
+  const helpAnswered = (room.helpRequests || []).filter(request => request.status === "answered").length;
+  const riskCount = (room.risks || []).length;
+  const highRisk = (room.risks || []).some(risk => risk.severity === "high");
+  const voteCount = (room.poll?.votes || []).length;
+  const signals = '<div class="swarm-signals">' + [
+    { n: findingCount, label: "finding" + (findingCount === 1 ? "" : "s") },
+    { n: helpAnswered, label: "helped" },
+    { n: riskCount, label: "risk flag" + (riskCount === 1 ? "" : "s"), alert: highRisk },
+    { n: voteCount, label: "vote" + (voteCount === 1 ? "" : "s") }
+  ].filter(item => item.n > 0).map(item => '<span class="swarm-signal' + (item.alert ? ' alert' : '') + '"><b>' + item.n + '</b> ' + item.label + '</span>').join("") + '</div>';
   const poll = room.poll || {};
   const pollVotes = Array.isArray(poll.votes) ? poll.votes : [];
   const pollCounts = (poll.options || []).map(option => ({ ...option, count: pollVotes.filter(vote => vote.optionId === option.id).length }));
@@ -1526,9 +1610,15 @@ function renderAgentRoomChatCard(roomId) {
   const pollWinners = pollCounts.filter(option => maxVotes > 0 && option.count === maxVotes).map(option => option.label);
   const pollText = poll.status === "closed" ? (pollWinners.length ? pollWinners.join(" / ") + ' · ' + maxVotes + ' vote' + (maxVotes === 1 ? '' : 's') : 'No votes recorded') : (poll.question || 'Poll is open');
   const pollSummary = '<button type="button" class="agent-room-card-poll ' + (poll.status === "closed" ? 'is-closed' : 'is-open') + '"><span class="agent-room-poll-indicator"></span><span><b>' + (poll.status === "closed" ? 'Vote ended' : 'Team poll · open') + '</b><small>' + esc(pollText) + '</small></span><i>Alt+5 ↗</i></button>';
-  card.innerHTML = '<div class="agent-room-card-top"><div class="agent-room-card-mark">✳</div><div class="agent-room-card-copy"><strong>' + (running ? 'Agents are communicating' : 'Agent collaboration complete') + '</strong><small>' + esc(room.leader?.name || "AI lead") + ' leads ' + workers.length + ' AI workers · ' + esc(room.provider || "selected provider") + '</small></div><div class="agent-room-card-avatars">' + initials + '</div><button type="button" class="agent-room-card-open">' + (running ? 'Open team' : 'View team') + ' <kbd>Alt+5</kbd></button></div>' + (taskRows || helperRow ? '<div class="agent-room-task-list" aria-label="Background workers">' + taskRows + helperRow + '</div>' : '') + pollSummary;
+  // The verdict preview: when the run is done, the lead synthesis belongs on
+  // the board itself — the user should not need to open the room to see it.
+  const synthEntry = entries.filter(entry => entry.type === "synthesis").at(-1);
+  const synthText = String(synthEntry?.text || "").trim();
+  const verdict = synthText ? '<div class="swarm-verdict"><span class="swarm-verdict-kicker">LEAD SYNTHESIS</span>' + renderMarkdown(synthText.length > 320 ? synthText.slice(0, 320) + "…" : synthText) + '</div>' : "";
+  card.innerHTML = '<div class="agent-room-card-top"><div class="agent-room-card-mark">✳</div><div class="agent-room-card-copy"><strong>' + esc(title) + '</strong><small>' + esc(room.leader?.name || "AI lead") + ' leads ' + workers.length + ' AI workers · ' + esc(room.provider || "selected provider") + '</small></div><div class="agent-room-card-avatars">' + initials + '</div><button type="button" class="agent-room-card-open">' + (running ? 'Open team' : 'View team') + ' <kbd>Alt+5</kbd></button></div>' + swarmPhaseStrip(room, entries) + (workerRows || helperRow ? '<div class="agent-room-task-list" aria-label="Live team board">' + workerRows + helperRow + '</div>' : '') + signals + pollSummary + verdict;
   card.querySelector(".agent-room-card-open").addEventListener("click", () => openAgentRoom(roomId));
   card.querySelector(".agent-room-card-poll").addEventListener("click", () => openAgentRoom(roomId));
+  ensureSwarmTicker();
   return card;
 }
 function syncAgentRoomUI() {
@@ -1568,13 +1658,35 @@ function renderAgentRoomPanel() {
     }
   }
   const roomState = room.status === "active" ? "working now" : room.status === "failed" ? "task finished · room chat ready" : "task complete · room chat ready";
-  $("agentRoomSubtitle").textContent = (room.provider || "Selected provider") + ' · ' + workers.length + ' read-only AI workers · ' + roomState;
+  const subtitleEl = $("agentRoomSubtitle");
+  if (subtitleEl) {
+    subtitleEl.textContent = (room.provider || "Selected provider") + ' · ' + workers.length + ' read-only AI workers · ' + roomState;
+    // v1.7.2: honest live elapsed for the running room (ticker keeps it fresh).
+    if (room.status === "active" && room.startedAt) {
+      const chip = document.createElement("span");
+      chip.className = "swarm-elapsed";
+      chip.dataset.started = room.startedAt;
+      chip.dataset.completed = "";
+      chip.textContent = swarmElapsedLabel(room.startedAt, "") || "0s";
+      subtitleEl.appendChild(chip);
+    }
+  }
+  const phasesEl = $("agentRoomPhases");
+  if (phasesEl) { phasesEl.hidden = false; phasesEl.innerHTML = swarmPhaseStrip(room, entries); }
   $("agentRoomCount").textContent = String((room.agents || []).length);
   $("agentRoomLiveLabel").textContent = room.status === "active" ? "Live · working" : room.status === "failed" ? "Finished with issues" : "Run complete";
   modal.querySelector(".agent-room-live").classList.toggle("is-done", room.status !== "active");
-  $("agentRoomRoster").innerHTML = (room.agents || []).map(agent =>
-    '<article class="agent-roster-person ' + (agent.role === "Lead" ? "is-lead" : "") + '">' + agentAvatarMarkup(agent, "agent-roster-avatar") + '<span class="agent-roster-copy"><strong>' + esc(agent.name) + '</strong><small>' + (agent.role === "Lead" ? 'AI lead' : 'AI · ' + esc(agent.role)) + (agent.task ? ' · ' + esc(agent.task) : '') + '</small>' + (agent.role === "Lead" ? '' : '<small class="agent-roster-activity" title="' + esc(agent.activity || agentStatusLabel(agent.status)) + '">' + esc(agent.activity || agentStatusLabel(agent.status)) + '</small>') + '</span><span class="agent-roster-status status-' + esc(agent.status) + '">' + esc(agentStatusLabel(agent.status)) + '</span></article>'
-  ).join("");
+  $("agentRoomRoster").innerHTML = (room.agents || []).map(agent => {
+    // v1.7.2 roster upgrades: per-worker elapsed, tokens, findings, reviews.
+    let meta = "";
+    if (agent.role !== "Lead") {
+      const agentFindings = entries.filter(entry => entry.type === "finding" && entry.senderId === agent.id).length;
+      const agentReviews = entries.filter(entry => entry.type === "review" && entry.senderId === agent.id).length;
+      const tokens = Number(agent.stats?.totalTokens) || 0;
+      meta = [swarmElapsedChip(agent), tokens ? tokens.toLocaleString() + " tok" : "", agentFindings ? agentFindings + " finding" + (agentFindings === 1 ? "" : "s") : "", agentReviews ? agentReviews + " review" + (agentReviews === 1 ? "" : "s") : ""].filter(Boolean).join(' · ');
+    }
+    return '<article class="agent-roster-person ' + (agent.role === "Lead" ? "is-lead" : "") + '">' + agentAvatarMarkup(agent, "agent-roster-avatar") + '<span class="agent-roster-copy"><strong>' + esc(agent.name) + '</strong><small>' + (agent.role === "Lead" ? 'AI lead' : 'AI · ' + esc(agent.role)) + (agent.task ? ' · ' + esc(agent.task) : '') + '</small>' + (agent.role === "Lead" ? '' : '<small class="agent-roster-activity" title="' + esc(agent.activity || agentStatusLabel(agent.status)) + '">' + esc(agent.activity || agentStatusLabel(agent.status)) + '</small>') + (meta ? '<small class="agent-roster-meta">' + meta + '</small>' : '') + '</span><span class="agent-roster-status status-' + esc(agent.status) + '">' + esc(agentStatusLabel(agent.status)) + '</span></article>';
+  }).join("");
   const poll = room.poll || { options: [], votes: [], status: "—" };
   $("agentRoomPollState").textContent = poll.status === "open" ? "OPEN" : poll.status === "closed" ? "CLOSED" : "—";
   const votes = Array.isArray(poll.votes) ? poll.votes : [];
@@ -1627,6 +1739,7 @@ function renderAgentRoomPanel() {
     typing.innerHTML = state.agentRoomSending ? '<i class="agent-room-send-spinner"></i><span>' + esc(state.agentRoomSendingTarget) + ' is thinking…</span>' : roomUnavailable ? '<span>This saved room can’t continue after a restart. Start a new team run to keep chatting.</span>' : "";
   }
   requestAnimationFrame(() => { if (stickToLatest) feed.scrollTop = feed.scrollHeight; });
+  ensureSwarmTicker();
   const focusMatches = (attribute, value) => [...modal.querySelectorAll(`[${attribute}]`)].find(element => element.dataset[attribute.replace(/^data-/, "")] === value);
   if (restoreVoteFocus) focusMatches("data-agent-vote", restoreVoteFocus)?.focus({ preventScroll: true });
   else if (restoreJumpFocus) focusMatches("data-agent-jump", restoreJumpFocus)?.focus({ preventScroll: true });
@@ -1778,6 +1891,7 @@ const TOOL_ICONS = {
   ,prepare_wallet_transaction: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 16.5z"/><path d="m8 13 3 3 5-6"/></svg>'
   ,prepare_wallet_swap: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7a6 6 0 0 1 0 10M6 17A6 6 0 0 1 6 7"/></svg>'
   ,send_email: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 4 16 8-16 8 3-8-3-8zM7 12h13"/></svg>'
+  ,spawn_subagents: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.3"/><circle cx="5" cy="18.5" r="2.3"/><circle cx="19" cy="18.5" r="2.3"/><path d="M10.9 7 6.2 16.4M13.1 7l4.7 9.4M7.3 18.5h9.4"/></svg>'
 };
 const TOOL_TITLES = {
   list_workspace_files: "List files",
@@ -1792,6 +1906,7 @@ const TOOL_TITLES = {
   task_checkpoint_read: "Read resume point",
   task_checkpoint_write: "Save resume point", task_memory_list: "List task notes", task_memory_read: "Read task note", task_memory_write: "Save task note",
   present_file: "Present file",
+  spawn_subagents: "Spawn AI team",
   edit_image: "Edit image", add_mcp_server: "Add MCP server", list_mcp_servers: "List MCP servers", list_mcp_tools: "List MCP tools", list_mcp_resources: "List MCP resources", list_mcp_prompts: "List MCP prompts", read_mcp_resource: "Read MCP resource", get_mcp_prompt: "Get MCP prompt", call_mcp_tool: "Call MCP tool", get_workspace_file_info: "Inspect file", git_diff: "Review diff", quality_checkpoint: "Quality checkpoint", create_wallet: "Create local wallet", get_wallet_accounts: "Wallet addresses", get_wallet_status: "Wallet status", get_wallet_price: "Wallet price", get_wallet_market_snapshot: "Token market snapshot", get_wallet_token_allowance: "Inspect token allowance", get_wallet_portfolio: "Wallet portfolio", get_wallet_token_info: "Inspect token", get_wallet_activity: "Wallet activity", get_wallet_watch: "Wallet watch status", set_wallet_watch: "Update wallet watch", prepare_wallet_transaction: "Prepare wallet transaction", prepare_wallet_swap: "Get swap quote", send_email: "Prepare email", list_sol_faucets: "Find SOL faucets", list_earning_opportunities: "Saved earning leads", save_earning_opportunity: "Save earning lead", web_research: "Research the web"
 };
 function toolTitle(name) { return TOOL_TITLES[name] || name; }
@@ -1799,7 +1914,8 @@ function toolIcon(name) { return TOOL_ICONS[name] || (String(name).startsWith("t
 
 function toolSummary(name, input = {}) {
   let s = "";
-  if (name === "todo_write" && Array.isArray(input?.todos)) {
+  if (name === "spawn_subagents" && Array.isArray(input?.tasks)) s = input.tasks.length + " worker" + (input.tasks.length === 1 ? "" : "s") + " · team poll";
+  else if (name === "todo_write" && Array.isArray(input?.todos)) {
     const done = input.todos.filter(t => t?.status === "completed").length;
     const prog = input.todos.filter(t => t?.status === "in_progress").length;
     s = input.todos.length + " tasks" + (done ? " · " + done + " done" : "") + (prog ? " · 1 active" : "");
@@ -1924,12 +2040,15 @@ function buildToolBlocks(events) {
   const wrap = document.createElement("div");
   wrap.className = "tools";
   const byId = new Map();
+  let sawTool = false;
   for (const ev of events || []) {
     if (ev.type === "todo_update") continue; // rendered once by addAgentMessage from the last state
     if (ev.type === "task_checkpoint_update") continue; // rendered as a dedicated resume card
     if (ev.type === "segment") {
       const seg = document.createElement("div");
-      seg.className = "md md-seg";
+      // History mirrors the live view: narration before the first tool call
+      // is the plan and gets the plan kicker.
+      seg.className = "md md-seg" + (sawTool ? "" : " seg-plan");
       seg.innerHTML = renderMarkdown(String(ev.text || ""));
       wrap.appendChild(seg);
       continue;
@@ -1951,6 +2070,7 @@ function buildToolBlocks(events) {
     if (ev.type === "wallet_watch") { wrap.appendChild(renderWalletWatch(ev)); continue; }
     if (ev.type === "tool_start") {
       if (ev.name === "present_file") continue; // the present card IS the UI for this tool
+      sawTool = true;
       const el = createToolBlock(ev.name, ev.input);
       byId.set(ev.id, el);
       wrap.appendChild(el);
@@ -2558,7 +2678,8 @@ function workSpark() {
       if (!text) return;
       if (!this._seg) {
         const seg = document.createElement("div");
-        seg.className = "md md-seg streaming";
+        // Claude pattern: the first narration of a run is the plan — label it.
+        seg.className = "md md-seg streaming" + (this._step ? "" : " seg-plan");
         el.querySelector(".tools").appendChild(seg);
         this._seg = seg;
         this._segText = "";
@@ -2576,7 +2697,7 @@ function workSpark() {
       if (!t) return;
       this.closeSegment();
       const seg = document.createElement("div");
-      seg.className = "md md-seg";
+      seg.className = "md md-seg" + (this._step ? "" : " seg-plan");
       seg.innerHTML = renderMarkdown(t);
       el.querySelector(".tools").appendChild(seg);
       scrollRow();
@@ -2612,6 +2733,7 @@ function workSpark() {
       const block = createToolBlock(ev.name, ev.input);
       live.set(ev.id, block);
       el.querySelector(".tools").appendChild(block);
+      if (ev.name === "spawn_subagents") this._spawnBlock = block;
       this._step = (this._step || 0) + 1;
       this.setStatus("Step " + this._step + " · " + toolTitle(ev.name) + (toolSummary(ev.name, ev.input) ? " · " + toolSummary(ev.name, ev.input) : "") + "…");
       scrollRow();
@@ -2627,8 +2749,17 @@ function workSpark() {
         card.replaceChildren(...next.childNodes);
         if (restoreOpenFocus) card.querySelector(".agent-room-card-open")?.focus({ preventScroll: true });
       } else el.querySelector(".tools").appendChild(next);
-      const busy = (data.room.agents || []).filter(agent => ["queued", "researching", "reviewing"].includes(agent.status)).length;
-      this.setStatus(busy ? 'Agents communicating · ' + busy + ' AI workers' : 'Agent room ready · Alt+5 to view');
+      const workers = (data.room.agents || []).filter(agent => agent.role !== "Lead");
+      const doneCount = workers.filter(agent => ["complete", "failed"].includes(agent.status)).length;
+      const running = workers.length - doneCount;
+      const phase = swarmPhaseOf(data.room, data.entries);
+      // The running "Spawn AI team" step card mirrors live team progress,
+      // Claude-style: the tool card itself reports what the team is doing.
+      if (this._spawnBlock?.isConnected) {
+        const label = this._spawnBlock.querySelector(".tool-wait-label");
+        if (label) label.textContent = running ? running + " workers · " + SWARM_PHASE_LABELS[phase] : "Team wrapping up";
+      }
+      this.setStatus(running ? "AI team working · " + running + " workers · " + SWARM_PHASE_LABELS[phase] : "Agent room ready · Alt+5 to view");
       scrollRow();
     },
     addPresent(p) {
@@ -2672,7 +2803,11 @@ function workSpark() {
         loadSessions();
       }
       if (ev.name === "list_sol_faucets" && !ev.failed && Array.isArray(ev.output?.sources)) el.querySelector(".tools").appendChild(renderSolFaucetCard(ev.output));
-      this.setStatus("Thinking…");
+      if (ev.name === "spawn_subagents") this._spawnBlock = null;
+      // Claude-style honest recovery: a failed step says what happened and
+      // that the plan continues, instead of silently returning to "Thinking…".
+      if (ev.failed && !ev.output?.approvalRequired) this.setStatus("Recovering from " + toolTitle(ev.name).toLowerCase() + " failure — continuing the plan…");
+      else this.setStatus("Thinking…");
     },
     finish(message, connector) {
       this.closeSegment();

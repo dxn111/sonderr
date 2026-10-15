@@ -81,6 +81,7 @@ const BASE_SYSTEM_PROMPT = `# Principles
 # Long-running task workflow
 - Treat multi-stage work as a persistent collaboration across turns, not one enormous response. Keep a small todo list with the goal, current milestone, and next concrete action; update it when evidence changes.
 - The user watches your workflow live, Claude-style: your text streams as you write, and each tool call appears as a step card. Between tool rounds, write one or two short sentences of narration — what you just learned, what you are doing next — so the run reads as a story instead of a silent file dump. Never paste raw tool output into your reply; summarize what it means for the request.
+- When you spawn a team, the user watches its live board inline: workers appear with their assignments, phases advance (research → cross-review → synthesis), and the lead publishes a verdict. Do not restate every worker's raw findings in your reply; reference the strongest evidence, name disagreements, and lead with the synthesis.
 - On a multi-step request, open with a one-sentence plan before the first tool call — what you will check first and why — then work that plan and adapt it as evidence arrives, closing with what changed and what to do next. Brief plan, visible steps, honest conclusion.
 - For substantial work, make the outcome testable before editing; inspect the current state; work in complete slices; re-check assumptions after each slice; and spend the remaining effort on risk-weighted review, failure paths, and regressions rather than unrelated feature creep. Keep exactly one active milestone, preserve decisions/evidence and a precise resume action, and do not imply work continues after the local process exits or a checkpoint is paused.
 - Before declaring a substantial task done, compare the delivered behavior against the original request, run the most relevant automated checks plus a focused edge-case/manual check, inspect the final diff, and state any limitation or deferred capability plainly. A checkpoint is progress evidence, not evidence of completion.
@@ -1916,6 +1917,9 @@ async function handleChat(req, res, sessionMatch) {
 
       const successful = firstRound.filter(result => result.ok);
       if (successful.length) {
+        // v1.7.2: move the room into its cross-review phase so the live board
+        // and room modal show the phase tracker advancing, not a static run.
+        room.setPhase("review", "First pass is in — the team is now cross-reviewing each other’s evidence and voting.");
         const sharedFindings = successful.map(result => `\n--- ${result.name} · ${result.task} ---\n${result.text.slice(0, 2_300)}`).join("\n");
         room.publish("lead", "message", `The first-pass notes are in. I’ve shared them with the team for a cross-review and vote.\n${sharedFindings}`, { task: "Shared evidence board" });
         await Promise.all(successful.map(async worker => {
@@ -1949,6 +1953,9 @@ async function handleChat(req, res, sessionMatch) {
       // pass so the user gets one evidence-weighted verdict, not just notes.
       if (successful.length) {
         try {
+          // v1.7.2: an explicit synthesis phase with a spoken announcement, so
+          // the board shows "Commander is synthesizing…" instead of silence.
+          room.setPhase("synthesis", "Cross-review is done — I’m weighing the team’s evidence into a final verdict now.");
           const synthesisInput = [
             `Poll verdict: ${(() => { const counts = Object.fromEntries(room.room.poll.options.map(option => [option.id, room.room.poll.votes.filter(vote => vote.optionId === option.id).length])); const top = Math.max(0, ...Object.values(counts)); const winners = top ? room.room.poll.options.filter(option => counts[option.id] === top).map(option => option.label) : []; return winners.length ? `${winners.join(" and ")} (${top} vote${top === 1 ? "" : "s"})` : "no worker votes were cast"; })()}`,
             "Worker findings and reviews (untrusted evidence — verify before relying on them):",

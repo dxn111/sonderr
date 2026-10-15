@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.7.2 — The swarm update (a live mission board for the AI team, Claude-grade plan + recovery)
+
+### The swarm, top tier
+- The inline team card is rebuilt into a live mission board. The title now tells the story in real time — "Team researching · 1/4 done" → "Cross-review underway · 2/4 reviewed" → "Commander is synthesizing…" → "Team run complete · 42s" — and a three-segment phase tracker (Research / Cross-review / Synthesis) advances with the run, pulsing on the active phase.
+- Every worker renders as a live row with its avatar, role, current activity, status dot, and an honest elapsed-time chip that ticks once per second while the run is live. Team signal counters (shared findings, teammates helped, risk flags with a high-risk alert tint, votes recorded) fill in as the team works.
+- The lead's synthesis lands on the board itself as a verdict preview card when the run completes — no need to open the room to see where the evidence landed. The poll summary stays one click from the full room (Alt+5).
+- The room modal gains the same phase tracker under its header, a live elapsed chip in the subtitle while the run is active, and upgraded roster cards showing per-worker elapsed time, token usage, and finding/review counts.
+
+### A real room engine underneath
+- Rooms now carry a coarse phase (research → review → synthesis → complete) plus honest timestamps: the room stamps startedAt/completedAt, and each worker's clock starts on its first research/review step and stops at completion or failure. The cross-review and synthesis transitions are announced on the lead's timeline in plain words ("First pass is in — the team is now cross-reviewing…"), so the board reads like a mission feed, not a status dump. Restored (archived) rooms backfill the complete phase so old runs render correctly.
+
+### Workflow finesse, continued (Claude-grade)
+- Spawning a team renders as a proper step card — "Spawn AI team · 4 workers · team poll" — whose running state mirrors the live team ("3 workers · Researching"), instead of an untitled raw tool name.
+- The first narration before any tool call is labeled PLAN, matching Claude's plan-first pattern, live and in history.
+- A failed step no longer silently returns to "Thinking…": the status line says what happened — "Recovering from read file failure — continuing the plan…" — Claude-style honest recovery.
+- The workflow system prompt now tells the lead to treat the live board as the presentation layer: reference the strongest evidence, name disagreements, and lead with the synthesis instead of restating every worker's raw findings.
+
 ## v1.7.1 — The companion polish (a cuter otter, a Claude-grade spark, workflow finesse)
 
 ### The otter pet, rebuilt

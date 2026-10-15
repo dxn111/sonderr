@@ -1,4 +1,4 @@
-# SONDERR v1.7.1
+# SONDERR v1.7.2
 
 ![Sonderr banner](.github/assets/sonderr-banner.svg)
 
@@ -53,7 +53,7 @@ If `~/.local/bin` (or `%USERPROFILE%\.local\bin` on Windows) is not already on y
 
 ## Overview
 
-Sonderr v1.7.1 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.7 is the workflow update: token-by-token streaming, live step cards for every tool call, narration woven between steps, and a self-healing loop that recovers from provider interruptions and ends safe limits with a real handoff. It rides on the v1.6 line: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
+Sonderr v1.7.2 is a privacy-first local AI workspace for serious software-engineering workflows, with optional Web3 wallet capabilities. Engineering is the core product; Web3 is an opt-in toolset, not the whole story. v1.7 is the workflow update: token-by-token streaming, live step cards for every tool call, narration woven between steps, and a self-healing loop that recovers from provider interruptions and ends safe limits with a real handoff — now with a top-tier swarm: the team room runs a live phase tracker (research → cross-review → synthesis), every worker shows its assignment, activity, and honest elapsed time, and the lead's verdict lands right on the board. It rides on the v1.6 line: Swarm 2.0 team rooms, marathon (up to 72 active hour) quality budgets with honest time awareness, the otter pet — a companion that lives on your screen — evidence-carrying task lists, a rebuilt vector working animation, a bulletproofed turn pipeline, and a specialized Sonderr Studios at release-candidate quality with a phase-aware two-specialist Studio Crew, plus a dedicated Release Center at `/update`.
 
 The terminal is only the launcher.
 
@@ -80,6 +80,14 @@ Starting with v1.5.10, the standard managed install checks the official GitHub R
 Choose **Install update & restart** to download the exact release tag, install its locked Node dependencies, preserve the previous application folder as a timestamped backup, and restart on the same localhost port and workspace. If downloading, dependency installation, or the new build's local health check fails, the updater restores and restarts the previous install where possible; the old version remains blocked until the required release is verified. Update diagnostics are stored in `~/.sonderr/update.log` with owner-only permissions.
 
 This updater applies only to the standard install under `~/.local/share/sonderr-v1.5` on macOS/Linux or `%LOCALAPPDATA%\sonderr-v1.5` on Windows (or its configured `XDG_DATA_HOME` / `LOCALAPPDATA` / `SONDERR_INSTALL_DIR` equivalent). It never overwrites a source checkout or local development changes. Development checkouts are exempt. The one-click updater runs `scripts/update-release.sh` on POSIX and `scripts/update-release.ps1` on Windows with the same verify-then-swap-and-health-check flow. A release check requires internet access to GitHub—when the check cannot be verified, the app stays locked and offers retry rather than silently treating an unknown version as safe. Releases are downloaded over GitHub HTTPS; tags are not cryptographically signed by this updater, so review the source/release if your threat model requires signed artifacts.
+
+### v1.7.2 — the swarm update
+
+The AI team gets a top-tier live mission board. The inline team card narrates the run in real time ("Team researching · 1/4 done" → "Cross-review underway" → "Commander is synthesizing…" → "Team run complete · 42s") with a pulsing three-phase tracker, per-worker rows carrying avatar, role, current activity, and honest elapsed chips that tick each second, team signal counters (findings, help given, risk flags, votes), and the lead's synthesis verdict previewed right on the board when the run completes. The room modal (Alt+5) mirrors the tracker and shows per-worker elapsed, token usage, and finding/review counts. Underneath, rooms carry real phases and timestamps; the spawn renders as a titled "Spawn AI team" step card that mirrors live team progress; the first narration is labeled PLAN; and failed steps narrate honest recovery instead of silently returning to "Thinking…".
+
+### v1.7.1 — the companion polish
+
+The otter pet is redrawn from scratch (baby proportions, glossy blinking eyes, blush, curl tail, pebble, twinkling water sparkles) and the working animation is now the Claude pattern: a small brand-gradient spark pulsing beside shimmering status text, with the mascot living only as the pet. Finished tool cards de-emphasize like Claude's past steps, and workflow turns end with a "Worked for 12s · 4 steps" footer chip.
 
 ### v1.7.0 — the workflow update
 

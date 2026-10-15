@@ -18,7 +18,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.7.1 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.7.2 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -404,6 +404,7 @@
       <div class="agent-room-brand"><span class="agent-room-brand-mark">✳</span><div><span class="agent-room-eyebrow">SONDERR · COLLABORATION</span><h2 id="agentRoomTitle">AI agent room</h2><p id="agentRoomSubtitle">Live research, peer review, lead synthesis, and team poll</p></div></div>
       <div class="agent-room-header-actions"><span class="agent-room-live"><i></i><span id="agentRoomLiveLabel">Live</span></span><kbd>ALT 5</kbd><button class="agent-room-close" id="agentRoomClose" type="button" aria-label="Close agent room">×</button></div>
     </header>
+    <div class="agent-room-phases" id="agentRoomPhases" hidden></div>
     <div class="agent-room-layout">
       <aside class="agent-room-roster-panel"><div class="agent-room-section-label">THE TEAM <span id="agentRoomCount">0</span></div><div class="agent-room-roster" id="agentRoomRoster"></div><div class="agent-room-disclosure">AI personas generated for this task. Names are fictional labels, not human staff.</div></aside>
       <section class="agent-room-conversation" aria-label="Agent conversation"><div class="agent-room-conversation-head"><div><strong>Team chat</strong><span>Talk with the team, ask the commander, or message a worker.</span></div><button id="agentRoomJumpLatest" type="button">Latest ↓</button></div><div class="agent-room-feed" id="agentRoomFeed" aria-live="polite"></div><div class="agent-room-typing" id="agentRoomTyping" role="status" aria-live="polite" aria-atomic="true" hidden></div><form class="agent-room-composer" id="agentRoomComposer"><div class="agent-room-composer-top"><label for="agentRoomTarget">Send to</label><select id="agentRoomTarget" aria-label="Choose who to message"><option value="team">The whole team</option><option value="lead">Commander</option></select><span>AI teammates · read-only</span></div><div class="agent-room-composer-input"><textarea id="agentRoomMessage" rows="1" maxlength="1200" placeholder="Say hi or ask about their findings…" aria-label="Message the team"></textarea><button type="submit" id="agentRoomSend">Send <kbd>↵</kbd></button></div><div class="agent-room-composer-hint">Enter to send · Shift+Enter for a new line</div></form></section>

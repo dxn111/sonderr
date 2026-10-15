@@ -967,3 +967,43 @@ details.advanced .adv-body{padding:4px 14px 14px}
 .side-item.otter-pet-toggle.on .otter-pet-state{color:var(--blue-ink)}
 @media(max-width:700px){.otter-pet{width:88px;height:69px}}
 @media(prefers-reduced-motion:reduce){.otter-pet-float,.otter-pet-pool,.otter-pet-tail,.otter-pet-ripple ellipse,.otter-pet-pebble,.otter-pet-eye,.otter-pet-sp,.otter-pet-heart,.otter-pet-z1,.otter-pet-z2{animation:none}.otter-pet.happy .otter-pet-float,.otter-pet.working .otter-pet-float{animation:none}}
+
+/* ---------- v1.7.2 · top-tier swarm board + Claude-grade plan kicker ---------- */
+.swarm-phases{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.swarm-phase{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid #eeeaf4;border-radius:999px;background:#faf9fc;color:#9d95a8;font-size:7px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.swarm-phase i{width:6px;height:6px;border-radius:50%;background:#c6bfd2;flex:none}
+.swarm-phase b{color:#6f6580;font-variant-numeric:tabular-nums}
+.swarm-phase.is-active{border-color:#ddd0f2;background:#f6f1fd;color:#6d55a5}
+.swarm-phase.is-active i{background:#9878c4;box-shadow:0 0 0 3px #9878c422;animation:swarm-phase-pulse 1.5s ease-in-out infinite}
+@keyframes swarm-phase-pulse{50%{box-shadow:0 0 0 6px #9878c418}}
+.swarm-phase.is-done{border-color:#d8ecdf;background:#f2faf5;color:#31815a}
+.swarm-phase.is-done i{background:#4e9b72}
+.swarm-elapsed{display:inline-flex;align-items:center;padding:2px 6px;border:1px solid #eae5f2;border-radius:6px;background:#fbfaff;color:#7a7190;font:650 7px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.agent-room-task-row{align-items:center}
+.agent-room-task-avatar.agent-avatar-trigger{width:26px;height:26px;flex:none;border-radius:8px}
+.agent-room-task-avatar svg{width:26px;height:26px}
+.agent-room-task-copy{display:grid!important;gap:3px;min-width:0;flex:1}
+.agent-room-task-side{display:flex!important;align-items:center;gap:6px;flex:none}
+.agent-room-task-row .agent-room-task-dot{position:static;margin:0;flex:none;width:7px;height:7px;box-shadow:0 0 0 3px #fff}
+.agent-room-task-row.needs-help{border-color:#f0e2cf;background:linear-gradient(120deg,#fffaf3,#fff)}
+.agent-room-task-row.helper-spawn-row{align-items:center}
+.swarm-signals{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.swarm-signals:empty{display:none}
+.swarm-signal{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid #ece8f3;border-radius:999px;background:#fff;color:#7d7490;font-size:7px;font-weight:700}
+.swarm-signal b{color:#5d5472;font-variant-numeric:tabular-nums}
+.swarm-signal.alert{border-color:#f0d9d5;background:#fffaf9;color:#a0524d}
+.swarm-signal.alert b{color:#a54d4d}
+.swarm-verdict{display:grid;gap:6px;padding:10px 12px;border:1px solid #cde9fc;border-radius:11px;background:linear-gradient(135deg,#f3faff,#eef6ff);box-shadow:0 2px 10px rgba(59,130,246,.08);color:#22415e}
+.swarm-verdict .md{font-size:8px;line-height:1.6;color:#2c4a63}
+.swarm-verdict .md p{margin:0}
+.swarm-verdict-kicker{color:#1273a8;font-size:7px;font-weight:850;letter-spacing:.14em}
+.agent-room-phases{padding:10px 22px 12px;border-bottom:1px solid #e9e6ef;background:linear-gradient(105deg,#fdfcff,#f8f6fc)}
+.agent-room-phases .swarm-phase{font-size:8px}
+.agent-roster-meta{display:block!important;overflow:hidden;color:#867d9a!important;font-size:7px!important;text-overflow:ellipsis;white-space:nowrap}
+.agent-roster-meta .swarm-elapsed{margin-right:2px}
+/* Claude pattern: the first narration of a run is the plan — a quiet kicker
+   labels it without stealing attention from the steps that follow. */
+.md-seg.seg-plan{position:relative;padding-left:44px}
+.md-seg.seg-plan::before{content:"PLAN";position:absolute;left:0;top:1px;display:inline-flex;align-items:center;padding:3px 7px;border:1px solid #e3dcf2;border-radius:7px;background:#f7f4fd;color:#715a9d;font-size:7px;font-weight:850;letter-spacing:.13em}
+@media(max-width:700px){.md-seg.seg-plan{padding-left:0;padding-top:24px}.md-seg.seg-plan::before{top:-4px}}
+@media(prefers-reduced-motion:reduce){.swarm-phase.is-active i{animation:none}}

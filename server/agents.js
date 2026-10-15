@@ -63,6 +63,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const worker = {
       id: `worker-${index + 1}`, name: persona.name, role, kind: "AI", status: "queued",
       activity: "Waiting for assignment", task: label,
+      startedAt: null, completedAt: null,
       profile: { bio: `AI ${role.toLowerCase()} focused on ${label}.`, avatarIndex: crypto.randomInt(6) },
       stats: { inputTokens: 0, outputTokens: 0, totalTokens: 0, averageTokensPerSecond: null, responseMs: 0, requests: 0, requestsWithUsage: 0, reported: false }
     };
@@ -80,6 +81,12 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     sessionId: String(sessionId || ""),
     provider: cleanText(providerLabel, 100),
     status: "active",
+    // v1.7.2 top-tier swarm presentation: the room carries a coarse phase so
+    // the inline board and the room modal can show a live phase tracker
+    // (research → cross-review → synthesis → complete) plus honest timing.
+    phase: "research",
+    startedAt: new Date().toISOString(),
+    completedAt: null,
     leader: roster[0],
     agents: roster,
     tasks: cleanTasks,
@@ -96,6 +103,7 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
   ROOMS.set(room.id, room);
   const snapshot = () => ({
     id: room.id, sessionId: room.sessionId, provider: room.provider, status: room.status, leader: room.leader,
+    phase: room.phase, startedAt: room.startedAt, completedAt: room.completedAt,
     agents: room.agents.map(agent => ({ ...agent })),
     poll: { ...room.poll, votes: room.poll.votes.map(vote => ({ ...vote })), userVote: room.poll.userVote ? { ...room.poll.userVote } : null },
     helpRequests: room.helpRequests.map(request => ({ ...request })),
@@ -257,11 +265,26 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
     const agent = room.agents.find(item => item.id === agentId);
     if (!agent || !["queued", "researching", "reviewing", "complete", "failed"].includes(status)) return;
     agent.status = status;
+    // v1.7.2: per-agent timing powers the live elapsed chips in the swarm UI.
+    const now = new Date().toISOString();
+    if ((status === "researching" || status === "reviewing") && !agent.startedAt) agent.startedAt = now;
+    if (status === "complete" || status === "failed") agent.completedAt = now;
     if (status === "researching") agent.activity = "Investigating assigned brief";
     else if (status === "reviewing") agent.activity = "Reviewing shared findings";
     else if (status === "complete") agent.activity = "Finished assignment";
     else if (status === "failed") agent.activity = "Could not complete assignment";
     if (typeof onUpdate === "function") onUpdate({ type: "agent_update", room: snapshot(), entry: null });
+  };
+  // v1.7.2: coarse phase tracker for the swarm UI. Announcements land as lead
+  // activity entries so the timeline explains each transition in plain words.
+  const setPhase = (phase, announcement = "") => {
+    if (!["research", "review", "synthesis", "complete"].includes(phase)) return;
+    if (room.phase !== phase) {
+      room.phase = phase;
+      if (phase === "complete" && !room.completedAt) room.completedAt = new Date().toISOString();
+    }
+    if (announcement) publish("lead", "activity", announcement, { task: "Team lead" });
+    else if (typeof onUpdate === "function") onUpdate({ type: "agent_update", room: snapshot(), entry: null });
   };
   const vote = (agentId, optionId, reason) => {
     const worker = workers.find(item => item.id === agentId);
@@ -286,11 +309,13 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
   };
   const finish = status => {
     room.status = status === "failed" ? "failed" : "complete";
+    if (!room.completedAt) room.completedAt = new Date().toISOString();
+    room.phase = "complete";
     setStatus("lead", room.status === "failed" ? "failed" : "complete");
     if (room.poll.status === "open") closePoll();
     return snapshot();
   };
-  return { room, workers: cleanTasks, snapshot, publish, setStatus, setProfile, addUsage, castUserVote, requestHelp, answerHelp, readBoard, shareFinding, flagRisk, reserveAnonymousHelper, finishAnonymousHelper, publishAnonymousHelper, vote, closePoll, finish };
+  return { room, workers: cleanTasks, snapshot, publish, setStatus, setPhase, setProfile, addUsage, castUserVote, requestHelp, answerHelp, readBoard, shareFinding, flagRisk, reserveAnonymousHelper, finishAnonymousHelper, publishAnonymousHelper, vote, closePoll, finish };
 }
 
 function restoreRoom(savedSnapshot, savedEntries = [], sessionId = "", onUpdate = null) {
@@ -323,6 +348,11 @@ function restoreRoom(savedSnapshot, savedEntries = [], sessionId = "", onUpdate 
   room.sessionId = String(sessionId || "");
   room.provider = cleanText(savedSnapshot.provider, 100) || "selected provider";
   room.status = "complete";
+  // v1.7.2: restored rooms are finished runs; backfill the phase/timing fields
+  // so the swarm board renders a complete state instead of a live one.
+  room.phase = "complete";
+  room.startedAt = savedSnapshot.startedAt || (Array.isArray(savedEntries) && savedEntries[0]?.at) || room.startedAt || new Date().toISOString();
+  room.completedAt = savedSnapshot.completedAt || (Array.isArray(savedEntries) && savedEntries.at(-1)?.at) || new Date().toISOString();
   room.leader = room.agents.find(agent => agent.id === "lead") || room.agents[0];
   room.poll = structuredClone(savedPoll);
   room.poll.votes = Array.isArray(room.poll.votes) ? room.poll.votes : [];
