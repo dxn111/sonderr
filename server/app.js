@@ -80,7 +80,7 @@ const BASE_SYSTEM_PROMPT = `# Principles
 
 # Long-running task workflow
 - Treat multi-stage work as a persistent collaboration across turns, not one enormous response. Keep a small todo list with the goal, current milestone, and next concrete action; update it when evidence changes.
-- The user watches your workflow live, Claude-style: your text streams as you write, and each tool call appears as a step card. Between tool rounds, write one or two short sentences of narration — what you just learned, what you are doing next — so the run reads as a story instead of a silent file dump. Never paste raw tool output into your reply; summarize what it means for the request.
+- The user watches your workflow live, Claude-style: your text streams as you write, and each tool call appears as a step card. Narrate one or two short sentences of what you just learned and what you are doing next — but put that narration in the SAME response as your next tool calls. Never spend a whole response on narration alone: every extra response is a full round trip the user waits through. When more tool calls are obviously next, emit the brief narration and the calls together. Never paste raw tool output into your reply; summarize what it means for the request. Batch independent read-only lookups (several file reads, searches, or checks) into one response; they run in parallel.
 - When you spawn a team, the user watches its live board inline: workers appear with their assignments, phases advance (research → cross-review → synthesis), and the lead publishes a verdict. Do not restate every worker's raw findings in your reply; reference the strongest evidence, name disagreements, and lead with the synthesis.
 - On a multi-step request, open with a one-sentence plan before the first tool call — what you will check first and why — then work that plan and adapt it as evidence arrives, closing with what changed and what to do next. Brief plan, visible steps, honest conclusion.
 - For substantial work, make the outcome testable before editing; inspect the current state; work in complete slices; re-check assumptions after each slice; and spend the remaining effort on risk-weighted review, failure paths, and regressions rather than unrelated feature creep. Keep exactly one active milestone, preserve decisions/evidence and a precise resume action, and do not imply work continues after the local process exits or a checkpoint is paused.
@@ -568,16 +568,16 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
     "task_checkpoint_write", "task_memory_list", "task_memory_read", "task_memory_write", "quality_checkpoint"
   ]);
   if (buildOnlyTools.has(name) && taskMode !== "build") {
-    throw new Error(`${name} is unavailable in ${taskMode || "this"} task mode. Switch the task mode to Build to continue; no change or external action was made.`);
+    throw new Error(`${name} is unavailable in this read-only context (built-in docs, team rooms, and helper runs are read-only). Send the request as a normal chat message to get full workspace tools; no change or external action was made.`);
   }
   if (name === "todo_write" && taskMode === "ask") {
-    throw new Error("Ask mode does not modify task plans. Switch to Plan to create a plan, or Build to track implementation work.");
+    throw new Error("Task lists are read-only in this context; normal chat requests can create and track plans.");
   }
   if (name === "todo_write" && !["plan", "build"].includes(taskMode)) {
     throw new Error("Task lists are available in Plan and Build modes only.");
   }
   if (name === "edit_image" && taskMode !== "vision") {
-    throw new Error("Image generation and edits are available in Vision mode. Switch to Vision before starting image work.");
+    throw new Error("Image generation and edits run in vision turns — attach an image or request new image work in a normal chat message and Sonderr switches automatically.");
   }
   const accessGatedTools = new Set([
     "write_workspace_file", "patch_workspace_file", "save_earning_opportunity", "send_email",
@@ -616,7 +616,7 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (["add_mcp_server", "connect_mcp_server", "call_mcp_tool"].includes(name) && taskMode === "ask") {
-    throw new Error("MCP server actions are disabled in Ask mode. Switch the task mode to Build to continue.");
+    throw new Error("MCP server actions are unavailable in this read-only context; send the request as a normal chat message.");
   }
   if (["connect_mcp_server", "list_mcp_tools", "list_mcp_resources", "list_mcp_prompts", "read_mcp_resource", "get_mcp_prompt", "call_mcp_tool"].includes(name) && mode === "ask") {
     throw approvalError("Connecting to or reading from an MCP server needs a higher Tools & Access level. Choose Auto-approve or Full workspace access in Settings → Tools & Access.");
@@ -701,9 +701,9 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "write_workspace_file") {
-    if (taskMode !== "build") throw new Error("Workspace edits are available in Build mode. Switch the task mode to Build before changing files; nothing was written.");
+    if (taskMode !== "build") throw new Error("This read-only context cannot change files. Send the change as a normal chat message; nothing was written.");
     if (!safety.hasWorkspaceEditIntent(execution.userText)) throw new Error("Workspace edits need a direct change request in the current message. Earlier context can identify the file but cannot authorize a write.");
-    if (mode === "ask") throw new Error("Ask mode is read-only, so this file was not written. Switch the task mode to Build to edit it.");
+    if (mode === "ask") throw new Error("This conversation is running read-only, so this file was not written. Send the change request as a normal chat message to edit it.");
     const file=workspaceFile(input?.path);
     if(!file) throw new Error("Path is outside the workspace");
     const relPath=path.relative(process.cwd(),file);
@@ -722,9 +722,9 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "patch_workspace_file") {
-    if (taskMode !== "build") throw new Error("Workspace edits are available in Build mode. Switch the task mode to Build before changing files; nothing was patched.");
+    if (taskMode !== "build") throw new Error("This read-only context cannot change files. Send the change as a normal chat message; nothing was patched.");
     if (!safety.hasWorkspaceEditIntent(execution.userText)) throw new Error("Workspace patches need a direct change request in the current message. Earlier context can identify the file but cannot authorize an edit.");
-    if (mode === "ask") throw new Error("Ask mode is read-only, so this file was not patched. Switch the task mode to Build to edit it.");
+    if (mode === "ask") throw new Error("This conversation is running read-only, so this file was not patched. Send the change request as a normal chat message to edit it.");
     const file = workspaceFile(input?.path);
     if (!file) throw new Error("Path is outside the workspace");
     const stat = fs.statSync(file);
@@ -816,7 +816,7 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "run_terminal_command") {
-    if (taskMode !== "build") throw new Error("Terminal commands are not available in this task mode. Switch to Build to run a command; Full PC access is also required.");
+    if (taskMode !== "build") throw new Error("Terminal commands are not available in this read-only context; normal chat requests can run them with Full PC access.");
     if (mode !== "full_pc") throw approvalError("Terminal commands need Full PC access (Settings → Tools & Access).");
     if (!safety.hasTerminalExecutionIntent(execution.userText)) throw new Error("Running a terminal command requires a direct execution request in the current message. Asking how to run a command does not authorize it; no command was run.");
     const command=String(input?.command||"").trim();
@@ -847,7 +847,7 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "run_project_checks") {
-    if (taskMode !== "build") throw new Error("Project checks are available in Build mode. Switch the task mode to Build before running project scripts.");
+    if (taskMode !== "build") throw new Error("Project checks are not available in this read-only context; normal chat requests can run project scripts.");
     if (mode !== "full_pc") throw approvalError("Project checks need Full PC access because package scripts execute local code.");
     if (!safety.hasVerificationIntent(execution.userText)) throw new Error("Running project checks requires an explicit user request to test, verify, lint, typecheck, or build in this message.");
     const requested = Array.isArray(input?.checks) ? [...new Set(input.checks.map(String))].slice(0, 5) : [];
@@ -1041,7 +1041,7 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "set_wallet_watch") {
-    if (taskMode === "ask") throw new Error("Ask mode is read-only, so wallet watch settings were not changed. Switch to Build, then enable the required Tools & Access level.");
+    if (taskMode === "ask") throw new Error("This read-only context cannot change wallet watch settings; send the request as a normal chat message, then enable the required Tools & Access level.");
     if (!safety.hasWalletWatchIntent(execution.userText)) throw new Error("Starting or stopping wallet watch needs a direct request in the current message; earlier context cannot change the watch state.");
     if (approvalMode() === "ask") throw approvalError("Changing wallet watch settings needs approval. Switch Tools & Access to Auto-approve or Full workspace access first.");
     if (typeof input?.enabled !== "boolean") throw new Error("enabled must be true or false");
@@ -1144,8 +1144,8 @@ async function executeWorkspaceTool(name, input, emit, execution = {}) {
   }
 
   if (name === "edit_image") {
-    if (taskMode !== "vision") throw new Error("Image generation and edits are available in Vision mode. Switch to Vision before starting image work.");
-    if (mode === "ask") throw approvalError("Creating images needs a higher Tools & Access level. Choose Auto-approve or Full workspace access, then retry in Vision mode.");
+    if (taskMode !== "vision") throw new Error("Image generation and edits run in vision turns — attach an image or request new image work in a normal chat message and Sonderr switches automatically.");
+    if (mode === "ask") throw approvalError("Creating images needs a higher Tools & Access level. Choose Auto-approve or Full workspace access, then ask for the image work again.");
     if (!safety.hasImageEditIntent(execution.userText)) throw new Error("Image generation or editing needs a direct request in the user's current message; image analysis alone does not authorize an edit.");
     const prompt = String(input?.prompt || "").trim();
     if (!prompt) throw new Error("prompt is required — describe the complete desired image");
@@ -1179,7 +1179,7 @@ function modeInstructions(mode) {
   return {
     ask: "Mode: Ask. Answer the question directly and completely. Use any relevant supplied read-only tools to ground answers about the user's actual files, app, web, or environment. Do not claim a tool is unavailable when it is supplied, and do not tell the user to switch modes unless the exact requested action needs a Build-only capability. Ask is read-only: workspace edits and project checks require Build; project scripts also require Full PC access. Do not switch modes on the user's behalf. If the request crosses a boundary, state the exact unavailable action and what you can still do in Ask. Skip the todo list unless the question turns into real multi-step work.",
     plan: "Mode: Plan. Produce a concrete engineering plan: goal, affected files (verify paths with tools first), ordered implementation steps, risks, and how to verify each step. Do not change files in this mode. Express the plan as a todo_write list with every item pending, then summarize the plan in prose.",
-    build: "Mode: Build is the default workspace mode. First classify the current message: a greeting or simple factual question deserves a direct answer and no todo/checkpoint ceremony; an inspection request should inspect only the named scope; an implementation request should inspect before editing, then implement it with supplied tools. For work with 3+ steps, multiple files, or meaningful investigation, start a concise todo list and keep exactly one milestone active. Before substantive file changes, call quality_checkpoint using a tier that fits the real scope. For substantial or multi-turn work, create/update task_checkpoint_write with evidence and a precise next action after each milestone. On U-tier (marathon) tasks: keep every edit H-tier sized and verified, keep making real progress while useful slices remain, never idle or manufacture filler, and re-ground on the original request at each hour boundary. Keep status active while useful progress remains; mark paused only for a real permission boundary, a materially blocking decision, provider/runtime failure, or when no useful work remains. Mark completed only after the requested outcome and verification are genuinely complete. Re-read and verify saved checkpoints before resuming. Build jobs continue in Sonderr's local process while the browser is closed, but stop if that process exits. Report exactly what you did and checked. Prefer the smallest safe change that fully solves the task."
+    build: "Mode: Build is Sonderr's unified mode — the user does not pick between Ask/Plan/Build/Vision; you route each message automatically. First classify the current message: a greeting or simple factual question deserves a direct answer and no todo/checkpoint ceremony; an inspection request should inspect only the named scope; a planning request should produce the plan without changing files; an implementation request should inspect before editing, then implement it with supplied tools. For work with 3+ steps, multiple files, or meaningful investigation, start a concise todo list and keep exactly one milestone active. Before substantive file changes, call quality_checkpoint using a tier that fits the real scope. For substantial or multi-turn work, create/update task_checkpoint_write with evidence and a precise next action after each milestone. On U-tier (marathon) tasks: keep every edit H-tier sized and verified, keep making real progress while useful slices remain, never idle or manufacture filler, and re-ground on the original request at each hour boundary. Keep status active while useful progress remains; mark paused only for a real permission boundary, a materially blocking decision, provider/runtime failure, or when no useful work remains. Mark completed only after the requested outcome and verification are genuinely complete. Re-read and verify saved checkpoints before resuming. Build jobs continue in Sonderr's local process while the browser is closed, but stop if that process exits. Report exactly what you did and checked. Prefer the smallest safe change that fully solves the task."
   }[mode] || "";
 }
 
@@ -1427,10 +1427,17 @@ async function handleChat(req, res, sessionMatch) {
   if (docsAssistant && submittedContent.length > 2_500) return json(res, { error: "Program help questions are limited to 2,500 characters. Please leave sensitive report details out of this chat." }, 413);
   const inputAssessment = safety.assessUserMessage(submittedContent);
   const content = safety.redactText(submittedContent);
-  const mode = docsAssistant ? "ask" : ["ask", "plan", "build", "vision"].includes(parsed.mode) ? parsed.mode : "build";
   const requestedImages = (Array.isArray(parsed.images) ? parsed.images : []).map(String).slice(0, 4);
   const imagePaths = (Array.isArray(parsed.images) ? parsed.images : []).map(String).slice(0, 4)
     .map(p => workspaceFile(p)).filter(Boolean).filter(f => { try { return fs.statSync(f).isFile(); } catch { return false; } });
+  const requestedMode = ["auto", "ask", "plan", "build", "vision"].includes(parsed.mode) ? parsed.mode : "build";
+  // v1.7.3 unified workflow: Ask, Plan, Build, and Vision collapse into one
+  // automatic mode for normal chats — Sonderr answers simple questions
+  // directly and does real work when the request needs it. "auto" resolves
+  // to vision when images are attached, otherwise the Build runner (whose
+  // instructions already classify each message). Legacy modes from older
+  // clients and internal callers (docs assistant, team rooms) still work.
+  const mode = docsAssistant ? "ask" : requestedMode === "auto" ? (imagePaths.length ? "vision" : "build") : requestedMode;
   if (!content && !imagePaths.length) return json(res, { error: "content is required" }, 400);
 
   const activeSessionId = String(sessionMatch[1]);
@@ -1701,6 +1708,9 @@ async function handleChat(req, res, sessionMatch) {
     ]);
     const subagentTools = provider.TOOL_DEFINITIONS.filter(tool => readOnlySubagentTools.has(tool?.function?.name));
     const spawnSubagents = async (input, report) => {
+      // v1.7.3: the swarm honors the composer Stop button like every other
+      // agent work — checked before each worker pass and between phases.
+      const userStoppedRun = () => pauseRequestedSessions.has(activeSessionId);
       const requested = Array.isArray(input?.tasks) ? input.tasks : [];
       if (!requested.length) throw new Error("Provide one to six independent worker tasks.");
       if (requested.length > 6) throw new Error("Sonderr can run at most six workers at once.");
@@ -1726,6 +1736,11 @@ async function handleChat(req, res, sessionMatch) {
 
       const runWorker = async (worker, task, phase, userContent, options = {}) => {
         const workerStartedAt = Date.now();
+        if (userStoppedRun()) {
+          room.setStatus(worker.id, "skipped");
+          room.publish(worker.id, "activity", "Stopped by user — this pass was skipped", { task: task.name });
+          return { ok: false, text: "", elapsedMs: 0, stopped: true };
+        }
         room.setStatus(worker.id, phase === "research" ? "researching" : "reviewing");
         const phaseLabel = phase === "research" ? "Research" : "Peer review";
         const helpProperties = { question: { type: "string", description: "What is blocked or which specific evidence or expertise would help?" } };
@@ -1916,7 +1931,7 @@ async function handleChat(req, res, sessionMatch) {
       }));
 
       const successful = firstRound.filter(result => result.ok);
-      if (successful.length) {
+      if (successful.length && !userStoppedRun()) {
         // v1.7.2: move the room into its cross-review phase so the live board
         // and room modal show the phase tracker advancing, not a static run.
         room.setPhase("review", "First pass is in — the team is now cross-reviewing each other’s evidence and voting.");
@@ -1951,7 +1966,12 @@ async function handleChat(req, res, sessionMatch) {
       }
       // v1.6 Swarm 2.0: the lead closes every room with an explicit synthesis
       // pass so the user gets one evidence-weighted verdict, not just notes.
-      if (successful.length) {
+      // v1.7.3: a stopped run skips the remaining phases and closes honestly.
+      if (successful.length && userStoppedRun()) {
+        room.setPhase("synthesis", "Run stopped by the user — closing the room with the evidence gathered so far.");
+        room.publish("lead", "message", "You stopped the run — closing the room with whatever the team had gathered. Say continue and we'll pick the work back up from here.", { task: "Run stopped" });
+      }
+      if (successful.length && !userStoppedRun()) {
         try {
           // v1.7.2: an explicit synthesis phase with a spoken announcement, so
           // the board shows "Commander is synthesizing…" instead of silence.
@@ -2157,7 +2177,7 @@ async function handleChat(req, res, sessionMatch) {
     const saved = store.addMessage(session.id, "assistant", safeContent, {
       events: safeEvents, mode, model: result.model || null
     });
-    sse(res, "final", { message: safeContent, incomplete: Boolean(result.incomplete), mode, model: result.model || null, events: safeEvents, todos: store.getTodos(session.id) || [], session: publicSession(saved) });
+    sse(res, "final", { message: safeContent, incomplete: Boolean(result.incomplete), mode, model: result.model || null, firstTokenMs: result.usage?.firstTokenMs ?? null, events: safeEvents, todos: store.getTodos(session.id) || [], session: publicSession(saved) });
   } catch (e) {
     const checkpoint = store.taskCheckpoint(session.id);
     if (mode === "build" && checkpoint?.taskKey === qualityTaskKey && checkpoint.status === "active") {
@@ -2346,6 +2366,17 @@ function apiRoute(req,res,url,server) {
     if(!activeChatSessions.has(id)) return json(res,{error:"This task is not currently running"},409);
     pauseRequestedSessions.add(id);
     return json(res,{ok:true,message:"Pause requested. Sonderr will stop after the current provider response or safe tool operation."});
+  }
+  // v1.7.3 Claude-grade stop: any running turn can be stopped from the
+  // composer, with or without a resumable checkpoint. The agent loop checks
+  // this between every safe operation, finishes honestly, and saves the
+  // wrap-up to history even after the browser stopped listening.
+  const stopMatch=url.pathname.match(/^\/api\/sessions\/([^/]+)\/stop$/);
+  if(req.method==="POST" && stopMatch) {
+    const id=stopMatch[1];
+    if(!activeChatSessions.has(id)) return json(res,{error:"This task is not currently running"},409);
+    pauseRequestedSessions.add(id);
+    return json(res,{ok:true,message:"Stop requested. Sonderr will finish the current safe operation, then wrap up with an honest summary."});
   }
   const sessionMatch=url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
   if(req.method==="GET" && sessionMatch) {
@@ -2598,6 +2629,10 @@ function createServer() {
       if(handled!==false) return;
     }
     const docsRoutes = { "/docs": "docs.html", "/docs/": "docs.html", "/docs/bounty": "docs-bounty.html", "/docs/developer": "docs-development.html", "/docs/development": "docs-development.html", "/docs/privacy": "docs-privacy.html", "/update": "update.html", "/update/": "update.html", "/studios": "index.html", "/studios/": "index.html", "/trading": "index.html", "/trading/": "index.html" };
+    // v1.7.3: the official DXN1 Studios docs site — the always-current
+    // handbook. The in-app handbook stays for offline use; this route hands
+    // visitors the online reference in one hop.
+    if (url.pathname === "/docs/online") { res.writeHead(302, { Location: "https://dxn1-docs.vercel.app" }); return res.end(); }
     const file=safeFile(docsRoutes[url.pathname] ? "/" + docsRoutes[url.pathname] : url.pathname);
     if(!file) return json(res,{error:"Forbidden"},403);
     fs.stat(file,(err,stat)=>{

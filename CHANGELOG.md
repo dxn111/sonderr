@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.7.3 — The stop update (one automatic workflow, a real Stop button, faster tool calling)
+
+### One automatic workflow — Ask, Plan, Build, and Vision are now one
+- The mode picker is gone. The composer shows a single **Auto** chip: Sonderr answers simple questions directly, plans when you ask for a plan, builds when you ask for work, and handles images automatically — no mode to switch, ever (the Claude pattern). Attaching an image routes the turn through vision automatically, and the model menu prioritizes vision-capable models whenever an image is attached.
+- Legacy modes still work through the API for older clients; internal read-only contexts (the built-in docs assistant, team rooms, helper runs) keep their boundaries. The real permission gate was always Tools & Access, and it stays exactly as strict as before.
+- Every tool-gate error was rewritten to be mode-agnostic — nothing tells you to "switch modes" anymore.
+
+### A real Stop button
+- While Sonderr works, the send button becomes a **Stop button** (square glyph, Esc works too — unless a modal has focus). Stopping aborts the live stream instantly and freezes the run UI at exactly what is on screen: running step cards flip to "Stopped", and an honest chip explains that the summary will appear in history.
+- The server wraps the stopped turn up gracefully: one tool-less pass writes a brief honest summary of what was completed, verified, and what remains — saved to history even after the browser stopped listening. A persisted "Stopped · N steps done" chip renders in history too.
+- The swarm honors Stop like every other work: workers that had not started are marked **skipped** (visible on the board with an amber dot and "Stopped · skipped" label), remaining phases are skipped, and the lead closes the room with what the team had gathered.
+
+### Tool calling, fixed and faster
+- **Parallel read-only rounds**: when one round asks for several strictly read-only tools (file reads, searches, wallet reads, MCP reads, web research), they now run concurrently instead of one-by-one. Any round containing a side-effect tool stays strictly sequential, so mutations can never race.
+- **Malformed-argument repair**: providers occasionally emit truncated or invalid tool-call JSON. One cheap structural repair (balance braces, drop trailing commas, escape raw control characters in strings) now saves the step instead of failing the call and burning a whole provider round on self-correction.
+- **Narration rides with the tools**: the workflow prompt now instructs narration to be emitted in the same response as the next tool calls — never a whole round spent on narration alone, which was a hidden round-trip tax on every multi-step task. Independent read-only lookups are batched into one response.
+
+### Latency, made visible
+- The worked chip now reports **first-token latency** ("Worked for 42s · 7 steps · first token 1.8s") so slow providers are visible instead of mysterious.
+
+### The official docs, one click away
+- The app now links to the official DXN1 Studios docs site — **[dxn1-docs.vercel.app](https://dxn1-docs.vercel.app)** — from the topbar (Docs), the welcome screen, the built-in handbook, and the Release Center. `/docs/online` redirects straight there; the local handbook keeps covering the essentials offline.
+
 ## v1.7.2 — The swarm update (a live mission board for the AI team, Claude-grade plan + recovery)
 
 ### The swarm, top tier

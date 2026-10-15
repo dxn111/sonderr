@@ -1331,6 +1331,68 @@ async function listModels() {
 const MAX_ROUNDS = 40;             // bounded tool -> model round trips per user message
 const MAX_TOOL_CALLS = 120;         // hard per-message ceiling, including parallel calls
 const TOOL_RESULT_CHAR_LIMIT = 16000; // keep provider payloads sane
+// v1.7.3 latency: when a single round asks for several of these strictly
+// read-only tools, they run concurrently instead of one-by-one. Side-effect
+// tools never join this set, so a round containing any mutating call stays
+// strictly sequential.
+const READ_ONLY_PARALLEL_TOOLS = new Set([
+  "list_workspace_files", "read_workspace_file", "search_workspace", "get_workspace_file_info", "git_diff",
+  "todo_read", "task_memory_list", "task_memory_read", "task_checkpoint_read",
+  "get_wallet_accounts", "get_wallet_status", "get_wallet_price", "get_wallet_market_snapshot",
+  "get_wallet_token_allowance", "get_wallet_portfolio", "get_wallet_token_info", "get_wallet_activity",
+  "get_wallet_watch", "list_sol_faucets", "list_earning_opportunities",
+  "list_mcp_servers", "list_mcp_tools", "list_mcp_resources", "list_mcp_prompts", "read_mcp_resource", "get_mcp_prompt",
+  "web_research"
+]);
+// Providers occasionally emit slightly malformed tool arguments (truncated
+// JSON, trailing commas). One cheap structural repair beats failing the call
+// and burning a whole extra round on the model's self-correction.
+function repairToolArguments(raw) {
+  let s = String(raw || "").trim();
+  if (!s.startsWith("{") && !s.startsWith("[")) return null;
+  s = s.replace(/,\s*([}\]])/g, "$1");
+  let depth = 0, inStr = false, esc = false, lastBalanced = -1;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === "\"") inStr = false;
+      continue;
+    }
+    if (ch === "\"") inStr = true;
+    else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") {
+      depth--;
+      if (depth === 0) { lastBalanced = i; break; }
+    }
+  }
+  if (lastBalanced > 0 && lastBalanced < s.length - 1) s = s.slice(0, lastBalanced + 1);
+  else if (depth > 0) { if (inStr) s += "\""; s += (s.startsWith("[") ? "]" : "") + "}".repeat(Math.max(0, depth - (s.startsWith("[") ? 1 : 0))); }
+  const parse = text => { try { const value = JSON.parse(text); return value && typeof value === "object" ? value : null; } catch { return null; } };
+  const direct = parse(s);
+  if (direct) return direct;
+  // Second chance: providers sometimes emit raw control characters (real
+  // newlines/tabs) inside string values, which strict JSON.parse rejects.
+  // Escape them in-place, inside strings only.
+  let fixed = "", inS = false, esc2 = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inS) {
+      if (esc2) { esc2 = false; fixed += ch; continue; }
+      if (ch === "\\") { esc2 = true; fixed += ch; continue; }
+      if (ch === "\"") { inS = false; fixed += ch; continue; }
+      if (ch === "\n") { fixed += "\\n"; continue; }
+      if (ch === "\r") { fixed += "\\r"; continue; }
+      if (ch === "\t") { fixed += "\\t"; continue; }
+      fixed += ch;
+      continue;
+    }
+    if (ch === "\"") inS = true;
+    fixed += ch;
+  }
+  return parse(fixed);
+}
 
 /** Truncate long strings inside a tool result so a single tool cannot eat the context. */
 function truncateToolResult(value) {
@@ -1390,6 +1452,10 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
   const maxPayloadChars = Math.max(48_000, Number(compaction?.maxPayloadChars) || 96_000);
   const events = [];
   const usage = { inputTokens: 0, outputTokens: 0, requestMs: 0, requests: 0, requestsWithUsage: 0 };
+  // v1.7.3 latency transparency: how long the provider took to produce the
+  // first streamed token this turn (null when the provider never streamed).
+  const runStartedAt = Date.now();
+  let firstTokenAt = null;
   let compactionCount = 0;
   // The 0.6B local model benefits from a focused prompt: the full product
   // prompt is tuned for much larger hosted models and overwhelms this model.
@@ -1419,6 +1485,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
   };
   const pushDelta = (text) => {
     if (!text || shouldStop()) return;
+    if (firstTokenAt == null) firstTokenAt = Date.now() - runStartedAt;
     deltaBuf += text;
     flushDelta();
   };
@@ -1674,6 +1741,77 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
   const toolLog = []; // { label, ok } — bounded evidence for honest interruption wrap-ups
   let providerInterrupted = "";
 
+  // One tool call, fully instrumented: validation, execution, live events,
+  // and the conversation tool message. Shared by sequential and parallel paths.
+  const runToolCall = async (call) => {
+    toolCalls++;
+    const name = call.function?.name || "tool";
+    let input = {};
+    const rawArguments = String(call.function?.arguments || "{}");
+    try { input = rawArguments.length > 100_000 ? { invalid: "Tool arguments exceed the 100 KB safety limit" } : JSON.parse(rawArguments); }
+    catch {
+      // v1.7.3: one cheap structural repair before failing the call — a
+      // truncated or trailing-comma payload should not burn a provider round.
+      const repaired = rawArguments.length <= 100_000 ? repairToolArguments(rawArguments) : null;
+      if (repaired) {
+        input = repaired;
+        emit("status", { text: "Repaired malformed tool arguments for " + name + " and continued without losing the step." });
+      } else input = { invalid: "Tool arguments must be valid JSON" };
+    }
+
+    const started = Date.now();
+    const visibleInput = name === "task_memory_write" ? { name: input?.name || "note", content: "[private note content hidden]" } : input;
+    emit("tool_start", { id: call.id, name, input: visibleInput });
+
+    let output, failed = false;
+    try {
+      if (toolCalls > MAX_TOOL_CALLS) throw new Error("This turn reached Sonderr's safe tool-call limit. Work is paused; resume the task to continue from its saved checkpoint.");
+      if (input.invalid) throw new Error(input.invalid);
+      if (!(Array.isArray(activeTools) ? activeTools : []).some(tool => tool?.function?.name === name)) throw new Error("The provider requested a tool that was not enabled for this turn. No action was taken.");
+      if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Tool arguments must be a JSON object.");
+      if (name === "load_skill") {
+        const id = String(input?.id || "").trim();
+        if (loadedSkills.has(id)) output = { id, name: loadedSkills.get(id).name, alreadyLoaded: true, instructions: "This playbook is already active in the current task." };
+        else {
+          if (loadedSkills.size >= 2) throw new Error("At most two skill playbooks may be active. Unload one before loading another.");
+          output = await executeTool(name, input, (type, payload) => emit(type, payload));
+          if (output?.id && typeof output.instructions === "string" && output.instructions) loadedSkills.set(output.id, { id: output.id, name: output.name || output.id, callId: call.id });
+        }
+      } else if (name === "unload_skill") {
+        const id = String(input?.id || "").trim();
+        const loaded = loadedSkills.get(id);
+        if (!loaded) throw new Error("That skill is not currently loaded in this task.");
+        output = await executeTool(name, input, (type, payload) => emit(type, payload));
+        if (!(output && typeof output === "object" && output.error)) {
+          unloadSkillMessage(messages, loaded);
+          loadedSkills.delete(id);
+        }
+      } else output = await executeTool(name, input, (type, payload) => emit(type, payload));
+      if (output && typeof output === "object" && "error" in output) failed = true;
+    } catch (error) {
+      failed = true;
+      output = { error: error.message || String(error), approvalRequired: error.code === "APPROVAL_REQUIRED" };
+    }
+
+    const clean = truncateToolResult(output ?? { ok: true });
+    const durationMs = Date.now() - started;
+    completedToolCalls++;
+    if (toolLog.length < 40) toolLog.push({ label: String(name || "tool") + (input && input.path ? " · " + String(input.path) : input && input.query ? " · " + String(input.query) : input && input.command ? " · " + String(input.command).slice(0, 60) : ""), ok: !failed });
+    const visibleOutput = name === "load_skill" && clean && typeof clean === "object"
+      ? { id: clean.id, name: clean.name, category: clean.category, loaded: true, focused: Boolean(clean.focused), sections: clean.sections, omittedInstructions: Boolean(clean.omittedInstructions), instructionChars: String(clean.instructions || "").length, note: clean.focused ? "A task-focused playbook extract is active; detailed text is hidden from the chat card." : "The full playbook is active; detailed text is hidden from the chat card." }
+      : name === "task_memory_read" && clean && typeof clean === "object"
+      ? { name: clean.name, bytes: Buffer.byteLength(String(clean.content || ""), "utf8"), note: "Private task note read; content is withheld from the chat event." }
+      : ["prepare_wallet_transaction", "prepare_wallet_swap"].includes(name)
+      ? safety.sanitizeToolOutput(name, output)
+      : clean;
+    emit("tool_end", { id: call.id, name, input: visibleInput, output: visibleOutput, failed, durationMs });
+
+    const toolMessage = typeof clean === "string"
+      ? clean
+      : JSON.stringify({ ok: !failed, ...(typeof clean === "object" && !Array.isArray(clean) ? clean : { result: clean }) });
+    return { role: "tool", tool_call_id: call.id, name, content: toolMessage };
+  };
+
   while (data?.choices?.[0]?.message?.tool_calls?.length && data?.choices?.[0]?.finish_reason !== "length" && typeof executeTool === "function" && rounds < MAX_ROUNDS && !shouldStop()) {
     rounds++;
     const assistant = data.choices[0].message;
@@ -1683,66 +1821,19 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     const narration = String(assistant.content || "").trim();
     if (narration) emit("segment", { text: narration });
 
-    for (const call of assistant.tool_calls) {
-      if (shouldStop()) break;
-      toolCalls++;
-      const name = call.function?.name || "tool";
-      let input = {};
-      const rawArguments = String(call.function?.arguments || "{}");
-      try { input = rawArguments.length > 100_000 ? { invalid: "Tool arguments exceed the 100 KB safety limit" } : JSON.parse(rawArguments); }
-      catch { input = { invalid: "Tool arguments must be valid JSON" }; }
-
-      const started = Date.now();
-      const visibleInput = name === "task_memory_write" ? { name: input?.name || "note", content: "[private note content hidden]" } : input;
-      emit("tool_start", { id: call.id, name, input: visibleInput });
-
-      let output, failed = false;
-      try {
-        if (toolCalls > MAX_TOOL_CALLS) throw new Error("This turn reached Sonderr's safe tool-call limit. Work is paused; resume the task to continue from its saved checkpoint.");
-        if (input.invalid) throw new Error(input.invalid);
-        if (!(Array.isArray(activeTools) ? activeTools : []).some(tool => tool?.function?.name === name)) throw new Error("The provider requested a tool that was not enabled for this turn. No action was taken.");
-        if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Tool arguments must be a JSON object.");
-        if (name === "load_skill") {
-          const id = String(input?.id || "").trim();
-          if (loadedSkills.has(id)) output = { id, name: loadedSkills.get(id).name, alreadyLoaded: true, instructions: "This playbook is already active in the current task." };
-          else {
-            if (loadedSkills.size >= 2) throw new Error("At most two skill playbooks may be active. Unload one before loading another.");
-            output = await executeTool(name, input, (type, payload) => emit(type, payload));
-            if (output?.id && typeof output.instructions === "string" && output.instructions) loadedSkills.set(output.id, { id: output.id, name: output.name || output.id, callId: call.id });
-          }
-        } else if (name === "unload_skill") {
-          const id = String(input?.id || "").trim();
-          const loaded = loadedSkills.get(id);
-          if (!loaded) throw new Error("That skill is not currently loaded in this task.");
-          output = await executeTool(name, input, (type, payload) => emit(type, payload));
-          if (!(output && typeof output === "object" && output.error)) {
-            unloadSkillMessage(messages, loaded);
-            loadedSkills.delete(id);
-          }
-        } else output = await executeTool(name, input, (type, payload) => emit(type, payload));
-        if (output && typeof output === "object" && "error" in output) failed = true;
-      } catch (error) {
-        failed = true;
-        output = { error: error.message || String(error), approvalRequired: error.code === "APPROVAL_REQUIRED" };
+    // v1.7.3 latency: rounds that request several strictly read-only tools run
+    // them concurrently; any round that touches a side-effect tool stays
+    // strictly sequential so mutations can never race.
+    const parallelRound = assistant.tool_calls.length >= 2
+      && assistant.tool_calls.every(call => READ_ONLY_PARALLEL_TOOLS.has(String(call.function?.name || "")));
+    if (parallelRound) {
+      const results = await Promise.all(assistant.tool_calls.map(call => runToolCall(call).catch(error => ({ role: "tool", tool_call_id: call.id, name: call.function?.name || "tool", content: JSON.stringify({ ok: false, error: String(error?.message || error) }) }))));
+      messages.push(...results);
+    } else {
+      for (const call of assistant.tool_calls) {
+        if (shouldStop()) break;
+        messages.push(await runToolCall(call));
       }
-
-      const clean = truncateToolResult(output ?? { ok: true });
-      const durationMs = Date.now() - started;
-      completedToolCalls++;
-      if (toolLog.length < 40) toolLog.push({ label: String(name || "tool") + (input && input.path ? " · " + String(input.path) : input && input.query ? " · " + String(input.query) : input && input.command ? " · " + String(input.command).slice(0, 60) : ""), ok: !failed });
-      const visibleOutput = name === "load_skill" && clean && typeof clean === "object"
-        ? { id: clean.id, name: clean.name, category: clean.category, loaded: true, focused: Boolean(clean.focused), sections: clean.sections, omittedInstructions: Boolean(clean.omittedInstructions), instructionChars: String(clean.instructions || "").length, note: clean.focused ? "A task-focused playbook extract is active; detailed text is hidden from the chat card." : "The full playbook is active; detailed text is hidden from the chat card." }
-        : name === "task_memory_read" && clean && typeof clean === "object"
-        ? { name: clean.name, bytes: Buffer.byteLength(String(clean.content || ""), "utf8"), note: "Private task note read; content is withheld from the chat event." }
-        : ["prepare_wallet_transaction", "prepare_wallet_swap"].includes(name)
-        ? safety.sanitizeToolOutput(name, output)
-        : clean;
-      emit("tool_end", { id: call.id, name, input: visibleInput, output: visibleOutput, failed, durationMs });
-
-      const toolMessage = typeof clean === "string"
-        ? clean
-        : JSON.stringify({ ok: !failed, ...(typeof clean === "object" && !Array.isArray(clean) ? clean : { result: clean }) });
-      messages.push({ role: "tool", tool_call_id: call.id, name, content: toolMessage });
     }
 
     if (shouldStop()) break;
@@ -1809,6 +1900,35 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
     }
   }
 
+  // v1.7.3 Claude-grade stop: when the user stops the turn, don't leave them
+  // with a half-finished trail. One tool-less pass writes an honest wrap-up —
+  // what was completed and verified, what remains, the exact next step — which
+  // is saved to history even after the browser stopped listening.
+  if (userPaused && !providerInterrupted && completedToolCalls > 0) {
+    emit("stopped", { steps: completedToolCalls });
+    emit("status", { text: "Stopped at your request — writing a brief wrap-up of what was completed…" });
+    const savedTools = activeTools;
+    const savedSystem = activeSystem;
+    const savedForce = forceToolChoice;
+    activeTools = [];
+    forceToolChoice = false;
+    activeSystem += "\n\n# User stop wrap-up\nThe user just stopped this turn. From the tool results already in this conversation, write a brief, honest wrap-up: what was completed and verified (with evidence), what remains, and the single exact next action. Keep it short and plain; never claim unverified work; do not attempt more tool calls.";
+    try {
+      const synth = await fetchAndRead(messages);
+      const synthText = String(synth?.data?.choices?.[0]?.message?.content || "").trim();
+      if (synthText) {
+        data = synth.data;
+        budgetReduced = budgetReduced || synth.budgetReduced;
+      }
+    } catch {
+      // The classic stopped notice below remains the honest fallback.
+    } finally {
+      activeTools = savedTools;
+      activeSystem = savedSystem;
+      forceToolChoice = savedForce;
+    }
+  }
+
   const interruptedNotice = providerInterrupted ? (() => {
     const steps = toolLog.slice(-12).map(entry => "- " + (entry.ok ? "Completed " : "Attempted ") + entry.label + (entry.ok ? "" : " (did not finish)"));
     return "The provider interrupted this turn after " + completedToolCalls + " completed tool step" + (completedToolCalls === 1 ? "" : "s") + (steps.length ? ". Verified progress so far:\n" + steps.join("\n") : ".") + "\n\nNothing was lost — say \"continue\" and I'll pick up from this exact point. (" + providerInterrupted + ")";
@@ -1844,7 +1964,7 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
   const finalContent = safety.sanitizeAssistantOutput(interruptedNotice || (outputTruncated && !data?.choices?.[0]?.message?.content
     ? "The selected model exhausted its output-token budget before returning any text. Shorten the request or choose a model with a larger output limit; in Settings, increase Max tokens if this provider/model supports it."
     : data?.choices?.[0]?.message?.content) || (userPaused
-    ? "I paused the local task at your request and saved its checkpoint where available."
+    ? "Stopped at your request. " + (completedToolCalls ? completedToolCalls + " tool step" + (completedToolCalls === 1 ? "" : "s") + " completed and everything above the stop point is saved; " : "") + "say \"continue\" whenever you want the rest done."
     : hitRoundLimit || hitToolLimit
     ? "I paused at Sonderr's safe tool limit. I saved the current task checkpoint where available; say ‘continue’ to resume from that point."
     : ""), system);
@@ -1866,7 +1986,8 @@ async function request({messages, system, probe=false, mode="", toolChoice="auto
       responseMs: usage.requestMs,
       requests: usage.requests,
       requestsWithUsage: usage.requestsWithUsage,
-      reported: usage.requests > 0 && usage.requestsWithUsage === usage.requests
+      reported: usage.requests > 0 && usage.requestsWithUsage === usage.requests,
+      firstTokenMs: firstTokenAt
     },
     // Internal-only conversation state used by Build's local autonomous runner.
     // Never persist or expose raw provider messages through the session API.
@@ -1944,4 +2065,4 @@ async function editImage({ prompt, sourcePath }) {
   throw new Error("Image endpoint returned no image data");
 }
 
-module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, isChatModel, editImage, readCompletionResponse, readBoundedResponseText, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, toolRoutingText, isDirectSwarmIntent, hasExactWalletNetwork, filterToolsForAccess, selectToolsForRequest };
+module.exports = { generate, testConnection, config, providerAccess, publicProviders, validateBaseURL, listModels, TOOL_DEFINITIONS, VISION_TOOL_DEFINITIONS, isVisionModel, isChatModel, editImage, readCompletionResponse, readBoundedResponseText, parseTpmLimitError, parseTpmRetryAfter, parseProviderRetryAfter, maxTokensWithinTpm, requestMaxTokens, knownTpmLimit, isSmallDirectRequest, walletRoutingText, toolRoutingText, isDirectSwarmIntent, hasExactWalletNetwork, filterToolsForAccess, selectToolsForRequest, repairToolArguments };

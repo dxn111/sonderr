@@ -263,16 +263,19 @@ function createRoom({ tasks, poll, sessionId = "", providerLabel = "selected pro
   };
   const setStatus = (agentId, status) => {
     const agent = room.agents.find(item => item.id === agentId);
-    if (!agent || !["queued", "researching", "reviewing", "complete", "failed"].includes(status)) return;
+    // "skipped" (v1.7.3): the user stopped the run before this worker's pass
+    // began. Honest, visible state — never rendered as a failure.
+    if (!agent || !["queued", "researching", "reviewing", "complete", "failed", "skipped"].includes(status)) return;
     agent.status = status;
     // v1.7.2: per-agent timing powers the live elapsed chips in the swarm UI.
     const now = new Date().toISOString();
     if ((status === "researching" || status === "reviewing") && !agent.startedAt) agent.startedAt = now;
-    if (status === "complete" || status === "failed") agent.completedAt = now;
+    if (status === "complete" || status === "failed" || status === "skipped") agent.completedAt = now;
     if (status === "researching") agent.activity = "Investigating assigned brief";
     else if (status === "reviewing") agent.activity = "Reviewing shared findings";
     else if (status === "complete") agent.activity = "Finished assignment";
     else if (status === "failed") agent.activity = "Could not complete assignment";
+    else if (status === "skipped") agent.activity = "Stopped by user — this pass was skipped";
     if (typeof onUpdate === "function") onUpdate({ type: "agent_update", room: snapshot(), entry: null });
   };
   // v1.7.2: coarse phase tracker for the swarm UI. Announcements land as lead

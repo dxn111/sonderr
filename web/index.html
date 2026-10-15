@@ -18,7 +18,7 @@
       <span class="brand-logo"><img src="/logo.svg" alt="Sonderr"></span>
       <span class="brand-copy">
         <span class="brand-name">Sonderr</span>
-        <span class="brand-version">v1.7.2 · privacy-first AI + Web3</span>
+        <span class="brand-version">v1.7.3 · privacy-first AI + Web3</span>
       </span>
     </div>
 
@@ -69,6 +69,10 @@
       </button>
       <div class="topbar-title" id="topbarTitle">New task</div>
       <div class="topbar-right">
+        <a class="topbar-docs" href="https://dxn1-docs.vercel.app" target="_blank" rel="noopener noreferrer" title="Official DXN1 Studios docs — opens in a new tab">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          <span>Docs</span>
+        </a>
         <button class="agent-room-shortcut" id="agentRoomShortcut" type="button" aria-haspopup="dialog" aria-controls="agentRoomModal" aria-keyshortcuts="Alt+5" hidden><span class="agent-room-shortcut-mark">✳</span><span>AI team</span><kbd>Alt+5</kbd></button>
         <button class="studio-new" id="studioNewBtn" type="button" hidden>+ New Studio</button>
         <span class="workspace-chip" id="workspaceChip" hidden title="Workspace"></span>
@@ -86,6 +90,7 @@
           <button class="suggestion" data-prompt="Plan a small feature end-to-end: files touched, steps, risks, and verification.">Plan a feature</button>
           <button class="suggestion" data-vision="1">Analyze an image</button>
         </div>
+        <a class="welcome-docs-link" href="https://dxn1-docs.vercel.app" target="_blank" rel="noopener noreferrer">New here? The official DXN1 Studios docs live at dxn1-docs.vercel.app <span aria-hidden="true">↗</span></a>
       </section>
       <section class="studios-home" id="studiosHome" hidden>
         <div class="studios-home-top"><div class="studios-eyebrow"><span class="studio-spark">✦</span> SONDERR STUDIOS <i>·</i> RELEASE CANDIDATE</div><button class="studios-tour-replay" id="studiosTourBtn" type="button">See how it works <span>↓</span></button></div>
@@ -172,11 +177,8 @@
                 <div class="model-menu-foot" id="modelMenuFoot">Sorted best &amp; newest first</div>
               </div>
             </div>
-            <div class="mode-seg" id="modeSeg" role="group" aria-label="Task mode">
-              <button class="mode-btn" data-mode="ask" aria-pressed="false" title="Quick answers">Ask</button>
-              <button class="mode-btn" data-mode="plan" aria-pressed="false" title="Engineering plan">Plan</button>
-              <button class="mode-btn active" data-mode="build" aria-pressed="true" title="Build & verify · default">Build</button>
-              <button class="mode-btn" data-mode="vision" aria-pressed="false" title="Image understanding & editing — vision models only">Vision</button>
+            <div class="mode-seg mode-unified" id="modeSeg" role="group" aria-label="Mode">
+              <button class="mode-btn active" data-mode="auto" aria-pressed="true" title="One automatic workflow — Sonderr answers, plans, builds, and handles images without mode switching">Auto</button>
             </div>
           </div>
           <div class="bar-right">
@@ -184,7 +186,8 @@
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
             </button>
             <button class="send-btn" id="sendBtn" title="Send" aria-label="Send message">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <svg class="send-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <svg class="stop-ico" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
             </button>
           </div>
         </div>

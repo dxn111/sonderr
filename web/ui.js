@@ -60,8 +60,15 @@ let taskProgressRequestGeneration = 0;
 function refreshSendingState() {
   const busy = state.surface === "trading" ? Boolean(state.tradingAgentBusy) : locallyPreparingChatViews.has(chatViewGeneration) || Boolean(state.session?.id && locallyBusyChatSessions.has(state.session.id));
   if (state.surface !== "trading") state.sending = busy;
-  $("sendBtn").disabled = busy;
-  $("sendBtn").classList.toggle("pending", busy);
+  // v1.7.3 Claude-grade stop: while Sonderr works, the send button IS the
+  // stop button (square glyph). It stays clickable; clicking it requests a
+  // graceful stop instead of sending.
+  const sendBtn = $("sendBtn");
+  sendBtn.disabled = false;
+  sendBtn.classList.toggle("pending", busy);
+  sendBtn.classList.toggle("stop-mode", busy);
+  sendBtn.title = busy ? "Stop generating" : "Send";
+  sendBtn.setAttribute("aria-label", busy ? "Stop generating" : "Send message");
   $("input").disabled = busy;
 }
 const STUDIO_PHASES = {
@@ -495,7 +502,7 @@ function renderModelMenu() {
   const active = state.settings?.model;
   const year = new Date().getFullYear();
   const discovered = state.models.filter(m => m.id !== "sonderr-v1");
-  const pool = state.mode === "vision" ? state.models.filter(m => m.vision) : [
+  const pool = (state.mode === "vision" || state.images.length) ? state.models.filter(m => m.vision) : [
     { id: "sonderr-v1", label: state.sonderrQuantizedSupported ? "Sonderr-v1 · Q4 · 0.6B" : "Sonderr-v1 · 0.6B", snapshot: "0.6B parameters" + (state.sonderrQuantizedSupported ? " · Q4_0 local SLM" : " · local SLM"), local: true },
     ...discovered
   ];
@@ -1468,7 +1475,7 @@ function agentAvatarMarkup(agent, className = "", interactive = true) {
   return '<' + tag + ' class="agent-avatar-trigger ' + esc(className) + ' presence-' + state + '" style="--agent-avatar-color:' + AGENT_AVATAR_COLORS[index] + '"' + trigger + '>' + icon + '<i></i></' + tag + '>';
 }
 function agentStatusLabel(status) {
-  return ({ queued: "Queued", researching: "Researching", reviewing: "Peer review", needs_help: "Needs help", complete: "Complete", failed: "Needs attention", coordinating: "Leading" })[status] || "Working";
+  return ({ queued: "Queued", researching: "Researching", reviewing: "Peer review", needs_help: "Needs help", complete: "Complete", failed: "Needs attention", coordinating: "Leading", skipped: "Stopped · skipped" })[status] || "Working";
 }
 function openAgentProfile(agentId) {
   const data = state.agentRooms.get(state.activeAgentRoomId);
@@ -1481,7 +1488,7 @@ function openAgentProfile(agentId) {
   $("agentProfileRole").textContent = (agent.role === "Lead" ? "AI Lead" : "AI " + (agent.role || "worker")) + (agent.kind === "User" ? "" : " · Fictional task persona");
   $("agentProfileBio").textContent = profile.bio || "AI persona working on this task.";
   $("agentProfileStatus").textContent = agent.activity || agentStatusLabel(agent.status);
-  $("agentProfilePresenceDot").className = "presence-dot presence-" + (agent.status === "failed" ? "away" : ["queued", "researching", "reviewing", "needs_help", "coordinating"].includes(agent.status) ? "busy" : "online");
+  $("agentProfilePresenceDot").className = "presence-dot presence-" + (agent.status === "failed" ? "away" : ["queued", "researching", "reviewing", "needs_help", "coordinating"].includes(agent.status) ? "busy" : agent.status === "skipped" ? "away" : "online");
   $("agentProfileTask").textContent = agent.task || "Lead coordination and final synthesis";
   const hasUsage = Number.isFinite(stats.totalTokens) && Number(stats.requestsWithUsage) > 0;
   $("agentProfileTotalTokens").textContent = hasUsage ? Number(stats.totalTokens).toLocaleString() + (stats.reported ? "" : "*") : "Not reported";
@@ -1569,7 +1576,7 @@ function renderAgentRoomChatCard(roomId) {
   const entries = data.entries || [];
   const phase = swarmPhaseOf(room, entries);
   const workers = (room.agents || []).filter(agent => agent.role !== "Lead");
-  const doneCount = workers.filter(agent => ["complete", "failed"].includes(agent.status)).length;
+  const doneCount = workers.filter(agent => ["complete", "failed", "skipped"].includes(agent.status)).length;
   const running = workers.length - doneCount;
   const reviewedCount = entries.filter(entry => entry.type === "review").length;
   const roomElapsed = swarmElapsedLabel(room.startedAt, room.completedAt);
@@ -2068,6 +2075,15 @@ function buildToolBlocks(events) {
     if (ev.type === "wallet_token_info") { wrap.appendChild(renderWalletTokenInfo(ev)); continue; }
     if (ev.type === "wallet_activity") { wrap.appendChild(renderWalletActivity(ev)); continue; }
     if (ev.type === "wallet_watch") { wrap.appendChild(renderWalletWatch(ev)); continue; }
+    if (ev.type === "stopped") {
+      // Persisted stop marker (v1.7.3): history mirrors the live Stopped chip.
+      const chip = document.createElement("div");
+      chip.className = "stopped-chip";
+      const steps = Number(ev.steps) || 0;
+      chip.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stopped' + (steps ? " · " + steps + " step" + (steps === 1 ? "" : "s") + " done" : "");
+      wrap.appendChild(chip);
+      continue;
+    }
     if (ev.type === "tool_start") {
       if (ev.name === "present_file") continue; // the present card IS the UI for this tool
       sawTool = true;
@@ -2750,7 +2766,7 @@ function workSpark() {
         if (restoreOpenFocus) card.querySelector(".agent-room-card-open")?.focus({ preventScroll: true });
       } else el.querySelector(".tools").appendChild(next);
       const workers = (data.room.agents || []).filter(agent => agent.role !== "Lead");
-      const doneCount = workers.filter(agent => ["complete", "failed"].includes(agent.status)).length;
+      const doneCount = workers.filter(agent => ["complete", "failed", "skipped"].includes(agent.status)).length;
       const running = workers.length - doneCount;
       const phase = swarmPhaseOf(data.room, data.entries);
       // The running "Spawn AI team" step card mirrors live team progress,
@@ -2809,7 +2825,7 @@ function workSpark() {
       if (ev.failed && !ev.output?.approvalRequired) this.setStatus("Recovering from " + toolTitle(ev.name).toLowerCase() + " failure — continuing the plan…");
       else this.setStatus("Thinking…");
     },
-    finish(message, connector) {
+    finish(message, connector, firstTokenMs = null) {
       this.closeSegment();
       const finalText = String(message || "");
       const finalNorm = finalText.replace(/\s+/g, " ").trim();
@@ -2824,14 +2840,17 @@ function workSpark() {
       }
       this.hideStatus();
       el.querySelector(".md").innerHTML = renderMarkdown(finalText);
-      // Claude-style footer on workflow turns: total time + step count.
+      // Claude-style footer on workflow turns: total time + step count (+
+      // first-token latency when the provider streamed, v1.7.3 transparency).
       const steps = this._step || 0;
       if (steps > 0 && this._startedAt) {
         const total = Math.max(0, Math.round((Date.now() - this._startedAt) / 1000));
         const dur = total >= 60 ? Math.floor(total / 60) + "m " + String(total % 60).padStart(2, "0") + "s" : total + "s";
+        const ft = Number(firstTokenMs);
+        const ftText = Number.isFinite(ft) && ft > 0 ? " · first token " + (ft >= 1000 ? (ft / 1000).toFixed(1) + "s" : Math.round(ft) + "ms") : "";
         const chip = document.createElement("div");
         chip.className = "worked-chip";
-        chip.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> Worked for ' + esc(dur) + " · " + steps + " step" + (steps === 1 ? "" : "s");
+        chip.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> Worked for ' + esc(dur) + " · " + steps + " step" + (steps === 1 ? "" : "s") + esc(ftText);
         el.querySelector(".body").appendChild(chip);
       }
       if (connector) el.querySelector(".body").appendChild(renderConnectorCard(connector));
@@ -2853,11 +2872,42 @@ function workSpark() {
         el.querySelector(".body").appendChild(button);
       }
       scrollRow();
+    },
+    // v1.7.3 Claude-grade stop: the user pressed Stop. Freeze the run UI at
+    // exactly what is on screen — running cards become "Stopped", the status
+    // row and timer go away, and an honest chip explains what happens next
+    // (the server wraps up and saves the summary to history).
+    stopped() {
+      this.closeSegment();
+      this._stopTimer();
+      for (const block of live.values()) {
+        const s = block?.querySelector?.(".tool-state");
+        if (s?.classList.contains("wait")) { s.className = "tool-state stop"; s.textContent = "Stopped"; }
+      }
+      el.querySelector(".agent-status")?.remove();
+      const steps = this._step || 0;
+      const chip = document.createElement("div");
+      chip.className = "stopped-chip";
+      chip.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stopped' + (steps ? " · " + steps + " step" + (steps === 1 ? "" : "s") + " done" : "") + '<small>Sonderr is wrapping up safely in the background — the summary will appear in your history.</small>';
+      el.querySelector(".body").appendChild(chip);
+      scrollRow();
     }
   };
 }
 
 /* ---------- send ---------- */
+// v1.7.3 Claude-grade stop: set while a chat turn is streaming; powers the
+// composer stop button and the Escape shortcut. Null between turns.
+let activeStopHandle = null;
+async function requestStop() {
+  const handle = activeStopHandle;
+  if (!handle || handle.requested) return;
+  handle.requested = true;
+  toast("Stopping — Sonderr will wrap up after its current safe operation");
+  try { await api("/api/sessions/" + encodeURIComponent(handle.sessionId) + "/stop", { method: "POST" }); }
+  catch { /* the turn may already be finishing; aborting locally is still safe */ }
+  handle.abort();
+}
 // Notify the otter pet (web/otter-pet.js) about app activity. Safe everywhere:
 // the pet may not be loaded, and tests stub a minimal window.
 function sonderrPetEvent(kind) {
@@ -2885,6 +2935,9 @@ async function send(options = {}) {
   const value = retrying && typeof options.retryText === "string" ? options.retryText : input.value.trim();
   if ((!value && !sentImages.length) || state.sending) return;
   let requestMode = retrying ? options.retryMode : state.mode;
+  // v1.7.3 unified workflow: attaching an image routes the turn through the
+  // vision path automatically — there is no manual Vision mode to switch to.
+  if (!retrying && sentImages.length && requestMode === "build") requestMode = "vision";
   const requestPluginId = retrying ? options.retryPluginId : state.activePluginId;
   const startingContext = retrying && Array.isArray(options.retryContext) ? options.retryContext : state.contextFiles.slice();
   let requestContext = startingContext;
@@ -2894,9 +2947,6 @@ async function send(options = {}) {
   const explicitBuildTask = /\b(?:implement|edit|patch|write|change|fix|refactor|debug|repair|modify)\b.{0,50}\b(?:code|file|bug|app|ui|interface|repo|repository|project|feature|workspace)\b|\b(?:code|file|bug|app|ui|interface|repo|repository|project|feature|workspace)\b.{0,50}\b(?:implement|edit|patch|write|change|fix|refactor|debug|repair|modify)\b|\b(?:make|build|create|develop)\b.{0,50}\b(?:app|application|website|site|page|feature|component|tool|ui|interface|frontend|backend|button|form|screen|file)\b/i.test(value);
   if (!retrying && explicitTeamRequest && state.mode === "build" && !explicitBuildTask) { setMode("ask"); requestMode = "ask"; }
   if (!retrying && requestSessionId) failedChatTurns.delete(requestSessionId);
-  if (requestMode === "vision" && !sentImages.length && !state.session) {
-    toast("Attach an image with + to start Vision mode");
-  }
   setSending(true, requestViewId, requestSessionId);
   if (!retrying) input.value = "";
   autosize();
@@ -2920,6 +2970,7 @@ async function send(options = {}) {
   }
   const context = requestContext;
   let row = null, finished = false, userMessageId = "", toolActivityStarted = false;
+  let stopController = null;
   try {
     if (!requestSessionId) {
       const created = await api("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: (value || sentImages[0]?.name || "New task").slice(0, 120), surface: requestSurface }) });
@@ -2930,8 +2981,12 @@ async function send(options = {}) {
     }
     if (requestViewId === chatViewGeneration && state.session?.id === requestSessionId) row = createAgentRow(requestSessionId);
     const requestStartedAt = Date.now();
+    // v1.7.3 Claude-grade stop: the composer stop button (or Esc) aborts this
+    // stream locally and asks the server to wrap the turn up gracefully.
+    stopController = new AbortController();
+    activeStopHandle = { abort: () => stopController.abort(), sessionId: requestSessionId, requested: false };
     const res = await fetch("/api/sessions/" + encodeURIComponent(requestSessionId), {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: stopController.signal,
       body: JSON.stringify({ content: value, mode: requestMode, context, images: sentImages.map(i => i.path), activePluginId: requestPluginId, ...(options.retryMessageId ? { retryMessageId: options.retryMessageId } : {}) })
     });
     const isStream = res.body && (res.headers.get("content-type") || "").includes("text/event-stream");
@@ -2992,7 +3047,7 @@ async function send(options = {}) {
             state.session = evt.session || state.session;
             $("topbarTitle").textContent = state.session?.title || "New task";
           }
-          row.finish(evt.message || "", evt.connectorRequired || null);
+          row.finish(evt.message || "", evt.connectorRequired || null, evt.firstTokenMs);
           if (!(evt.message || "").trim()) {
             // Bulletproofing: an empty final message renders as a silent blank
             // bubble, which reads like Sonderr ignored the turn. Show the
@@ -3049,6 +3104,13 @@ async function send(options = {}) {
     if (!finished) throw new Error("Connection closed before Sonderr finished responding.");
   } catch (e) {
     if (watchdogHandle) clearInterval(watchdogHandle);
+    // v1.7.3: an abort caused by the Stop button is not a failure — freeze
+    // the row honestly and let the server's wrap-up land in history.
+    if (activeStopHandle?.requested && (e?.name === "AbortError" || /abort/i.test(String(e?.message || e)))) {
+      if (row) row.stopped();
+      if (requestSessionId) loadSessions();
+      return;
+    }
     if (!userMessageId && requestSessionId && !toolActivityStarted) {
       try {
         const saved = await api("/api/sessions/" + encodeURIComponent(requestSessionId));
@@ -3077,6 +3139,7 @@ async function send(options = {}) {
     if (requestSessionId) loadSessions();
   } finally {
     setSending(false, requestViewId, requestSessionId);
+    activeStopHandle = null;
     if (finished) state.images = state.images.filter(image => !sentImages.includes(image));
     if (requestViewId === chatViewGeneration) { renderContext(); $("input").focus(); }
     if (requestSessionId && state.session?.id === requestSessionId && !row?.el.isConnected) openSession(requestSessionId);
@@ -3944,7 +4007,18 @@ function wire() {
     } catch (e) { toast("Copy failed — use Download instead"); }
   };
 
-  $("sendBtn").onclick = send;
+  // v1.7.3: the send button doubles as the Stop button while Sonderr works.
+  $("sendBtn").onclick = () => { if (state.sending) requestStop(); else send(); };
+  // Escape stops a running turn (Claude pattern) — but never while a modal,
+  // menu, or the agent room has focus, so Esc keeps closing those first.
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !activeStopHandle || activeStopHandle.requested) return;
+    if (document.querySelector(".modal-scrim:not([hidden]), .agent-room-scrim:not([hidden]), .announcements-scrim:not([hidden])")) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== $("input") && active.closest?.(".attach-menu, .model-menu, .scrim")) return;
+    event.preventDefault();
+    requestStop();
+  });
   $("input").addEventListener("input", e => {
     autosize(); updateCommandMenu();
     if (!commandState.open) updateMentionMenu();
